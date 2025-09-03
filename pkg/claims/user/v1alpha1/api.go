@@ -11,7 +11,7 @@ type UserClaims struct {
 	common.ClaimsData `json:",inline"`
 	// Specifies the user specific part of the JWT
 	// +kubebuilder:validation:Optional
-	User `json:"user,omitempty"`
+	User `json:"user"`
 }
 
 // User holds user specific claims data

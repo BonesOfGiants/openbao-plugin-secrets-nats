@@ -43,10 +43,10 @@ type ClaimsData struct {
 type Permissions struct {
 	// Specifies the publish permissions
 	// +kubebuilder:validation:Optional
-	Pub Permission `json:"pub,omitempty"`
+	Pub Permission `json:"pub"`
 	// Specifies the subscribe permissions
 	// +kubebuilder:validation:Optional
-	Sub Permission `json:"sub,omitempty"`
+	Sub Permission `json:"sub"`
 	// Specifies the response permissions
 	// +kubebuilder:validation:Optional
 	Resp *ResponsePermission `json:"resp,omitempty"`
@@ -57,7 +57,7 @@ type ResponsePermission struct {
 	// The maximum number of messages
 	MaxMsgs int `json:"max"`
 	// Specifies the time to live for the response
-	Expires string `json:"ttl"`
+	Expires string `json:"ttl,omitempty"`
 }
 
 // Permission Specifies allow/deny subjects

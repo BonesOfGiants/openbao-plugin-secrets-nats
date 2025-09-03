@@ -1,4 +1,4 @@
-FROM openbao/openbao:2.3.2
+FROM openbao/openbao:2.4.0
 
 COPY --chown=openbao:openbao \
     build/openbao/plugins/openbao-plugin-secrets-nats-linux-amd64 \

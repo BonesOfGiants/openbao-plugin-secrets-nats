@@ -203,6 +203,10 @@ func generateUserCreds(ctx context.Context, storage logical.Storage, params User
 		return nil, logical.ErrUnsupportedPath
 	}
 
+	params.Parameters["name()"] = params.User
+	params.Parameters["account()"] = params.Account
+	params.Parameters["operator()"] = params.Operator
+
 	// 2. Apply template parameters to claims
 	processedClaims, err := applyTemplateParameters(issue.ClaimsTemplate, params.Parameters)
 	if err != nil {

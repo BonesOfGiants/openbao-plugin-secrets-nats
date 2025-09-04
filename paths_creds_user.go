@@ -203,6 +203,10 @@ func generateUserCreds(ctx context.Context, storage logical.Storage, params User
 		return nil, logical.ErrUnsupportedPath
 	}
 
+	if params.Parameters == nil {
+		params.Parameters = make(map[string]string, 3)
+	}
+
 	params.Parameters["name()"] = params.User
 	params.Parameters["account()"] = params.Account
 	params.Parameters["operator()"] = params.Operator
@@ -272,10 +276,6 @@ func applyTemplateParameters(template v1alpha1.UserClaims, parameters map[string
 
 	// Check if all required variables are provided
 	if len(requiredVars) > 0 {
-		if len(parameters) == 0 {
-			return template, fmt.Errorf("template requires parameters but none provided: %v", requiredVars)
-		}
-
 		var missingVars []string
 		for _, variable := range requiredVars {
 			if _, exists := parameters[variable]; !exists {

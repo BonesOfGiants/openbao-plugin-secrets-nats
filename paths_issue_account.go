@@ -77,7 +77,7 @@ func pathAccountIssue(b *NatsBackend) []*framework.Path {
 				},
 				"claims": {
 					Type:        framework.TypeMap,
-					Description: "Account claims (jwt.AccountClaims from github.com/nats-io/jwt/v2)",
+					Description: "Account claims (jwt.AccountClaims from https://github.com/nats-io/jwt/tree/main/v2)",
 					Required:    false,
 				},
 			},
@@ -544,6 +544,44 @@ func issueAccountJWT(ctx context.Context, storage logical.Storage, issue IssueAc
 			return err
 		}
 		signingPublicKeys = append(signingPublicKeys, signingKey)
+	}
+
+	// add any externally defined imports to the claim
+	imports, err := readAllAccountImportIssues(ctx, storage, IssueAccountImportParameters{
+		Operator: issue.Operator,
+		Account:  issue.Account,
+	})
+	if err != nil {
+		return err
+	}
+
+	if len(imports) > 0 {
+		if issue.Claims.Imports == nil {
+			issue.Claims.Imports = []v1alpha1.Import{}
+		}
+	}
+
+	for _, imp := range imports {
+		issue.Claims.Imports = append(issue.Claims.Imports, imp.Imports...)
+	}
+
+	// add any externally defined revocations to the claim
+	revocations, err := readAllAccountRevocationIssues(ctx, storage, IssueAccountRevocationParameters{
+		Operator: issue.Operator,
+		Account:  issue.Account,
+	})
+	if err != nil {
+		return err
+	}
+
+	if len(revocations) > 0 {
+		if issue.Claims.Revocations == nil {
+			issue.Claims.Revocations = make(map[string]int64)
+		}
+	}
+
+	for _, revocation := range revocations {
+		issue.Claims.Revocations[revocation.Subject] = revocation.CreationTime
 	}
 
 	issue.Claims.ClaimsData.Subject = accountPublicKey

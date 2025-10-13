@@ -31,3 +31,5 @@ result
 
 # Ignore DevSpace cache and log folder
 .devspace/
+
+__debug_bin.*

@@ -61,6 +61,9 @@ func pathAccountRevocationIssue(b *NatsBackend) []*framework.Path {
 				logical.CreateOperation: &framework.PathOperation{
 					Callback: b.pathAddAccountRevocationIssue,
 				},
+				logical.UpdateOperation: &framework.PathOperation{
+					Callback: b.pathAddAccountRevocationIssue,
+				},
 				logical.ReadOperation: &framework.PathOperation{
 					Callback: b.pathReadAccountRevocationIssue,
 				},

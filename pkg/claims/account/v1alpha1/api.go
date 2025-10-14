@@ -1,5 +1,5 @@
 /*
-Copyright 2023 The EdgeFarm Authors.
+Copyright 2023 The EdgeFarm Authors and Contributors.
 Modified 2025 Bones of Giants.
 
 Licensed under the Apache License, Version 2.0 (the "License");

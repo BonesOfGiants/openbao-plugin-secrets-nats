@@ -18,6 +18,7 @@ type IssueUserStorage struct {
 	Account        string              `json:"account"`
 	User           string              `json:"user"`
 	UseSigningKey  string              `json:"useSigningKey"`
+	RevokeOnDelete bool                `json:"revokeOnDelete,omitempty"`
 	ClaimsTemplate v1alpha1.UserClaims `json:"claimsTemplate"`
 	ExpirationS    int64               `json:"expirationS,omitempty"`
 	Status         IssueUserStatus     `json:"status"`
@@ -31,7 +32,8 @@ type IssueUserParameters struct {
 	Account        string              `json:"account"`
 	User           string              `json:"user"`
 	UseSigningKey  string              `json:"useSigningKey,omitempty"`
-	ClaimsTemplate v1alpha1.UserClaims `json:"claimsTemplate,omitempty"`
+	RevokeOnDelete bool                `json:"revokeOnDelete,omitempty"`
+	ClaimsTemplate v1alpha1.UserClaims `json:"claimsTemplate"`
 	ExpirationS    int64               `json:"expirationS,omitempty"`
 }
 
@@ -40,6 +42,7 @@ type IssueUserData struct {
 	Account        string              `json:"account"`
 	User           string              `json:"user"`
 	UseSigningKey  string              `json:"useSigningKey"`
+	RevokeOnDelete bool                `json:"revokeOnDelete"`
 	ClaimsTemplate v1alpha1.UserClaims `json:"claimsTemplate"`
 	ExpirationS    int64               `json:"expirationS"`
 	Status         IssueUserStatus     `json:"status"`
@@ -294,19 +297,21 @@ func deleteUserIssue(ctx context.Context, storage logical.Storage, params IssueU
 		return nil
 	}
 
-	// account revocation list handling for deleted user
-	account, err := readAccountIssue(ctx, storage, IssueAccountParameters{
-		Operator: issue.Operator,
-		Account:  issue.Account,
-	})
-	if err != nil {
-		return err
-	}
-	if account != nil {
-		// add deleted user to revocation list and update the account JWT
-		err = addUserToRevocationList(ctx, storage, account, issue)
+	if params.RevokeOnDelete {
+		// account revocation list handling for deleted user
+		account, err := readAccountIssue(ctx, storage, IssueAccountParameters{
+			Operator: issue.Operator,
+			Account:  issue.Account,
+		})
 		if err != nil {
 			return err
+		}
+		if account != nil {
+			// add deleted user to revocation list and update the account JWT
+			err = addUserToRevocationList(ctx, storage, account, issue)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -347,12 +352,13 @@ func storeUserIssue(ctx context.Context, storage logical.Storage, params IssueUs
 		issue = &IssueUserStorage{}
 	}
 
-	issue.ClaimsTemplate = params.ClaimsTemplate
-	issue.ExpirationS = params.ExpirationS
 	issue.Operator = params.Operator
 	issue.Account = params.Account
 	issue.User = params.User
 	issue.UseSigningKey = params.UseSigningKey
+	issue.RevokeOnDelete = params.RevokeOnDelete
+	issue.ClaimsTemplate = params.ClaimsTemplate
+	issue.ExpirationS = params.ExpirationS
 
 	err = storeInStorage(ctx, storage, path, issue)
 	if err != nil {
@@ -393,6 +399,7 @@ func createResponseIssueUserData(issue *IssueUserStorage) (*logical.Response, er
 		Account:        issue.Account,
 		User:           issue.User,
 		UseSigningKey:  issue.UseSigningKey,
+		RevokeOnDelete: issue.RevokeOnDelete,
 		ClaimsTemplate: issue.ClaimsTemplate,
 		ExpirationS:    issue.ExpirationS,
 		Status:         issue.Status,

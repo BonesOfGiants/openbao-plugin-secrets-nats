@@ -193,7 +193,7 @@ func TestCRUDAccountRevocationIssue(t *testing.T) {
 		assert.NotZero(t, current.CreationTime)
 
 		//////////////////////////////////
-		// Update should fail as there are no parameters to update
+		// Update the created issue
 		//////////////////////////////////
 		resp, err = b.HandleRequest(context.Background(), &logical.Request{
 			Operation: logical.UpdateOperation,
@@ -201,7 +201,7 @@ func TestCRUDAccountRevocationIssue(t *testing.T) {
 			Storage:   reqStorage,
 			Data:      request,
 		})
-		assert.Equal(t, logical.ErrUnsupportedOperation, err)
+		assert.NoError(t, err)
 		assert.False(t, resp.IsError())
 
 		//////////////////////////////////

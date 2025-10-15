@@ -323,18 +323,18 @@ func deleteOperatorIssue(ctx context.Context, storage logical.Storage, params Is
 
 	// if generated, delete system account
 	if issue.CreateSystemAccount {
-		err := deleteUserIssue(ctx, storage, IssueUserParameters{
+		err = deleteAccountIssue(ctx, storage, IssueAccountParameters{
 			Operator: issue.Operator,
 			Account:  DefaultSysAccountName,
-			User:     DefaultPushUser,
 		})
 		if err != nil {
 			return err
 		}
 
-		err = deleteAccountIssue(ctx, storage, IssueAccountParameters{
+		err := deleteUserIssue(ctx, storage, IssueUserParameters{
 			Operator: issue.Operator,
 			Account:  DefaultSysAccountName,
+			User:     DefaultPushUser,
 		})
 		if err != nil {
 			return err

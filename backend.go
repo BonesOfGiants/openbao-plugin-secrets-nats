@@ -198,38 +198,9 @@ func (b *NatsBackend) periodicFunc(ctx context.Context, sys *logical.Request) er
 		}
 		if operatorIssue != nil {
 			b.Logger().Debug(fmt.Sprintf("Periodic: operator %s selected for auto sync to account server", operator))
-			accountNames, err := listAccountIssues(ctx, sys.Storage, operator)
-			if err != nil {
-				return err
-			}
-			for _, account := range accountNames {
-				if err = b.periodicRefreshAccountIssues(ctx, sys.Storage, operator); err != nil {
-					b.Logger().Info(err.Error())
-				}
-				if err = b.periodicRefreshUserIssues(ctx, sys.Storage, operator, account); err != nil {
-					b.Logger().Info(err.Error())
-				}
 
-				if operatorIssue.SyncAccountServer {
-					b.Logger().Debug(fmt.Sprintf("Periodic: account %s in operator %s syncing to acount server", account, operator))
-					accountIssue, err := readAccountIssue(ctx, sys.Storage, IssueAccountParameters{
-						Operator: operator,
-						Account:  account,
-					})
-					if err != nil {
-						b.Logger().Info(err.Error())
-					}
-					if err = refreshAccountResolver(ctx, sys.Storage, accountIssue, AccountResolverActionPush); err != nil {
-						return err
-					}
-					_, err = storeAccountIssueUpdate(ctx, sys.Storage, accountIssue)
-					if err != nil {
-						return err
-					}
-				} else {
-					b.Logger().Info(fmt.Sprintf("Periodic: operator %s not configured for auto syncing to account server. Skipping.", operator))
-					continue
-				}
+			if err = b.periodicRefreshAccountIssues(ctx, sys.Storage, operatorIssue); err != nil {
+				b.Logger().Warn(err.Error())
 			}
 		}
 	}
@@ -278,15 +249,18 @@ func (b *NatsBackend) periodicRefreshUserIssues(ctx context.Context, storage log
 	return nil
 }
 
-func (b *NatsBackend) periodicRefreshAccountIssues(ctx context.Context, storage logical.Storage, operator string) error {
-	issuesList, err := listAccountIssues(ctx, storage, operator)
+func (b *NatsBackend) periodicRefreshAccountIssues(ctx context.Context, storage logical.Storage, operator *IssueOperatorStorage) error {
+	opName := operator.Operator
+	sync := operator.SyncAccountServer
+
+	issuesList, err := listAccountIssues(ctx, storage, operator.Operator)
 	if err != nil {
 		return err
 	}
-	for _, issueName := range issuesList {
-		issue, err := readAccountIssue(ctx, storage, IssueAccountParameters{
-			Operator: operator,
-			Account:  issueName,
+	for _, accName := range issuesList {
+		account, err := readAccountIssue(ctx, storage, IssueAccountParameters{
+			Operator: opName,
+			Account:  accName,
 		})
 		if err != nil {
 			return err
@@ -294,31 +268,52 @@ func (b *NatsBackend) periodicRefreshAccountIssues(ctx context.Context, storage 
 		jwtMissing := false
 		nkeyMissing := false
 		jwt, err := readAccountJWT(ctx, storage, JWTParameters{
-			Operator: operator,
-			Account:  issueName,
+			Operator: opName,
+			Account:  accName,
 		})
 		if err != nil {
 			return err
 		}
-		if !issue.Status.Account.JWT || jwt == nil {
+		if !account.Status.Account.JWT || jwt == nil {
 			jwtMissing = true
 		}
 
 		nkey, err := readAccountNkey(ctx, storage, NkeyParameters{
-			Operator: operator,
-			Account:  issueName,
+			Operator: opName,
+			Account:  accName,
 		})
 		if err != nil {
 			return err
 		}
-		if !issue.Status.Account.Nkey || nkey == nil {
+		if !account.Status.Account.Nkey || nkey == nil {
 			nkeyMissing = true
 		}
 
 		if jwtMissing || nkeyMissing {
-			if err := refreshAccount(ctx, storage, issue); err != nil {
+			if err := refreshAccount(ctx, storage, account); err != nil {
 				return err
 			}
+		}
+
+		if err = b.periodicRefreshUserIssues(ctx, storage, opName, accName); err != nil {
+			b.Logger().Warn(err.Error())
+		}
+
+		if sync {
+			b.Logger().Debug(fmt.Sprintf("Periodic: account %s in operator %s syncing to acount server", accName, opName))
+			if err != nil {
+				b.Logger().Info(err.Error())
+			}
+			if err = refreshAccountResolver(ctx, storage, account, AccountResolverActionPush); err != nil {
+				return err
+			}
+			_, err = storeAccountIssueUpdate(ctx, storage, account)
+			if err != nil {
+				return err
+			}
+		} else {
+			b.Logger().Debug(fmt.Sprintf("Periodic: operator %s not configured for auto syncing to account server. Skipping.", opName))
+			continue
 		}
 	}
 	return nil

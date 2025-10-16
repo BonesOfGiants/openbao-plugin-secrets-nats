@@ -2,7 +2,6 @@ package natsbackend
 
 import (
 	"context"
-	"regexp"
 
 	"github.com/openbao/openbao/sdk/v2/framework"
 	"github.com/openbao/openbao/sdk/v2/logical"
@@ -24,9 +23,8 @@ func listIssues(ctx context.Context, storage logical.Storage, path string) ([]st
 		return nil, err
 	}
 	var issues []string
-	re := regexp.MustCompile(`\/`)
 	for _, v := range l {
-		if !re.Match([]byte(v)) {
+		if v != "/" {
 			issues = append(issues, v)
 		}
 	}

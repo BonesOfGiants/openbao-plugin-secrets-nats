@@ -287,7 +287,7 @@ func TestCRUDAccountIssue(t *testing.T) {
 		assert.False(t, resp.IsError())
 
 		// create 3 keys
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			path := fmt.Sprintf("issue/operator/op1/account/ac%d", i)
 			resp, err := b.HandleRequest(context.Background(), &logical.Request{
 				Operation: logical.CreateOperation,
@@ -312,7 +312,7 @@ func TestCRUDAccountIssue(t *testing.T) {
 		}, resp.Data)
 
 		// delete the keys
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			path := fmt.Sprintf("issue/operator/op1/account/ac%d", i)
 			resp, err := b.HandleRequest(context.Background(), &logical.Request{
 				Operation: logical.DeleteOperation,

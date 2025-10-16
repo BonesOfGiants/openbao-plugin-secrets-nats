@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -34,7 +35,7 @@ type IssueAccountParameters struct {
 	Operator      string                 `json:"operator"`
 	Account       string                 `json:"account"`
 	UseSigningKey string                 `json:"useSigningKey,omitempty"`
-	Claims        v1alpha1.AccountClaims `json:"claims,omitempty"`
+	Claims        v1alpha1.AccountClaims `json:"claims"`
 }
 
 type IssueAccountData struct {
@@ -338,15 +339,7 @@ func storeAccountIssue(ctx context.Context, storage logical.Storage, params Issu
 		// diff current and incomming signing keys
 		// delete removed signing keys
 		for _, signingKey := range issue.Claims.SigningKeys {
-			contains := func(a []string, x string) bool {
-				for _, n := range a {
-					if x == n {
-						return true
-					}
-				}
-				return false
-			}
-			if !contains(params.Claims.SigningKeys, signingKey) {
+			if !slices.Contains(params.Claims.SigningKeys, signingKey) {
 				p := NkeyParameters{
 					Operator: params.Operator,
 					Account:  params.Account,

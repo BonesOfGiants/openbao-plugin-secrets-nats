@@ -3,7 +3,6 @@ package natsbackend
 import (
 	"context"
 	"fmt"
-	"regexp"
 
 	"github.com/openbao/openbao/sdk/v2/framework"
 	"github.com/openbao/openbao/sdk/v2/logical"
@@ -183,12 +182,11 @@ func listNkeys(ctx context.Context, storage logical.Storage, path string) ([]str
 	if err != nil {
 		return nil, err
 	}
-	var sorted []string
-	re := regexp.MustCompile(`\/`)
+	res := l[:0]
 	for _, v := range l {
-		if !re.Match([]byte(v)) {
-			sorted = append(sorted, v)
+		if v != "/" {
+			res = append(res, v)
 		}
 	}
-	return sorted, nil
+	return res, nil
 }

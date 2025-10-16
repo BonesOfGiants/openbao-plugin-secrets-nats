@@ -121,7 +121,7 @@ func TestCRUDAccountJWTs(t *testing.T) {
 
 	t.Run("Test CRUD for multiple account jwts", func(t *testing.T) {
 		// create 3 keys
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			path := fmt.Sprintf("jwt/operator/op1/account/acc%d", i)
 			resp, err := b.HandleRequest(context.Background(), &logical.Request{
 				Operation: logical.CreateOperation,
@@ -148,7 +148,7 @@ func TestCRUDAccountJWTs(t *testing.T) {
 		}, resp.Data)
 
 		// delete the keys
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			path := fmt.Sprintf("jwt/operator/op1/account/acc%d", i)
 			resp, err := b.HandleRequest(context.Background(), &logical.Request{
 				Operation: logical.DeleteOperation,

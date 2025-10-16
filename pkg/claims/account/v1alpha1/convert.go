@@ -1,6 +1,7 @@
 package v1alpha1
 
 import (
+	"maps"
 	"time"
 
 	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/claims/common"
@@ -120,9 +121,7 @@ func convertRevocations(in *Account, out *jwt.Account) {
 		return
 	}
 	out.Revocations = make(map[string]int64, len(in.Revocations))
-	for k, v := range in.Revocations {
-		out.Revocations[k] = v
-	}
+	maps.Copy(out.Revocations, in.Revocations)
 }
 
 func convertDefaultPermissions(in *Account, out *jwt.Account) {

@@ -9,8 +9,6 @@ import (
 
 	"github.com/openbao/openbao/sdk/v2/framework"
 	"github.com/openbao/openbao/sdk/v2/logical"
-
-	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/stm"
 )
 
 // natsBackend defines an object that
@@ -86,39 +84,6 @@ func (b *NatsBackend) invalidate(ctx context.Context, key string) {
 	}
 }
 
-// getClient locks the backend as it configures and creates a
-// a new client for the target API
-func (b *NatsBackend) getClient(ctx context.Context, s logical.Storage) (*NatsClient, error) {
-	b.lock.RLock()
-	unlockFunc := b.lock.RUnlock
-	defer func() { unlockFunc() }()
-
-	if b.client != nil {
-		return b.client, nil
-	}
-
-	b.lock.RUnlock()
-	b.lock.Lock()
-	unlockFunc = b.lock.Unlock
-	return b.client, nil
-}
-
-func (b *NatsBackend) put(ctx context.Context, s logical.Storage, path string, data any) error {
-	b.lock.Lock()
-	defer b.lock.Unlock()
-
-	entry, err := logical.StorageEntryJSON(path, data)
-	if err != nil {
-		return fmt.Errorf("error creating storage entry: %w", err)
-	}
-
-	if err := s.Put(ctx, entry); err != nil {
-		return fmt.Errorf("error writing to backend: %w", err)
-	}
-
-	return nil
-}
-
 func getFromStorage[T any](ctx context.Context, s logical.Storage, path string) (*T, error) {
 	if path == "" {
 		return nil, fmt.Errorf("missing path")
@@ -160,27 +125,6 @@ func storeInStorage[T any](ctx context.Context, s logical.Storage, path string, 
 	}
 
 	return nil
-}
-
-func readOperation[T any](ctx context.Context, s logical.Storage, path string) (*logical.Response, error) {
-	t, err := getFromStorage[T](ctx, s, path)
-	if err != nil {
-		return nil, err
-	}
-
-	if t == nil {
-		return nil, nil
-	}
-
-	var groupMap map[string]any
-	err = stm.StructToMap(t, &groupMap)
-	if err != nil {
-		return nil, err
-	}
-
-	return &logical.Response{
-		Data: groupMap,
-	}, nil
 }
 
 func (b *NatsBackend) periodicFunc(ctx context.Context, sys *logical.Request) error {

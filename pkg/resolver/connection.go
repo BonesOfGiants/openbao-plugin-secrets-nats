@@ -3,6 +3,7 @@ package resolver
 import (
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -94,12 +95,5 @@ func isValidURL(s string) bool {
 	scheme := strings.ToLower(u.Scheme)
 	supported := []string{"http", "https", "nats"}
 
-	ok := false
-	for _, v := range supported {
-		if scheme == v {
-			ok = true
-			break
-		}
-	}
-	return ok
+	return slices.Contains(supported, scheme)
 }

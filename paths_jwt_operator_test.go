@@ -162,7 +162,7 @@ func TestCRUDOperatorJWTs(t *testing.T) {
 
 	t.Run("Test CRUD for multiple operator jwts", func(t *testing.T) {
 		// create 3 keys
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			path := fmt.Sprintf("jwt/operator/op%d", i)
 			resp, err := b.HandleRequest(context.Background(), &logical.Request{
 				Operation: logical.CreateOperation,
@@ -189,7 +189,7 @@ func TestCRUDOperatorJWTs(t *testing.T) {
 		}, resp.Data)
 
 		// delete the keys
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			path := fmt.Sprintf("jwt/operator/op%d", i)
 			resp, err := b.HandleRequest(context.Background(), &logical.Request{
 				Operation: logical.DeleteOperation,

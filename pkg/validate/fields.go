@@ -2,6 +2,7 @@ package validate
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -16,14 +17,7 @@ func ValidateFields(data map[string]any, valid []string) error {
 	invalidKeys := []string{}
 
 	for _, key := range mapKeys {
-		found := false
-		for _, validKey := range valid {
-			if key == validKey {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if !slices.Contains(valid, key) {
 			invalidKeys = append(invalidKeys, key)
 		}
 	}

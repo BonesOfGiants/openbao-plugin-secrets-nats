@@ -129,16 +129,16 @@ func (b *NatsBackend) pathReadUserCreds(ctx context.Context, req *logical.Reques
 	}
 
 	// Generate fresh credentials on-demand
-	UserCredsData, err := generateUserCreds(ctx, req.Storage, params)
+	userCreds, err := generateUserCreds(ctx, req.Storage, params)
 	if err != nil {
 		return logical.ErrorResponse(fmt.Sprintf("GeneratingCredsFailedError: %s", err.Error())), err
 	}
 
-	if UserCredsData == nil {
+	if userCreds == nil {
 		return logical.ErrorResponse("UserTemplateNotFoundError"), nil
 	}
 
-	return createResponseUserCredsData(UserCredsData)
+	return createResponseUserCredsData(userCreds)
 }
 
 func parseKeyValueString(input string, result map[string]string) error {
@@ -146,8 +146,8 @@ func parseKeyValueString(input string, result map[string]string) error {
 		return nil
 	}
 
-	pairs := strings.Split(input, ",")
-	for _, pair := range pairs {
+	pairs := strings.SplitSeq(input, ",")
+	for pair := range pairs {
 		parts := strings.SplitN(strings.TrimSpace(pair), "=", 2)
 		if len(parts) != 2 {
 			return fmt.Errorf("invalid key=value pair: %s", pair)
@@ -449,10 +449,6 @@ func listUserCreds(ctx context.Context, storage logical.Storage, params UserCred
 	// List user issues (templates) instead of stored creds
 	path := getUserIssuePath(params.Operator, params.Account, "")
 	return listIssues(ctx, storage, path)
-}
-
-func getUserCredsPath(operator string, account string, user string) string {
-	return "creds/operator/" + operator + "/account/" + account + "/user/" + user
 }
 
 func createResponseUserCredsData(UserCredsData *UserCredsData) (*logical.Response, error) {

@@ -11,7 +11,7 @@ type OperatorClaims struct {
 	common.ClaimsData `json:",inline"`
 	// Operator specific claims
 	// +kubebuilder:validation:Optional
-	Operator `json:"operator,omitempty"`
+	Operator `json:"operator"`
 }
 
 // Operator represents JWT claims for an operator.

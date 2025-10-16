@@ -31,7 +31,7 @@ type AccountClaims struct {
 	common.ClaimsData `json:",inline"`
 	// Account specific claims
 	// +kubebuilder:validation:Optional
-	Account `json:"account,omitempty"`
+	Account `json:"account"`
 }
 
 // Specifies account specific claims data
@@ -44,7 +44,7 @@ type Account struct {
 	Exports []Export `json:"exports,omitempty"`
 	// A set of limits for this account
 	// +kubebuilder:validation:Optional
-	Limits OperatorLimits `json:"limits,omitempty"`
+	Limits OperatorLimits `json:"limits"`
 	// A list of signing keys the account can use
 	// +kubebuilder:validation:Optional
 	SigningKeys []string `json:"signingKeys,omitempty"`
@@ -53,14 +53,14 @@ type Account struct {
 	Revocations map[string]int64 `json:"revocations,omitempty"`
 	// Default pub/sub permissions for this account that users inherit
 	// +kubebuilder:validation:Optional
-	DefaultPermissions common.Permissions `json:"defaultPermissions,omitempty"`
+	DefaultPermissions common.Permissions `json:"defaultPermissions"`
 	// Stores subjects that get mapped to other subjects using a weighted mapping.
 	// For more information see https://docs.nats.io/nats-concepts/subject_mapping
 	// +kubebuilder:validation:Optional
 	Mappings map[string][]WeightedMapping `json:"mappings,omitempty"`
 	// Enable external authorization for account users.
 	// +kubebuilder:validation:Optional
-	Authorization        ExternalAuthorization `json:"authorization,omitempty"`
+	Authorization        ExternalAuthorization `json:"authorization"`
 	common.Info          `json:",inline"`
 	common.GenericFields `json:",inline"`
 }

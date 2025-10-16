@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"regexp"
 
 	"github.com/openbao/openbao/sdk/v2/framework"
 	"github.com/openbao/openbao/sdk/v2/logical"
@@ -91,9 +90,8 @@ func listJWTs(ctx context.Context, storage logical.Storage, path string) ([]stri
 		return nil, err
 	}
 	var sorted []string
-	re := regexp.MustCompile(`\/`)
 	for _, v := range l {
-		if !re.Match([]byte(v)) {
+		if v != "/" {
 			sorted = append(sorted, v)
 		}
 	}

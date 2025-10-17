@@ -7,9 +7,14 @@ import (
 	"sync"
 	"time"
 
+	nats "github.com/nats-io/nats.go"
 	"github.com/openbao/openbao/sdk/v2/framework"
 	"github.com/openbao/openbao/sdk/v2/logical"
 )
+
+type NatsClient struct {
+	*nats.Conn
+}
 
 // natsBackend defines an object that
 // extends the OpenBao backend and stores the
@@ -40,7 +45,6 @@ func backend() *NatsBackend {
 			LocalStorage: []string{},
 			SealWrapStorage: []string{
 				"config",
-				"role/*",
 			},
 		},
 		Paths: framework.PathAppend(
@@ -50,9 +54,7 @@ func backend() *NatsBackend {
 			pathCreds(&b),
 			[]*framework.Path{},
 		),
-		Secrets: []*framework.Secret{
-			// b.hashiCupsToken(),
-		},
+		Secrets:           []*framework.Secret{},
 		BackendType:       logical.TypeLogical,
 		Invalidate:        b.invalidate,
 		WALRollbackMinAge: 30 * time.Second,
@@ -63,9 +65,8 @@ func backend() *NatsBackend {
 
 // backendHelp should contain help information for the backend
 const backendHelp = `
-The HashiCups secrets backend dynamically generates user tokens.
-After mounting this backend, credentials to manage HashiCups user tokens
-must be configured with the "config/" endpoints.
+The NATS secrets backend provides an API to create, manage, and sync
+NATS operator, account, and user NKeys and JWTs.
 `
 
 // reset clears any client configuration for a new
@@ -151,6 +152,39 @@ func (b *NatsBackend) periodicFunc(ctx context.Context, sys *logical.Request) er
 	return nil
 }
 
+func (b *NatsBackend) periodicRefreshAccountRevocations(ctx context.Context, storage logical.Storage, operator string, account string) (bool, error) {
+	issues, err := readAllAccountRevocationIssues(ctx, storage, IssueAccountRevocationParameters{
+		Operator: operator,
+		Account:  account,
+	})
+	if err != nil {
+		return false, err
+	}
+
+	now := time.Now().Unix()
+
+	dirty := false
+	for _, issue := range issues {
+		if issue.ExpirationS == 0 {
+			continue
+		}
+
+		if (issue.CreationTime + issue.ExpirationS) < now {
+			err = deleteAccountRevocationIssue(ctx, storage, IssueAccountRevocationParameters{
+				Operator: issue.Operator,
+				Account:  issue.Account,
+				Subject:  issue.Subject,
+			}, false)
+			if err != nil {
+				return false, err
+			}
+
+			dirty = true
+		}
+	}
+	return dirty, nil
+}
+
 func (b *NatsBackend) periodicRefreshUserIssues(ctx context.Context, storage logical.Storage, operator string, account string) error {
 	issuesList, err := listUserIssues(ctx, storage, IssueUserParameters{
 		Operator: operator,
@@ -209,31 +243,41 @@ func (b *NatsBackend) periodicRefreshAccountIssues(ctx context.Context, storage 
 		if err != nil {
 			return err
 		}
-		jwtMissing := false
-		nkeyMissing := false
-		jwt, err := readAccountJWT(ctx, storage, JWTParameters{
-			Operator: opName,
-			Account:  accName,
-		})
+
+		accountDirty := false
+
+		accountDirty, err = b.periodicRefreshAccountRevocations(ctx, storage, opName, accName)
 		if err != nil {
-			return err
-		}
-		if !account.Status.Account.JWT || jwt == nil {
-			jwtMissing = true
+			b.Logger().Warn(err.Error())
 		}
 
-		nkey, err := readAccountNkey(ctx, storage, NkeyParameters{
-			Operator: opName,
-			Account:  accName,
-		})
-		if err != nil {
-			return err
-		}
-		if !account.Status.Account.Nkey || nkey == nil {
-			nkeyMissing = true
+		if !accountDirty {
+			jwt, err := readAccountJWT(ctx, storage, JWTParameters{
+				Operator: opName,
+				Account:  accName,
+			})
+			if err != nil {
+				return err
+			}
+			if !account.Status.Account.JWT || jwt == nil {
+				accountDirty = true
+			}
 		}
 
-		if jwtMissing || nkeyMissing {
+		if !accountDirty {
+			nkey, err := readAccountNkey(ctx, storage, NkeyParameters{
+				Operator: opName,
+				Account:  accName,
+			})
+			if err != nil {
+				return err
+			}
+			if !account.Status.Account.Nkey || nkey == nil {
+				accountDirty = true
+			}
+		}
+
+		if accountDirty {
 			if err := refreshAccount(ctx, storage, account); err != nil {
 				return err
 			}
@@ -248,7 +292,7 @@ func (b *NatsBackend) periodicRefreshAccountIssues(ctx context.Context, storage 
 			if err != nil {
 				b.Logger().Info(err.Error())
 			}
-			if err = refreshAccountResolver(ctx, storage, account, AccountResolverActionPush); err != nil {
+			if err = refreshAccountResolverPush(ctx, storage, account); err != nil {
 				return err
 			}
 			_, err = storeAccountIssueUpdate(ctx, storage, account)

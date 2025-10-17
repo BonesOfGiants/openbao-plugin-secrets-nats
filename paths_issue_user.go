@@ -37,6 +37,13 @@ type IssueUserParameters struct {
 	ExpirationS    int64               `json:"expirationS,omitempty"`
 }
 
+type UserRevocationParameters struct {
+	Operator    string `json:"operator"`
+	Account     string `json:"account"`
+	User        string `json:"user"`
+	ExpirationS int64  `json:"expirationS,omitempty"`
+}
+
 type IssueUserData struct {
 	Operator       string              `json:"operator"`
 	Account        string              `json:"account"`
@@ -122,6 +129,47 @@ func pathUserIssue(b *NatsBackend) []*framework.Path {
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.ListOperation: &framework.PathOperation{
 					Callback: b.pathListUserIssues,
+				},
+			},
+			HelpSynopsis:    "pathRoleListHelpSynopsis",
+			HelpDescription: "pathRoleListHelpDescription",
+		},
+		{
+			Pattern: "issue/operator/" + framework.GenericNameRegex("operator") + "/account/" + framework.GenericNameRegex("account") + "/user/" + framework.GenericNameRegex("user") + "/revocation$",
+			Fields: map[string]*framework.FieldSchema{
+				"operator": {
+					Type:        framework.TypeString,
+					Description: "operator identifier",
+					Required:    false,
+				},
+				"account": {
+					Type:        framework.TypeString,
+					Description: "account identifier",
+					Required:    false,
+				},
+				"user": {
+					Type:        framework.TypeString,
+					Description: "user identifier",
+					Required:    false,
+				},
+				"expirationS": {
+					Type:        framework.TypeInt,
+					Description: "revocation ttl",
+					Required:    false,
+				},
+			},
+			Operations: map[logical.Operation]framework.OperationHandler{
+				logical.CreateOperation: &framework.PathOperation{
+					Callback: b.pathAddUserIssueRevocation,
+				},
+				logical.UpdateOperation: &framework.PathOperation{
+					Callback: b.pathAddUserIssueRevocation,
+				},
+				logical.ReadOperation: &framework.PathOperation{
+					Callback: b.pathReadUserIssueRevocation,
+				},
+				logical.DeleteOperation: &framework.PathOperation{
+					Callback: b.pathDeleteUserIssueRevocation,
 				},
 			},
 			HelpSynopsis:    "pathRoleListHelpSynopsis",
@@ -227,6 +275,193 @@ func (b *NatsBackend) pathDeleteUserIssue(ctx context.Context, req *logical.Requ
 	return nil, nil
 }
 
+func (b *NatsBackend) pathAddUserIssueRevocation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	err := data.Validate()
+	if err != nil {
+		return logical.ErrorResponse(InvalidParametersError), logical.ErrInvalidRequest
+	}
+
+	jsonString, err := json.Marshal(data.Raw)
+	if err != nil {
+		return logical.ErrorResponse(DecodeFailedError), logical.ErrInvalidRequest
+	}
+
+	params := UserRevocationParameters{}
+	err = json.Unmarshal(jsonString, &params) // Handle the error!
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to unmarshal parameters")
+		return logical.ErrorResponse("Failed to parse parameters"), logical.ErrInvalidRequest
+	}
+
+	// Add debug logging
+	log.Debug().
+		Int64("expirationS", params.ExpirationS).
+		Msg("Parsed parameters")
+
+	if params.ExpirationS == 0 {
+		issue, err := readUserIssue(ctx, req.Storage, IssueUserParameters{
+			Operator: params.Operator,
+			Account:  params.Account,
+			User:     params.User,
+		})
+		if err != nil {
+			return logical.ErrorResponse(ReadingIssueFailedError), nil
+		}
+
+		if issue == nil {
+			return logical.ErrorResponse(IssueNotFoundError), logical.ErrUnsupportedPath
+		}
+
+		params.ExpirationS = issue.ExpirationS
+	}
+
+	nkey, err := readUserNkey(ctx, req.Storage, NkeyParameters{
+		Operator: params.Operator,
+		Account:  params.Account,
+		User:     params.User,
+	})
+	if err != nil {
+		return logical.ErrorResponse(ReadingIssueFailedError), nil
+	}
+
+	if nkey == nil {
+		return logical.ErrorResponse(IssueNotFoundError), logical.ErrUnsupportedPath
+	}
+
+	nkeyData, err := toNkeyData(nkey)
+	if err != nil {
+		return logical.ErrorResponse(ReadingIssueFailedError), nil
+	}
+
+	if nkeyData == nil {
+		return logical.ErrorResponse(IssueNotFoundError), logical.ErrUnsupportedPath
+	}
+
+	err = addAccountRevocationIssue(ctx, req.Storage, IssueAccountRevocationParameters{
+		Operator:    params.Operator,
+		Account:     params.Account,
+		Subject:     nkeyData.PublicKey,
+		ExpirationS: params.ExpirationS,
+	}, true)
+	if err != nil {
+		return logical.ErrorResponse(AddingIssueFailedError), nil
+	}
+	return nil, nil
+}
+
+func (b *NatsBackend) pathReadUserIssueRevocation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	err := data.Validate()
+	if err != nil {
+		return logical.ErrorResponse(InvalidParametersError), logical.ErrInvalidRequest
+	}
+
+	jsonString, err := json.Marshal(data.Raw)
+	if err != nil {
+		return logical.ErrorResponse(DecodeFailedError), logical.ErrInvalidRequest
+	}
+
+	params := UserRevocationParameters{}
+	err = json.Unmarshal(jsonString, &params) // Handle the error!
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to unmarshal parameters")
+		return logical.ErrorResponse("Failed to parse parameters"), logical.ErrInvalidRequest
+	}
+
+	// Add debug logging
+	log.Debug().
+		Int64("expirationS", params.ExpirationS).
+		Msg("Parsed parameters")
+
+	nkey, err := readUserNkey(ctx, req.Storage, NkeyParameters{
+		Operator: params.Operator,
+		Account:  params.Account,
+		User:     params.User,
+	})
+	if err != nil {
+		return logical.ErrorResponse(ReadingIssueFailedError), nil
+	}
+
+	if nkey == nil {
+		return logical.ErrorResponse(IssueNotFoundError), logical.ErrUnsupportedPath
+	}
+
+	nkeyData, err := toNkeyData(nkey)
+	if err != nil {
+		return logical.ErrorResponse(ReadingIssueFailedError), nil
+	}
+
+	if nkeyData == nil {
+		return logical.ErrorResponse(IssueNotFoundError), logical.ErrUnsupportedPath
+	}
+
+	issue, err := readAccountRevocationIssue(ctx, req.Storage, IssueAccountRevocationParameters{
+		Operator: params.Operator,
+		Account:  params.Account,
+		Subject:  nkeyData.PublicKey,
+	})
+	if err != nil {
+		return logical.ErrorResponse(AddingIssueFailedError), nil
+	}
+
+	return createResponseIssueAccountRevocationData(issue)
+}
+
+func (b *NatsBackend) pathDeleteUserIssueRevocation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	err := data.Validate()
+	if err != nil {
+		return logical.ErrorResponse(InvalidParametersError), logical.ErrInvalidRequest
+	}
+
+	jsonString, err := json.Marshal(data.Raw)
+	if err != nil {
+		return logical.ErrorResponse(DecodeFailedError), logical.ErrInvalidRequest
+	}
+
+	params := UserRevocationParameters{}
+	err = json.Unmarshal(jsonString, &params) // Handle the error!
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to unmarshal parameters")
+		return logical.ErrorResponse("Failed to parse parameters"), logical.ErrInvalidRequest
+	}
+
+	// Add debug logging
+	log.Debug().
+		Int64("expirationS", params.ExpirationS).
+		Msg("Parsed parameters")
+
+	nkey, err := readUserNkey(ctx, req.Storage, NkeyParameters{
+		Operator: params.Operator,
+		Account:  params.Account,
+		User:     params.User,
+	})
+	if err != nil {
+		return logical.ErrorResponse(ReadingIssueFailedError), nil
+	}
+
+	if nkey == nil {
+		return logical.ErrorResponse(IssueNotFoundError), logical.ErrUnsupportedPath
+	}
+
+	nkeyData, err := toNkeyData(nkey)
+	if err != nil {
+		return logical.ErrorResponse(ReadingIssueFailedError), nil
+	}
+
+	if nkeyData == nil {
+		return logical.ErrorResponse(IssueNotFoundError), logical.ErrUnsupportedPath
+	}
+
+	err = deleteAccountRevocationIssue(ctx, req.Storage, IssueAccountRevocationParameters{
+		Operator: params.Operator,
+		Account:  params.Account,
+		Subject:  nkeyData.PublicKey,
+	}, true)
+	if err != nil {
+		return logical.ErrorResponse(AddingIssueFailedError), nil
+	}
+	return nil, nil
+}
+
 func addUserIssue(ctx context.Context, storage logical.Storage, params IssueUserParameters) error {
 	log.Info().
 		Str("operator", params.Operator).Str("account", params.Account).Str("user", params.User).
@@ -242,13 +477,13 @@ func addUserIssue(ctx context.Context, storage logical.Storage, params IssueUser
 }
 
 func refreshUser(ctx context.Context, storage logical.Storage, issue *IssueUserStorage) error {
-	// Only create nkey during issue
-	err := issueUserNKeys(ctx, storage, *issue)
+	// create nkeys
+	err := refreshUserNKeys(ctx, storage, *issue)
 	if err != nil {
 		return err
 	}
 
-	// Update status (only nkey now)
+	// Update status
 	updateUserStatus(ctx, storage, issue)
 
 	_, err = storeUserIssueUpdate(ctx, storage, issue)
@@ -367,7 +602,7 @@ func storeUserIssue(ctx context.Context, storage logical.Storage, params IssueUs
 	return issue, nil
 }
 
-func issueUserNKeys(ctx context.Context, storage logical.Storage, issue IssueUserStorage) error {
+func refreshUserNKeys(ctx context.Context, storage logical.Storage, issue IssueUserStorage) error {
 	p := NkeyParameters{
 		Operator: issue.Operator,
 		Account:  issue.Account,

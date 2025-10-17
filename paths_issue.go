@@ -2,6 +2,7 @@ package natsbackend
 
 import (
 	"context"
+	"strings"
 
 	"github.com/openbao/openbao/sdk/v2/framework"
 	"github.com/openbao/openbao/sdk/v2/logical"
@@ -24,7 +25,7 @@ func listIssues(ctx context.Context, storage logical.Storage, path string) ([]st
 	}
 	var issues []string
 	for _, v := range l {
-		if v != "/" {
+		if !strings.HasSuffix(v, "/") {
 			issues = append(issues, v)
 		}
 	}

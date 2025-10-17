@@ -3,6 +3,7 @@ package natsbackend
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/openbao/openbao/sdk/v2/framework"
 	"github.com/openbao/openbao/sdk/v2/logical"
@@ -184,7 +185,7 @@ func listNkeys(ctx context.Context, storage logical.Storage, path string) ([]str
 	}
 	res := l[:0]
 	for _, v := range l {
-		if v != "/" {
+		if !strings.HasSuffix(v, "/") {
 			res = append(res, v)
 		}
 	}

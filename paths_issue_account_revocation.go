@@ -18,15 +18,17 @@ type IssueAccountRevocationStorage struct {
 	Account      string `json:"account"`
 	Subject      string `json:"sub"`
 	CreationTime int64  `json:"creationTime"`
+	ExpirationS  int64  `json:"expirationS,omitempty"`
 }
 
 // IssueAccountRevocationParameters is the user facing interface for configuring a user issue.
 // Using pascal case on purpose.
 // +k8s:deepcopy-gen=true
 type IssueAccountRevocationParameters struct {
-	Operator string `json:"operator"`
-	Account  string `json:"account"`
-	Subject  string `json:"sub"`
+	Operator    string `json:"operator"`
+	Account     string `json:"account"`
+	Subject     string `json:"sub"`
+	ExpirationS int64  `json:"expirationS,omitempty"`
 }
 
 type IssueAccountRevocationData struct {
@@ -34,6 +36,7 @@ type IssueAccountRevocationData struct {
 	Account      string `json:"account"`
 	Subject      string `json:"sub"`
 	CreationTime int64  `json:"creationTime"`
+	ExpirationS  int64  `json:"expirationS"`
 }
 
 func pathAccountRevocationIssue(b *NatsBackend) []*framework.Path {
@@ -53,6 +56,11 @@ func pathAccountRevocationIssue(b *NatsBackend) []*framework.Path {
 				},
 				"sub": {
 					Type:        framework.TypeString,
+					Description: "sub identifier",
+					Required:    false,
+				},
+				"expirationS": {
+					Type:        framework.TypeInt,
 					Description: "sub identifier",
 					Required:    false,
 				},
@@ -121,7 +129,7 @@ func (b *NatsBackend) pathAddAccountRevocationIssue(ctx context.Context, req *lo
 	log.Debug().
 		Msg("Parsed parameters")
 
-	err = addAccountRevocationIssue(ctx, req.Storage, params)
+	err = addAccountRevocationIssue(ctx, req.Storage, params, true)
 	if err != nil {
 		return logical.ErrorResponse(AddingIssueFailedError), nil
 	}
@@ -187,14 +195,14 @@ func (b *NatsBackend) pathDeleteAccountRevocationIssue(ctx context.Context, req 
 	}
 
 	// delete issue and all related nkeys (no more JWT deletion)
-	err = deleteAccountRevocationIssue(ctx, req.Storage, params)
+	err = deleteAccountRevocationIssue(ctx, req.Storage, params, true)
 	if err != nil {
 		return logical.ErrorResponse(DeleteIssueFailedError), nil
 	}
 	return nil, nil
 }
 
-func addAccountRevocationIssue(ctx context.Context, storage logical.Storage, params IssueAccountRevocationParameters) error {
+func addAccountRevocationIssue(ctx context.Context, storage logical.Storage, params IssueAccountRevocationParameters, refresh bool) error {
 	log.Info().
 		Str("operator", params.Operator).Str("account", params.Account).Str("sub", params.Subject).
 		Msgf("issue account revocation")
@@ -205,15 +213,19 @@ func addAccountRevocationIssue(ctx context.Context, storage logical.Storage, par
 		return err
 	}
 
-	accountIssue, err := readAccountIssue(ctx, storage, IssueAccountParameters{
-		Operator: params.Operator,
-		Account:  params.Account,
-	})
-	if err != nil {
-		return err
+	if refresh {
+		accountIssue, err := readAccountIssue(ctx, storage, IssueAccountParameters{
+			Operator: params.Operator,
+			Account:  params.Account,
+		})
+		if err != nil {
+			return err
+		}
+
+		return refreshAccount(ctx, storage, accountIssue)
 	}
 
-	return refreshAccount(ctx, storage, accountIssue)
+	return nil
 }
 
 func readAccountRevocationIssue(ctx context.Context, storage logical.Storage, params IssueAccountRevocationParameters) (*IssueAccountRevocationStorage, error) {
@@ -250,7 +262,7 @@ func listAccountRevocationIssues(ctx context.Context, storage logical.Storage, p
 	return listIssues(ctx, storage, path)
 }
 
-func deleteAccountRevocationIssue(ctx context.Context, storage logical.Storage, params IssueAccountRevocationParameters) error {
+func deleteAccountRevocationIssue(ctx context.Context, storage logical.Storage, params IssueAccountRevocationParameters, refresh bool) error {
 	// get stored issue
 	issue, err := readAccountRevocationIssue(ctx, storage, params)
 	if err != nil {
@@ -268,28 +280,30 @@ func deleteAccountRevocationIssue(ctx context.Context, storage logical.Storage, 
 		return err
 	}
 
-	account, err := readAccountIssue(ctx, storage, IssueAccountParameters{
-		Operator: issue.Operator,
-		Account:  issue.Account,
-	})
-	if err != nil {
-		// we can't return an error here, because
-		// the issue has already been deleted
-		log.Err(err).
-			Str("operator", params.Operator).Str("account", params.Account).Str("sub", params.Subject).
-			Msg("failed to read account")
-		return nil
-	}
-
-	if account != nil {
-		// refresh account with updated imports
-		err = refreshAccount(ctx, storage, account)
+	if refresh {
+		account, err := readAccountIssue(ctx, storage, IssueAccountParameters{
+			Operator: issue.Operator,
+			Account:  issue.Account,
+		})
 		if err != nil {
 			// we can't return an error here, because
 			// the issue has already been deleted
 			log.Err(err).
 				Str("operator", params.Operator).Str("account", params.Account).Str("sub", params.Subject).
-				Msg("failed to refresh account")
+				Msg("failed to read account")
+			return nil
+		}
+
+		if account != nil {
+			// refresh account with updated imports
+			err = refreshAccount(ctx, storage, account)
+			if err != nil {
+				// we can't return an error here, because
+				// the issue has already been deleted
+				log.Err(err).
+					Str("operator", params.Operator).Str("account", params.Account).Str("sub", params.Subject).
+					Msg("failed to refresh account")
+			}
 		}
 	}
 
@@ -312,6 +326,7 @@ func storeAccountRevocationIssue(ctx context.Context, storage logical.Storage, p
 	issue.Operator = params.Operator
 	issue.Account = params.Account
 	issue.Subject = params.Subject
+	issue.ExpirationS = params.ExpirationS
 
 	err = storeInStorage(ctx, storage, path, issue)
 	if err != nil {
@@ -330,6 +345,7 @@ func createResponseIssueAccountRevocationData(issue *IssueAccountRevocationStora
 		Account:      issue.Account,
 		Subject:      issue.Subject,
 		CreationTime: issue.CreationTime,
+		ExpirationS:  issue.ExpirationS,
 	}
 
 	rval := map[string]any{}

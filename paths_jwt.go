@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/openbao/openbao/sdk/v2/framework"
 	"github.com/openbao/openbao/sdk/v2/logical"
@@ -91,7 +92,7 @@ func listJWTs(ctx context.Context, storage logical.Storage, path string) ([]stri
 	}
 	var sorted []string
 	for _, v := range l {
-		if v != "/" {
+		if !strings.HasSuffix(v, "/") {
 			sorted = append(sorted, v)
 		}
 	}

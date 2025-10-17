@@ -293,9 +293,7 @@ func (b *NatsBackend) pathAddUserIssueRevocation(ctx context.Context, req *logic
 		return logical.ErrorResponse("Failed to parse parameters"), logical.ErrInvalidRequest
 	}
 
-	log.Debug().
-		Int64("expirationS", *params.ExpirationS).
-		Msg("Parsed parameters")
+	log.Debug().Msg("Parsed parameters")
 
 	if params.ExpirationS == nil {
 		issue, err := readUserIssue(ctx, req.Storage, IssueUserParameters{

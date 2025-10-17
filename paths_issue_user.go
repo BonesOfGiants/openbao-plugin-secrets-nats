@@ -41,7 +41,7 @@ type UserRevocationParameters struct {
 	Operator    string `json:"operator"`
 	Account     string `json:"account"`
 	User        string `json:"user"`
-	ExpirationS int64  `json:"expirationS,omitempty"`
+	ExpirationS *int64 `json:"expirationS,omitempty"`
 }
 
 type IssueUserData struct {
@@ -293,12 +293,11 @@ func (b *NatsBackend) pathAddUserIssueRevocation(ctx context.Context, req *logic
 		return logical.ErrorResponse("Failed to parse parameters"), logical.ErrInvalidRequest
 	}
 
-	// Add debug logging
 	log.Debug().
-		Int64("expirationS", params.ExpirationS).
+		Int64("expirationS", *params.ExpirationS).
 		Msg("Parsed parameters")
 
-	if params.ExpirationS == 0 {
+	if params.ExpirationS == nil {
 		issue, err := readUserIssue(ctx, req.Storage, IssueUserParameters{
 			Operator: params.Operator,
 			Account:  params.Account,
@@ -312,7 +311,7 @@ func (b *NatsBackend) pathAddUserIssueRevocation(ctx context.Context, req *logic
 			return logical.ErrorResponse(IssueNotFoundError), logical.ErrUnsupportedPath
 		}
 
-		params.ExpirationS = issue.ExpirationS
+		*params.ExpirationS = issue.ExpirationS
 	}
 
 	nkey, err := readUserNkey(ctx, req.Storage, NkeyParameters{
@@ -341,7 +340,7 @@ func (b *NatsBackend) pathAddUserIssueRevocation(ctx context.Context, req *logic
 		Operator:    params.Operator,
 		Account:     params.Account,
 		Subject:     nkeyData.PublicKey,
-		ExpirationS: params.ExpirationS,
+		ExpirationS: *params.ExpirationS,
 	}, true)
 	if err != nil {
 		return logical.ErrorResponse(AddingIssueFailedError), nil
@@ -366,11 +365,6 @@ func (b *NatsBackend) pathReadUserIssueRevocation(ctx context.Context, req *logi
 		log.Error().Err(err).Msg("Failed to unmarshal parameters")
 		return logical.ErrorResponse("Failed to parse parameters"), logical.ErrInvalidRequest
 	}
-
-	// Add debug logging
-	log.Debug().
-		Int64("expirationS", params.ExpirationS).
-		Msg("Parsed parameters")
 
 	nkey, err := readUserNkey(ctx, req.Storage, NkeyParameters{
 		Operator: params.Operator,
@@ -403,6 +397,10 @@ func (b *NatsBackend) pathReadUserIssueRevocation(ctx context.Context, req *logi
 		return logical.ErrorResponse(AddingIssueFailedError), nil
 	}
 
+	if issue == nil {
+		return logical.ErrorResponse(IssueNotFoundError), logical.ErrUnsupportedPath
+	}
+
 	return createResponseIssueAccountRevocationData(issue)
 }
 
@@ -424,9 +422,7 @@ func (b *NatsBackend) pathDeleteUserIssueRevocation(ctx context.Context, req *lo
 		return logical.ErrorResponse("Failed to parse parameters"), logical.ErrInvalidRequest
 	}
 
-	// Add debug logging
 	log.Debug().
-		Int64("expirationS", params.ExpirationS).
 		Msg("Parsed parameters")
 
 	nkey, err := readUserNkey(ctx, req.Storage, NkeyParameters{

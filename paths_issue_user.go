@@ -309,7 +309,8 @@ func (b *NatsBackend) pathAddUserIssueRevocation(ctx context.Context, req *logic
 			return logical.ErrorResponse(IssueNotFoundError), logical.ErrUnsupportedPath
 		}
 
-		*params.ExpirationS = issue.ExpirationS
+		v := issue.ExpirationS
+		params.ExpirationS = &v
 	}
 
 	nkey, err := readUserNkey(ctx, req.Storage, NkeyParameters{

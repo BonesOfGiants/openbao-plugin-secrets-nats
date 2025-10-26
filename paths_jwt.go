@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/openbao/openbao/sdk/v2/framework"
 	"github.com/openbao/openbao/sdk/v2/logical"
@@ -83,20 +82,6 @@ func addJWT(ctx context.Context, storage logical.Storage, path string, params JW
 	}
 
 	return nil
-}
-
-func listJWTs(ctx context.Context, storage logical.Storage, path string) ([]string, error) {
-	l, err := storage.List(ctx, path)
-	if err != nil {
-		return nil, err
-	}
-	var sorted []string
-	for _, v := range l {
-		if !strings.HasSuffix(v, "/") {
-			sorted = append(sorted, v)
-		}
-	}
-	return sorted, nil
 }
 
 func validateJWT[T any, P interface{ *T }](token string) error {

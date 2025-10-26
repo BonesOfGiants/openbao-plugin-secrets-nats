@@ -33,6 +33,7 @@ func pathOperatorSigningNkey(b *NatsBackend) []*framework.Path {
 					Required:    false,
 				},
 			},
+			ExistenceCheck: b.pathOperatorSigningNkeyExistenceCheck,
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.CreateOperation: &framework.PathOperation{
 					Callback: b.pathAddOperatorSigningNkey,
@@ -56,6 +57,16 @@ func pathOperatorSigningNkey(b *NatsBackend) []*framework.Path {
 				"operator": {
 					Type:        framework.TypeString,
 					Description: "operator identifier",
+					Required:    false,
+				},
+				"after": {
+					Type:        framework.TypeString,
+					Description: `Optional entry to list begin listing after, not required to exist.`,
+					Required:    false,
+				},
+				"limit": {
+					Type:        framework.TypeInt,
+					Description: `Optional number of entries to return; defaults to all entries.`,
 					Required:    false,
 				},
 			},
@@ -90,47 +101,44 @@ func (b *NatsBackend) pathAddOperatorSigningNkey(ctx context.Context, req *logic
 }
 
 func (b *NatsBackend) pathReadOperatorSigningNkey(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	err := data.Validate()
-	if err != nil {
-		return logical.ErrorResponse(InvalidParametersError), logical.ErrInvalidRequest
-	}
-
-	var params NkeyParameters
-	err = stm.MapToStruct(data.Raw, &params)
-	if err != nil {
-		return logical.ErrorResponse(DecodeFailedError), logical.ErrInvalidRequest
-	}
-
-	nkey, err := readOperatorSigningNkey(ctx, req.Storage, params)
-	if err != nil {
-		return logical.ErrorResponse(ReadingNkeyFailedError), nil
-	}
-
-	if nkey == nil {
-		return logical.ErrorResponse(NkeyNotFoundError), logical.ErrUnsupportedPath
+	nkey, err := readOperatorSigningNkey(ctx, req.Storage, NkeyParameters{
+		Operator: data.Get("operator").(string),
+		Signing:  data.Get("signing").(string),
+	})
+	if err != nil || nkey == nil {
+		return nil, err
 	}
 
 	return createResponseNkeyData(nkey)
 }
 
+func (b *NatsBackend) pathOperatorSigningNkeyExistenceCheck(ctx context.Context, req *logical.Request, data *framework.FieldData) (bool, error) {
+	nkey, err := readOperatorSigningNkey(ctx, req.Storage, NkeyParameters{
+		Operator: data.Get("operator").(string),
+		Signing:  data.Get("signing").(string),
+	})
+	if err != nil {
+		return false, err
+	}
+
+	return nkey != nil, nil
+}
+
 func (b *NatsBackend) pathListOperatorSigningNkeys(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	err := data.Validate()
-	if err != nil {
-		return logical.ErrorResponse(InvalidParametersError), logical.ErrInvalidRequest
+	operator := data.Get("operator").(string)
+	after := data.Get("after").(string)
+	limit := data.Get("limit").(int)
+	if limit <= 0 {
+		limit = -1
 	}
 
-	var params NkeyParameters
-	err = stm.MapToStruct(data.Raw, &params)
+	path := getOperatorSigningNkeyPath(operator, "")
+	entries, err := req.Storage.ListPage(ctx, path, after, limit)
 	if err != nil {
-		return logical.ErrorResponse(DecodeFailedError), logical.ErrInvalidRequest
+		return nil, err
 	}
 
-	entries, err := listOperatorSigningNkeys(ctx, req.Storage, params)
-	if err != nil {
-		return logical.ErrorResponse(ListNkeysFailedError), nil
-	}
-
-	return logical.ListResponse(entries), nil
+	return logical.ListResponse(filterSubkeys(entries)), nil
 }
 
 func (b *NatsBackend) pathDeleteOperatorSigningNkey(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
@@ -187,11 +195,6 @@ func addOperatorSigningNkey(ctx context.Context, storage logical.Storage, params
 		addOperatorIssue(ctx, storage, iParams)
 	}
 	return nil
-}
-
-func listOperatorSigningNkeys(ctx context.Context, storage logical.Storage, params NkeyParameters) ([]string, error) {
-	path := getOperatorSigningNkeyPath(params.Operator, "")
-	return listNkeys(ctx, storage, path)
 }
 
 func getOperatorSigningNkeyPath(operator string, signing string) string {

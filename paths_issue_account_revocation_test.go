@@ -69,8 +69,13 @@ func TestCRUDAccountRevocationIssue(t *testing.T) {
 			Path:      path,
 			Storage:   reqStorage,
 		})
-		assert.Equal(t, logical.ErrUnsupportedPath, err)
-		assert.True(t, resp.IsError())
+		if err != nil || (resp != nil && resp.IsError()) {
+			t.Fatalf("account revocation ReadOperation request failed, err: %s, resp %#v", err, resp)
+		}
+
+		if resp != nil {
+			t.Fatalf("expected nil resp for account revocation ReadOperation resp: %#v", resp)
+		}
 
 		resp, err = b.HandleRequest(context.Background(), &logical.Request{
 			Operation: logical.DeleteOperation,
@@ -239,8 +244,13 @@ func TestCRUDAccountRevocationIssue(t *testing.T) {
 			Path:      path,
 			Storage:   reqStorage,
 		})
-		assert.Equal(t, logical.ErrUnsupportedPath, err)
-		assert.True(t, resp.IsError())
+		if err != nil || (resp != nil && resp.IsError()) {
+			t.Fatalf("account revocation ReadOperation request failed, err: %s, resp %#v", err, resp)
+		}
+
+		if resp != nil {
+			t.Fatalf("expected nil resp for account revocation ReadOperation resp: %#v", resp)
+		}
 
 		//////////////////////////
 		// Then recreate the key

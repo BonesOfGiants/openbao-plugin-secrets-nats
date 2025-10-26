@@ -83,6 +83,7 @@ func pathOperatorIssue(b *NatsBackend) []*framework.Path {
 					Required:    false,
 				},
 			},
+			ExistenceCheck: b.pathOperatorIssueExistenceCheck,
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.CreateOperation: &framework.PathOperation{
 					Callback: b.pathAddOperatorIssue,
@@ -102,6 +103,18 @@ func pathOperatorIssue(b *NatsBackend) []*framework.Path {
 		},
 		{
 			Pattern: "issue/operator/?$",
+			Fields: map[string]*framework.FieldSchema{
+				"after": {
+					Type:        framework.TypeString,
+					Description: `Optional entry to list begin listing after, not required to exist.`,
+					Required:    false,
+				},
+				"limit": {
+					Type:        framework.TypeInt,
+					Description: `Optional number of entries to return; defaults to all entries.`,
+					Required:    false,
+				},
+			},
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.ListOperation: &framework.PathOperation{
 					Callback: b.pathListOperatorIssues,
@@ -135,43 +148,41 @@ func (b *NatsBackend) pathAddOperatorIssue(ctx context.Context, req *logical.Req
 }
 
 func (b *NatsBackend) pathReadOperatorIssue(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	err := data.Validate()
-	if err != nil {
-		return logical.ErrorResponse(InvalidParametersError), logical.ErrInvalidRequest
-	}
-
-	jsonString, err := json.Marshal(data.Raw)
-	if err != nil {
-		return logical.ErrorResponse(DecodeFailedError), logical.ErrInvalidRequest
-	}
-	params := IssueOperatorParameters{}
-	json.Unmarshal(jsonString, &params)
-
-	issue, err := readOperatorIssue(ctx, req.Storage, params)
-	if err != nil {
-		return logical.ErrorResponse(ReadingIssueFailedError), nil
-	}
-
-	if issue == nil {
-		return logical.ErrorResponse(IssueNotFoundError), logical.ErrUnsupportedPath
+	issue, err := readOperatorIssue(ctx, req.Storage, IssueOperatorParameters{
+		Operator: data.Get("operator").(string),
+	})
+	if err != nil || issue == nil {
+		return nil, err
 	}
 
 	status := getIssueOperatorStatus(ctx, req.Storage, issue)
 	return createResponseIssueOperatorData(issue, status)
 }
 
+func (b *NatsBackend) pathOperatorIssueExistenceCheck(ctx context.Context, req *logical.Request, data *framework.FieldData) (bool, error) {
+	issue, err := readOperatorIssue(ctx, req.Storage, IssueOperatorParameters{
+		Operator: data.Get("operator").(string),
+	})
+	if err != nil {
+		return false, err
+	}
+
+	return issue != nil, nil
+}
+
 func (b *NatsBackend) pathListOperatorIssues(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	err := data.Validate()
-	if err != nil {
-		return logical.ErrorResponse(InvalidParametersError), logical.ErrInvalidRequest
+	after := data.Get("after").(string)
+	limit := data.Get("limit").(int)
+	if limit <= 0 {
+		limit = -1
 	}
 
-	entries, err := listOperatorIssues(ctx, req.Storage)
+	entries, err := req.Storage.ListPage(ctx, issueOperatorPrefix, after, limit)
 	if err != nil {
-		return logical.ErrorResponse(ListIssuesFailedError), nil
+		return nil, err
 	}
 
-	return logical.ListResponse(entries), nil
+	return logical.ListResponse(filterSubkeys(entries)), nil
 }
 
 func (b *NatsBackend) pathDeleteOperatorIssue(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
@@ -200,7 +211,6 @@ func addOperatorIssue(ctx context.Context, storage logical.Storage, params Issue
 		Str("operator", params.Operator).
 		Msgf("issue operator")
 
-	// store issue
 	issue, err := storeOperatorIssue(ctx, storage, params)
 	if err != nil {
 		return err
@@ -220,7 +230,7 @@ func refreshAccountResolvers(ctx context.Context, storage logical.Storage, issue
 		return nil
 	}
 
-	// Check if push user template exists (since JWTs are now generated on-demand)
+	// Check if push user template exists
 	pushUser, err := readUserIssue(ctx, storage, IssueUserParameters{
 		Operator: issue.Operator,
 		Account:  DefaultSysAccountName,
@@ -229,27 +239,30 @@ func refreshAccountResolvers(ctx context.Context, storage logical.Storage, issue
 	if err != nil {
 		return err
 	}
-	if pushUser != nil {
-		// Check if the user has required nkey (JWT will be generated on-demand when needed)
-		if pushUser.Status.User.Nkey {
-			accounts, err := listAccountIssues(ctx, storage, issue.Operator)
-			if err != nil {
-				return err
-			}
-			for _, account := range accounts {
-				err = refreshAccountResolverPush(ctx, storage, &IssueAccountStorage{
-					Operator: issue.Operator,
-					Account:  account,
-				})
-				if err != nil {
-					return err
-				}
-			}
-		} else {
-			log.Warn().Str("operator", issue.Operator).Msg("cannot refresh account resolvers, push user has no nkey yet")
-		}
-	} else {
+
+	if pushUser == nil {
 		log.Warn().Str("operator", issue.Operator).Msg("cannot refresh account resolvers, push user template does not exist")
+		return nil
+	}
+
+	if !pushUser.Status.User.Nkey {
+		log.Warn().Str("operator", issue.Operator).Msg("cannot refresh account resolvers, push user has no nkey yet")
+		return nil
+	}
+
+	path := getAccountIssuePath(issue.Operator, "")
+	accounts, err := storage.List(ctx, path)
+	if err != nil {
+		return err
+	}
+	for _, account := range accounts {
+		err = refreshAccountResolverPush(ctx, storage, &IssueAccountStorage{
+			Operator: issue.Operator,
+			Account:  account,
+		})
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -282,11 +295,6 @@ func refreshOperator(ctx context.Context, storage logical.Storage, issue *IssueO
 func readOperatorIssue(ctx context.Context, storage logical.Storage, params IssueOperatorParameters) (*IssueOperatorStorage, error) {
 	path := getOperatorIssuePath(params.Operator)
 	return getFromStorage[IssueOperatorStorage](ctx, storage, path)
-}
-
-func listOperatorIssues(ctx context.Context, storage logical.Storage) ([]string, error) {
-	path := getOperatorIssuePath("")
-	return listIssues(ctx, storage, path)
 }
 
 func deleteOperatorIssue(ctx context.Context, storage logical.Storage, params IssueOperatorParameters) error {
@@ -636,7 +644,8 @@ func issueSystemAccount(ctx context.Context, storage logical.Storage, issue Issu
 }
 
 func updateAccountIssues(ctx context.Context, storage logical.Storage, issue IssueOperatorStorage) error {
-	accounts, err := listAccountIssues(ctx, storage, issue.Operator)
+	path := getAccountIssuePath(issue.Operator, "")
+	accounts, err := storage.List(ctx, path)
 	if err != nil {
 		return err
 	}
@@ -661,7 +670,7 @@ func updateAccountIssues(ctx context.Context, storage logical.Storage, issue Iss
 }
 
 func getOperatorIssuePath(operator string) string {
-	return "issue/operator/" + operator
+	return issueOperatorPrefix + operator
 }
 
 func getIssueOperatorStatus(ctx context.Context, storage logical.Storage, issue *IssueOperatorStorage) *IssueOperatorStatus {

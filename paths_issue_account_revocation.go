@@ -65,6 +65,7 @@ func pathAccountRevocationIssue(b *NatsBackend) []*framework.Path {
 					Required:    false,
 				},
 			},
+			ExistenceCheck: b.pathAccountRevocationIssueExistenceCheck,
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.CreateOperation: &framework.PathOperation{
 					Callback: b.pathAddAccountRevocationIssue,
@@ -93,6 +94,16 @@ func pathAccountRevocationIssue(b *NatsBackend) []*framework.Path {
 				"account": {
 					Type:        framework.TypeString,
 					Description: "account identifier",
+					Required:    false,
+				},
+				"after": {
+					Type:        framework.TypeString,
+					Description: `Optional entry to list begin listing after, not required to exist.`,
+					Required:    false,
+				},
+				"limit": {
+					Type:        framework.TypeInt,
+					Description: `Optional number of entries to return; defaults to all entries.`,
 					Required:    false,
 				},
 			},
@@ -137,49 +148,47 @@ func (b *NatsBackend) pathAddAccountRevocationIssue(ctx context.Context, req *lo
 }
 
 func (b *NatsBackend) pathReadAccountRevocationIssue(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	err := data.Validate()
-	if err != nil {
-		return logical.ErrorResponse(InvalidParametersError), logical.ErrInvalidRequest
-	}
-
-	jsonString, err := json.Marshal(data.Raw)
-	if err != nil {
-		return logical.ErrorResponse(DecodeFailedError), logical.ErrInvalidRequest
-	}
-	params := IssueAccountRevocationParameters{}
-	json.Unmarshal(jsonString, &params)
-
-	issue, err := readAccountRevocationIssue(ctx, req.Storage, params)
-	if err != nil {
-		return logical.ErrorResponse(ReadingIssueFailedError), nil
-	}
-
-	if issue == nil {
-		return logical.ErrorResponse(IssueNotFoundError), logical.ErrUnsupportedPath
+	issue, err := readAccountRevocationIssue(ctx, req.Storage, IssueAccountRevocationParameters{
+		Operator: data.Get("operator").(string),
+		Account:  data.Get("account").(string),
+		Subject:  data.Get("sub").(string),
+	})
+	if err != nil || issue == nil {
+		return nil, err
 	}
 
 	return createResponseIssueAccountRevocationData(issue)
 }
 
+func (b *NatsBackend) pathAccountRevocationIssueExistenceCheck(ctx context.Context, req *logical.Request, data *framework.FieldData) (bool, error) {
+	issue, err := readAccountRevocationIssue(ctx, req.Storage, IssueAccountRevocationParameters{
+		Operator: data.Get("operator").(string),
+		Account:  data.Get("account").(string),
+		Subject:  data.Get("sub").(string),
+	})
+	if err != nil {
+		return false, err
+	}
+
+	return issue != nil, nil
+}
+
 func (b *NatsBackend) pathListAccountRevocationIssues(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	err := data.Validate()
-	if err != nil {
-		return logical.ErrorResponse(InvalidParametersError), logical.ErrInvalidRequest
+	operator := data.Get("operator").(string)
+	account := data.Get("account").(string)
+	after := data.Get("after").(string)
+	limit := data.Get("limit").(int)
+	if limit <= 0 {
+		limit = -1
 	}
 
-	jsonString, err := json.Marshal(data.Raw)
+	path := getAccountRevocationIssuePath(operator, account, "")
+	entries, err := req.Storage.ListPage(ctx, path, after, limit)
 	if err != nil {
-		return logical.ErrorResponse(DecodeFailedError), logical.ErrInvalidRequest
-	}
-	params := IssueAccountRevocationParameters{}
-	json.Unmarshal(jsonString, &params)
-
-	entries, err := listAccountRevocationIssues(ctx, req.Storage, params)
-	if err != nil {
-		return logical.ErrorResponse(ListIssuesFailedError), nil
+		return nil, err
 	}
 
-	return logical.ListResponse(entries), nil
+	return logical.ListResponse(filterSubkeys(entries)), nil
 }
 
 func (b *NatsBackend) pathDeleteAccountRevocationIssue(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
@@ -257,10 +266,6 @@ func readAllAccountRevocationIssues(ctx context.Context, storage logical.Storage
 
 	return issues, nil
 }
-func listAccountRevocationIssues(ctx context.Context, storage logical.Storage, params IssueAccountRevocationParameters) ([]string, error) {
-	path := getAccountRevocationIssuePath(params.Operator, params.Account, "")
-	return listIssues(ctx, storage, path)
-}
 
 func deleteAccountRevocationIssue(ctx context.Context, storage logical.Storage, params IssueAccountRevocationParameters, refresh bool) error {
 	// get stored issue
@@ -336,7 +341,7 @@ func storeAccountRevocationIssue(ctx context.Context, storage logical.Storage, p
 }
 
 func getAccountRevocationIssuePath(operator string, account string, alias string) string {
-	return "issue/operator/" + operator + "/account/" + account + "/recovation/" + alias
+	return issueOperatorPrefix + operator + "/account/" + account + "/recovation/" + alias
 }
 
 func createResponseIssueAccountRevocationData(issue *IssueAccountRevocationStorage) (*logical.Response, error) {

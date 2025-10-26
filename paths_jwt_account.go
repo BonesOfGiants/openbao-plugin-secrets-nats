@@ -33,6 +33,7 @@ func pathAccountJWT(b *NatsBackend) []*framework.Path {
 					Required:    false,
 				},
 			},
+			ExistenceCheck: b.pathAccountJWTExistenceCheck,
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.CreateOperation: &framework.PathOperation{
 					Callback: b.pathAddAccountJWT,
@@ -56,6 +57,16 @@ func pathAccountJWT(b *NatsBackend) []*framework.Path {
 				"operator": {
 					Type:        framework.TypeString,
 					Description: "operator identifier",
+					Required:    false,
+				},
+				"after": {
+					Type:        framework.TypeString,
+					Description: `Optional entry to list begin listing after, not required to exist.`,
+					Required:    false,
+				},
+				"limit": {
+					Type:        framework.TypeInt,
+					Description: `Optional number of entries to return; defaults to all entries.`,
 					Required:    false,
 				},
 			},
@@ -90,47 +101,44 @@ func (b *NatsBackend) pathAddAccountJWT(ctx context.Context, req *logical.Reques
 }
 
 func (b *NatsBackend) pathReadAccountJWT(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	err := data.Validate()
-	if err != nil {
-		return logical.ErrorResponse(InvalidParametersError), logical.ErrInvalidRequest
-	}
-
-	var params JWTParameters
-	err = stm.MapToStruct(data.Raw, &params)
-	if err != nil {
-		return logical.ErrorResponse(DecodeFailedError), logical.ErrInvalidRequest
-	}
-
-	jwt, err := readAccountJWT(ctx, req.Storage, params)
-	if err != nil {
-		return logical.ErrorResponse(ReadingJWTFailedError), nil
-	}
-
-	if jwt == nil {
-		return logical.ErrorResponse(JwtNotFoundError), logical.ErrUnsupportedPath
+	jwt, err := readAccountJWT(ctx, req.Storage, JWTParameters{
+		Operator: data.Get("operator").(string),
+		Account:  data.Get("account").(string),
+	})
+	if err != nil || jwt == nil {
+		return nil, err
 	}
 
 	return createResponseJWTData(jwt)
 }
 
+func (b *NatsBackend) pathAccountJWTExistenceCheck(ctx context.Context, req *logical.Request, data *framework.FieldData) (bool, error) {
+	jwt, err := readAccountJWT(ctx, req.Storage, JWTParameters{
+		Operator: data.Get("operator").(string),
+		Account:  data.Get("account").(string),
+	})
+	if err != nil {
+		return false, err
+	}
+
+	return jwt != nil, nil
+}
+
 func (b *NatsBackend) pathListAccountJWT(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	err := data.Validate()
-	if err != nil {
-		return logical.ErrorResponse(InvalidParametersError), logical.ErrInvalidRequest
+	operator := data.Get("operator").(string)
+	after := data.Get("after").(string)
+	limit := data.Get("limit").(int)
+	if limit <= 0 {
+		limit = -1
 	}
 
-	var params JWTParameters
-	err = stm.MapToStruct(data.Raw, &params)
+	path := getAccountJWTPath(operator, "")
+	entries, err := req.Storage.ListPage(ctx, path, after, limit)
 	if err != nil {
-		return logical.ErrorResponse(DecodeFailedError), logical.ErrInvalidRequest
+		return nil, err
 	}
 
-	entries, err := listAccountJWTs(ctx, req.Storage, params)
-	if err != nil {
-		return logical.ErrorResponse(ListJWTsFailedError), nil
-	}
-
-	return logical.ListResponse(entries), nil
+	return logical.ListResponse(filterSubkeys(entries)), nil
 }
 
 func (b *NatsBackend) pathDeleteAccountJWT(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
@@ -197,11 +205,6 @@ func addAccountJWT(ctx context.Context, storage logical.Storage, params JWTParam
 		addAccountIssue(ctx, storage, iParams)
 	}
 	return nil
-}
-
-func listAccountJWTs(ctx context.Context, storage logical.Storage, params JWTParameters) ([]string, error) {
-	path := getAccountJWTPath(params.Operator, "")
-	return listJWTs(ctx, storage, path)
 }
 
 func getAccountJWTPath(operator string, account string) string {

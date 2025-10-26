@@ -28,8 +28,13 @@ func TestCRUDOperatorIssue(t *testing.T) {
 			Path:      path,
 			Storage:   reqStorage,
 		})
-		assert.Equal(t, logical.ErrUnsupportedPath, err)
-		assert.True(t, resp.IsError())
+		if err != nil || (resp != nil && resp.IsError()) {
+			t.Fatalf("operator issue ReadOperation request failed, err: %s, resp %#v", err, resp)
+		}
+
+		if resp != nil {
+			t.Fatalf("expected nil resp for operator issue ReadOperation resp: %#v", resp)
+		}
 
 		resp, err = b.HandleRequest(context.Background(), &logical.Request{
 			Operation: logical.DeleteOperation,
@@ -218,8 +223,13 @@ func TestCRUDOperatorIssue(t *testing.T) {
 			Path:      path,
 			Storage:   reqStorage,
 		})
-		assert.Equal(t, logical.ErrUnsupportedPath, err)
-		assert.True(t, resp.IsError())
+		if err != nil || (resp != nil && resp.IsError()) {
+			t.Fatalf("operator issue ReadOperation request failed, err: %s, resp %#v", err, resp)
+		}
+
+		if resp != nil {
+			t.Fatalf("expected nil resp for operator issue ReadOperation resp: %#v", resp)
+		}
 
 		//////////////////////////
 		// Then recreate the key
@@ -385,8 +395,13 @@ func TestCRUDOperatorIssue(t *testing.T) {
 			Path:      "nkey/operator/op1",
 			Storage:   reqStorage,
 		})
-		assert.Equal(t, logical.ErrUnsupportedPath, err)
-		assert.True(t, resp.IsError())
+		if err != nil || (resp != nil && resp.IsError()) {
+			t.Fatalf("operator nkey ReadOperation request failed, err: %s, resp %#v", err, resp)
+		}
+
+		if resp != nil {
+			t.Fatalf("expected nil resp for operator nkey ReadOperation resp: %#v", resp)
+		}
 
 		// read the jwt
 		resp, err = b.HandleRequest(context.Background(), &logical.Request{
@@ -394,8 +409,13 @@ func TestCRUDOperatorIssue(t *testing.T) {
 			Path:      "jwt/operator/op1",
 			Storage:   reqStorage,
 		})
-		assert.Equal(t, logical.ErrUnsupportedPath, err)
-		assert.True(t, resp.IsError())
+		if err != nil || (resp != nil && resp.IsError()) {
+			t.Fatalf("operator jwt ReadOperation request failed, err: %s, resp %#v", err, resp)
+		}
+
+		if resp != nil {
+			t.Fatalf("expected nil resp for operator jwt ReadOperation resp: %#v", resp)
+		}
 
 		// read a signing key
 		resp, err = b.HandleRequest(context.Background(), &logical.Request{
@@ -403,8 +423,13 @@ func TestCRUDOperatorIssue(t *testing.T) {
 			Path:      "nkey/operator/op1/signing/key2",
 			Storage:   reqStorage,
 		})
-		assert.Equal(t, logical.ErrUnsupportedPath, err)
-		assert.True(t, resp.IsError())
+		if err != nil || (resp != nil && resp.IsError()) {
+			t.Fatalf("operator signing nkey ReadOperation request failed, err: %s, resp %#v", err, resp)
+		}
+
+		if resp != nil {
+			t.Fatalf("expected nil resp for operator signing nkey ReadOperation resp: %#v", resp)
+		}
 
 	})
 

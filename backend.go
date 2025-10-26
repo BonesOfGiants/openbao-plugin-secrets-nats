@@ -33,6 +33,12 @@ func Factory(ctx context.Context, conf *logical.BackendConfig) (logical.Backend,
 	return b, nil
 }
 
+const (
+	issueOperatorPrefix = "issue/operator/"
+	jwtOperatorPrefix   = "jwt/operator/"
+	nkeyOperatorPrefix  = "nkey/operator/"
+)
+
 // backend defines the target API backend
 // for OpenBao. It must include each path
 // and the secrets it will store.
@@ -108,6 +114,17 @@ func getFromStorage[T any](ctx context.Context, s logical.Storage, path string) 
 	return &t, nil
 }
 
+func filterSubkeys(a []string) []string {
+	var filtered []string
+	for _, v := range a {
+		if !strings.HasSuffix(v, "/") {
+			filtered = append(filtered, v)
+		}
+	}
+
+	return filtered
+}
+
 func deleteFromStorage(ctx context.Context, s logical.Storage, path string) error {
 	if err := s.Delete(ctx, path); err != nil {
 		return fmt.Errorf("error deleting data: %w", err)
@@ -130,7 +147,7 @@ func storeInStorage[T any](ctx context.Context, s logical.Storage, path string, 
 
 func (b *NatsBackend) periodicFunc(ctx context.Context, sys *logical.Request) error {
 	b.Logger().Info("Periodic: starting periodic func for syncing accounts to nats")
-	operators, err := listOperatorIssues(ctx, sys.Storage)
+	operators, err := sys.Storage.List(ctx, issueOperatorPrefix) // todo paginate
 	if err != nil {
 		return err
 	}
@@ -186,13 +203,12 @@ func (b *NatsBackend) periodicRefreshAccountRevocations(ctx context.Context, sto
 }
 
 func (b *NatsBackend) periodicRefreshUserIssues(ctx context.Context, storage logical.Storage, operator string, account string) error {
-	issuesList, err := listUserIssues(ctx, storage, IssueUserParameters{
-		Operator: operator,
-		Account:  account,
-	})
+	path := getUserIssuePath(operator, account, "")
+	issuesList, err := storage.List(ctx, path) // todo paginate
 	if err != nil {
 		return err
 	}
+
 	for _, issueName := range issuesList {
 		issue, err := readUserIssue(ctx, storage, IssueUserParameters{
 			Operator: operator,
@@ -231,7 +247,8 @@ func (b *NatsBackend) periodicRefreshAccountIssues(ctx context.Context, storage 
 	opName := operator.Operator
 	sync := operator.SyncAccountServer
 
-	issuesList, err := listAccountIssues(ctx, storage, operator.Operator)
+	path := getAccountIssuePath(operator.Operator, "")
+	issuesList, err := storage.List(ctx, path)
 	if err != nil {
 		return err
 	}

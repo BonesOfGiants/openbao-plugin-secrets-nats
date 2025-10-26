@@ -38,6 +38,7 @@ func pathUserNkey(b *NatsBackend) []*framework.Path {
 					Required:    false,
 				},
 			},
+			ExistenceCheck: b.pathUserNkeyExistenceCheck,
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.CreateOperation: &framework.PathOperation{
 					Callback: b.pathAddUserNkey,
@@ -66,6 +67,16 @@ func pathUserNkey(b *NatsBackend) []*framework.Path {
 				"account": {
 					Type:        framework.TypeString,
 					Description: "account identifier",
+					Required:    false,
+				},
+				"after": {
+					Type:        framework.TypeString,
+					Description: `Optional entry to list begin listing after, not required to exist.`,
+					Required:    false,
+				},
+				"limit": {
+					Type:        framework.TypeInt,
+					Description: `Optional number of entries to return; defaults to all entries.`,
 					Required:    false,
 				},
 			},
@@ -99,48 +110,48 @@ func (b *NatsBackend) pathAddUserNkey(ctx context.Context, req *logical.Request,
 	return nil, nil
 }
 
+func (b *NatsBackend) pathUserNkeyExistenceCheck(ctx context.Context, req *logical.Request, data *framework.FieldData) (bool, error) {
+	nkey, err := readUserNkey(ctx, req.Storage, NkeyParameters{
+		Operator: data.Get("operator").(string),
+		Account:  data.Get("account").(string),
+		User:     data.Get("user").(string),
+	})
+	if err != nil {
+		return false, err
+	}
+
+	return nkey != nil, nil
+}
+
 func (b *NatsBackend) pathReadUserNkey(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	err := data.Validate()
-	if err != nil {
-		return logical.ErrorResponse(InvalidParametersError), logical.ErrInvalidRequest
-	}
-
-	var params NkeyParameters
-	err = stm.MapToStruct(data.Raw, &params)
-	if err != nil {
-		return logical.ErrorResponse(DecodeFailedError), logical.ErrInvalidRequest
-	}
-
-	nkey, err := readUserNkey(ctx, req.Storage, params)
-	if err != nil {
-		return logical.ErrorResponse(ReadingNkeyFailedError), nil
-	}
-
-	if nkey == nil {
-		return logical.ErrorResponse(NkeyNotFoundError), logical.ErrUnsupportedPath
+	nkey, err := readUserNkey(ctx, req.Storage, NkeyParameters{
+		Operator: data.Get("operator").(string),
+		Account:  data.Get("account").(string),
+		User:     data.Get("user").(string),
+	})
+	if err != nil || nkey == nil {
+		return nil, err
 	}
 
 	return createResponseNkeyData(nkey)
 }
 
 func (b *NatsBackend) pathListUserNkeys(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	err := data.Validate()
-	if err != nil {
-		return logical.ErrorResponse(InvalidParametersError), logical.ErrInvalidRequest
+	operator := data.Get("operator").(string)
+	account := data.Get("account").(string)
+	after := data.Get("after").(string)
+	limit := data.Get("limit").(int)
+	if limit <= 0 {
+		limit = -1
 	}
 
-	var params NkeyParameters
-	err = stm.MapToStruct(data.Raw, &params)
+	path := getUserNkeyPath(operator, account, "")
+	entries, err := req.Storage.ListPage(ctx, path, after, limit)
 	if err != nil {
-		return logical.ErrorResponse(DecodeFailedError), logical.ErrInvalidRequest
+		return nil, err
 	}
 
-	entries, err := listUserNkeys(ctx, req.Storage, params)
-	if err != nil {
-		return logical.ErrorResponse(ListNkeysFailedError), nil
-	}
-
-	return logical.ListResponse(entries), nil
+	return logical.ListResponse(filterSubkeys(entries)), nil
 }
 
 func (b *NatsBackend) pathDeleteUserNkey(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
@@ -199,11 +210,6 @@ func addUserNkey(ctx context.Context, storage logical.Storage, params NkeyParame
 		addUserIssue(ctx, storage, iParams)
 	}
 	return nil
-}
-
-func listUserNkeys(ctx context.Context, storage logical.Storage, params NkeyParameters) ([]string, error) {
-	path := getUserNkeyPath(params.Operator, params.Account, "")
-	return listNkeys(ctx, storage, path)
 }
 
 func getUserNkeyPath(operator string, account string, user string) string {

@@ -95,6 +95,7 @@ func pathUserIssue(b *NatsBackend) []*framework.Path {
 					Required:    false,
 				},
 			},
+			ExistenceCheck: b.pathUserIssueExistenceCheck,
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.CreateOperation: &framework.PathOperation{
 					Callback: b.pathAddUserIssue,
@@ -123,6 +124,16 @@ func pathUserIssue(b *NatsBackend) []*framework.Path {
 				"account": {
 					Type:        framework.TypeString,
 					Description: "account identifier",
+					Required:    false,
+				},
+				"after": {
+					Type:        framework.TypeString,
+					Description: `Optional entry to list begin listing after, not required to exist.`,
+					Required:    false,
+				},
+				"limit": {
+					Type:        framework.TypeInt,
+					Description: `Optional number of entries to return; defaults to all entries.`,
 					Required:    false,
 				},
 			},
@@ -158,6 +169,7 @@ func pathUserIssue(b *NatsBackend) []*framework.Path {
 					Required:    false,
 				},
 			},
+			ExistenceCheck: b.pathUserIssueRevocationExistenceCheck,
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.CreateOperation: &framework.PathOperation{
 					Callback: b.pathAddUserIssueRevocation,
@@ -210,49 +222,47 @@ func (b *NatsBackend) pathAddUserIssue(ctx context.Context, req *logical.Request
 }
 
 func (b *NatsBackend) pathReadUserIssue(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	err := data.Validate()
-	if err != nil {
-		return logical.ErrorResponse(InvalidParametersError), logical.ErrInvalidRequest
-	}
-
-	jsonString, err := json.Marshal(data.Raw)
-	if err != nil {
-		return logical.ErrorResponse(DecodeFailedError), logical.ErrInvalidRequest
-	}
-	params := IssueUserParameters{}
-	json.Unmarshal(jsonString, &params)
-
-	issue, err := readUserIssue(ctx, req.Storage, params)
-	if err != nil {
-		return logical.ErrorResponse(ReadingIssueFailedError), nil
-	}
-
-	if issue == nil {
-		return logical.ErrorResponse(IssueNotFoundError), logical.ErrUnsupportedPath
+	issue, err := readUserIssue(ctx, req.Storage, IssueUserParameters{
+		Operator: data.Get("operator").(string),
+		Account:  data.Get("account").(string),
+		User:     data.Get("user").(string),
+	})
+	if err != nil || issue == nil {
+		return nil, err
 	}
 
 	return createResponseIssueUserData(issue)
 }
 
+func (b *NatsBackend) pathUserIssueExistenceCheck(ctx context.Context, req *logical.Request, data *framework.FieldData) (bool, error) {
+	issue, err := readUserIssue(ctx, req.Storage, IssueUserParameters{
+		Operator: data.Get("operator").(string),
+		Account:  data.Get("account").(string),
+		User:     data.Get("user").(string),
+	})
+	if err != nil {
+		return false, err
+	}
+
+	return issue != nil, nil
+}
+
 func (b *NatsBackend) pathListUserIssues(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	err := data.Validate()
-	if err != nil {
-		return logical.ErrorResponse(InvalidParametersError), logical.ErrInvalidRequest
+	operator := data.Get("operator").(string)
+	account := data.Get("account").(string)
+	after := data.Get("after").(string)
+	limit := data.Get("limit").(int)
+	if limit <= 0 {
+		limit = -1
 	}
 
-	jsonString, err := json.Marshal(data.Raw)
+	path := getUserIssuePath(operator, account, "")
+	entries, err := req.Storage.ListPage(ctx, path, after, limit)
 	if err != nil {
-		return logical.ErrorResponse(DecodeFailedError), logical.ErrInvalidRequest
-	}
-	params := IssueUserParameters{}
-	json.Unmarshal(jsonString, &params)
-
-	entries, err := listUserIssues(ctx, req.Storage, params)
-	if err != nil {
-		return logical.ErrorResponse(ListIssuesFailedError), nil
+		return nil, err
 	}
 
-	return logical.ListResponse(entries), nil
+	return logical.ListResponse(filterSubkeys(entries)), nil
 }
 
 func (b *NatsBackend) pathDeleteUserIssue(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
@@ -348,59 +358,85 @@ func (b *NatsBackend) pathAddUserIssueRevocation(ctx context.Context, req *logic
 }
 
 func (b *NatsBackend) pathReadUserIssueRevocation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	err := data.Validate()
-	if err != nil {
-		return logical.ErrorResponse(InvalidParametersError), logical.ErrInvalidRequest
-	}
-
-	jsonString, err := json.Marshal(data.Raw)
-	if err != nil {
-		return logical.ErrorResponse(DecodeFailedError), logical.ErrInvalidRequest
-	}
-
-	params := UserRevocationParameters{}
-	err = json.Unmarshal(jsonString, &params) // Handle the error!
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to unmarshal parameters")
-		return logical.ErrorResponse("Failed to parse parameters"), logical.ErrInvalidRequest
-	}
+	operator := data.Get("operator").(string)
+	account := data.Get("account").(string)
+	user := data.Get("user").(string)
 
 	nkey, err := readUserNkey(ctx, req.Storage, NkeyParameters{
-		Operator: params.Operator,
-		Account:  params.Account,
-		User:     params.User,
+		Operator: operator,
+		Account:  account,
+		User:     user,
 	})
 	if err != nil {
-		return logical.ErrorResponse(ReadingIssueFailedError), nil
+		return nil, err
 	}
 
 	if nkey == nil {
-		return logical.ErrorResponse(IssueNotFoundError), logical.ErrUnsupportedPath
+		return nil, nil
 	}
 
 	nkeyData, err := toNkeyData(nkey)
 	if err != nil {
-		return logical.ErrorResponse(ReadingIssueFailedError), nil
+		return nil, err
 	}
 
 	if nkeyData == nil {
-		return logical.ErrorResponse(IssueNotFoundError), logical.ErrUnsupportedPath
+		return nil, nil
 	}
 
 	issue, err := readAccountRevocationIssue(ctx, req.Storage, IssueAccountRevocationParameters{
-		Operator: params.Operator,
-		Account:  params.Account,
+		Operator: operator,
+		Account:  account,
 		Subject:  nkeyData.PublicKey,
 	})
 	if err != nil {
-		return logical.ErrorResponse(AddingIssueFailedError), nil
+		return nil, err
 	}
 
 	if issue == nil {
-		return logical.ErrorResponse(IssueNotFoundError), logical.ErrUnsupportedPath
+		return nil, nil
 	}
 
 	return createResponseIssueAccountRevocationData(issue)
+}
+
+func (b *NatsBackend) pathUserIssueRevocationExistenceCheck(ctx context.Context, req *logical.Request, data *framework.FieldData) (bool, error) {
+	operator := data.Get("operator").(string)
+	account := data.Get("account").(string)
+	user := data.Get("user").(string)
+
+	nkey, err := readUserNkey(ctx, req.Storage, NkeyParameters{
+		Operator: operator,
+		Account:  account,
+		User:     user,
+	})
+	if err != nil {
+		return false, err
+	}
+
+	if nkey == nil {
+		return false, nil
+	}
+
+	nkeyData, err := toNkeyData(nkey)
+	if err != nil {
+		return false, err
+	}
+
+	if nkeyData == nil {
+		return false, nil
+	}
+
+	issue, err := readAccountRevocationIssue(ctx, req.Storage, IssueAccountRevocationParameters{
+		Operator: operator,
+		Account:  account,
+		Subject:  nkeyData.PublicKey,
+	})
+	if err != nil {
+		return false, err
+	}
+
+	return issue != nil, nil
 }
 
 func (b *NatsBackend) pathDeleteUserIssueRevocation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
@@ -511,11 +547,6 @@ func readUserIssue(ctx context.Context, storage logical.Storage, params IssueUse
 	return getFromStorage[IssueUserStorage](ctx, storage, path)
 }
 
-func listUserIssues(ctx context.Context, storage logical.Storage, params IssueUserParameters) ([]string, error) {
-	path := getUserIssuePath(params.Operator, params.Account, "")
-	return listIssues(ctx, storage, path)
-}
-
 func deleteUserIssue(ctx context.Context, storage logical.Storage, params IssueUserParameters) error {
 	// get stored issue
 	issue, err := readUserIssue(ctx, storage, params)
@@ -620,7 +651,7 @@ func refreshUserNKeys(ctx context.Context, storage logical.Storage, issue IssueU
 }
 
 func getUserIssuePath(operator string, account string, user string) string {
-	return "issue/operator/" + operator + "/account/" + account + "/user/" + user
+	return issueOperatorPrefix + operator + "/account/" + account + "/user/" + user
 }
 
 func createResponseIssueUserData(issue *IssueUserStorage) (*logical.Response, error) {

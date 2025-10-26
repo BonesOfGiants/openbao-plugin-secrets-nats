@@ -28,6 +28,7 @@ func pathOperatorJWT(b *NatsBackend) []*framework.Path {
 					Required:    false,
 				},
 			},
+			ExistenceCheck: b.pathOperatorJWTExistenceCheck,
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.CreateOperation: &framework.PathOperation{
 					Callback: b.pathAddOperatorJWT,
@@ -47,6 +48,18 @@ func pathOperatorJWT(b *NatsBackend) []*framework.Path {
 		},
 		{
 			Pattern: "jwt/operator/?$",
+			Fields: map[string]*framework.FieldSchema{
+				"after": {
+					Type:        framework.TypeString,
+					Description: `Optional entry to list begin listing after, not required to exist.`,
+					Required:    false,
+				},
+				"limit": {
+					Type:        framework.TypeInt,
+					Description: `Optional number of entries to return; defaults to all entries.`,
+					Required:    false,
+				},
+			},
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.ListOperation: &framework.PathOperation{
 					Callback: b.pathListOperatorJWTs,
@@ -80,41 +93,40 @@ func (b *NatsBackend) pathAddOperatorJWT(ctx context.Context, req *logical.Reque
 }
 
 func (b *NatsBackend) pathReadOperatorJWT(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	err := data.Validate()
-	if err != nil {
-		return logical.ErrorResponse(InvalidParametersError), logical.ErrInvalidRequest
-	}
-
-	var params JWTParameters
-	err = stm.MapToStruct(data.Raw, &params)
-	if err != nil {
-		return logical.ErrorResponse(DecodeFailedError), logical.ErrInvalidRequest
-	}
-
-	jwt, err := readOperatorJWT(ctx, req.Storage, params)
-	if err != nil {
-		return logical.ErrorResponse(ReadingJWTFailedError), nil
-	}
-
-	if jwt == nil {
-		return logical.ErrorResponse(JwtNotFoundError), logical.ErrUnsupportedPath
+	jwt, err := readOperatorJWT(ctx, req.Storage, JWTParameters{
+		Operator: data.Get("operator").(string),
+	})
+	if err != nil || jwt == nil {
+		return nil, err
 	}
 
 	return createResponseJWTData(jwt)
 }
 
+func (b *NatsBackend) pathOperatorJWTExistenceCheck(ctx context.Context, req *logical.Request, data *framework.FieldData) (bool, error) {
+	jwt, err := readOperatorJWT(ctx, req.Storage, JWTParameters{
+		Operator: data.Get("operator").(string),
+	})
+	if err != nil {
+		return false, err
+	}
+
+	return jwt != nil, nil
+}
+
 func (b *NatsBackend) pathListOperatorJWTs(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	err := data.Validate()
-	if err != nil {
-		return logical.ErrorResponse(InvalidParametersError), logical.ErrInvalidRequest
+	after := data.Get("after").(string)
+	limit := data.Get("limit").(int)
+	if limit <= 0 {
+		limit = -1
 	}
 
-	entries, err := listOperatorJWTs(ctx, req.Storage)
+	entries, err := req.Storage.ListPage(ctx, jwtOperatorPrefix, after, limit)
 	if err != nil {
-		return logical.ErrorResponse(ListJWTsFailedError), nil
+		return nil, err
 	}
 
-	return logical.ListResponse(entries), nil
+	return logical.ListResponse(filterSubkeys(entries)), nil
 }
 
 func (b *NatsBackend) pathDeleteOperatorJWT(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
@@ -179,11 +191,6 @@ func addOperatorJWT(ctx context.Context, storage logical.Storage, params JWTPara
 		addOperatorIssue(ctx, storage, iParams)
 	}
 	return nil
-}
-
-func listOperatorJWTs(ctx context.Context, storage logical.Storage) ([]string, error) {
-	path := getOperatorJWTPath("")
-	return listJWTs(ctx, storage, path)
 }
 
 func getOperatorJWTPath(operator string) string {

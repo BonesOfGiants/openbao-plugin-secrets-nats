@@ -28,6 +28,7 @@ func pathOperatorNkey(b *NatsBackend) []*framework.Path {
 					Required:    false,
 				},
 			},
+			ExistenceCheck: b.pathOperatorNkeyExistenceCheck,
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.CreateOperation: &framework.PathOperation{
 					Callback: b.pathAddOperatorNkey,
@@ -47,6 +48,18 @@ func pathOperatorNkey(b *NatsBackend) []*framework.Path {
 		},
 		{
 			Pattern: "nkey/operator/?$",
+			Fields: map[string]*framework.FieldSchema{
+				"after": {
+					Type:        framework.TypeString,
+					Description: `Optional entry to list begin listing after, not required to exist.`,
+					Required:    false,
+				},
+				"limit": {
+					Type:        framework.TypeInt,
+					Description: `Optional number of entries to return; defaults to all entries.`,
+					Required:    false,
+				},
+			},
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.ListOperation: &framework.PathOperation{
 					Callback: b.pathListOperatorNkeys,
@@ -78,41 +91,40 @@ func (b *NatsBackend) pathAddOperatorNkey(ctx context.Context, req *logical.Requ
 }
 
 func (b *NatsBackend) pathReadOperatorNkey(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	err := data.Validate()
-	if err != nil {
-		return logical.ErrorResponse(InvalidParametersError), logical.ErrInvalidRequest
-	}
-
-	var params NkeyParameters
-	err = stm.MapToStruct(data.Raw, &params)
-	if err != nil {
-		return logical.ErrorResponse(DecodeFailedError), logical.ErrInvalidRequest
-	}
-
-	nkey, err := readOperatorNkey(ctx, req.Storage, params)
-	if err != nil {
-		return logical.ErrorResponse(ReadingNkeyFailedError), nil
-	}
-
-	if nkey == nil {
-		return logical.ErrorResponse(NkeyNotFoundError), logical.ErrUnsupportedPath
+	nkey, err := readOperatorNkey(ctx, req.Storage, NkeyParameters{
+		Operator: data.Get("operator").(string),
+	})
+	if err != nil || nkey == nil {
+		return nil, err
 	}
 
 	return createResponseNkeyData(nkey)
 }
 
+func (b *NatsBackend) pathOperatorNkeyExistenceCheck(ctx context.Context, req *logical.Request, data *framework.FieldData) (bool, error) {
+	nkey, err := readOperatorNkey(ctx, req.Storage, NkeyParameters{
+		Operator: data.Get("operator").(string),
+	})
+	if err != nil {
+		return false, err
+	}
+
+	return nkey != nil, nil
+}
+
 func (b *NatsBackend) pathListOperatorNkeys(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	err := data.Validate()
-	if err != nil {
-		return logical.ErrorResponse(InvalidParametersError), logical.ErrInvalidRequest
+	after := data.Get("after").(string)
+	limit := data.Get("limit").(int)
+	if limit <= 0 {
+		limit = -1
 	}
 
-	entries, err := listOperatorNkeys(ctx, req.Storage)
+	entries, err := req.Storage.ListPage(ctx, nkeyOperatorPrefix, after, limit)
 	if err != nil {
-		return logical.ErrorResponse(ListNkeysFailedError), nil
+		return nil, err
 	}
 
-	return logical.ListResponse(entries), nil
+	return logical.ListResponse(filterSubkeys(entries)), nil
 }
 
 func (b *NatsBackend) pathDeleteOperatorNkey(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
@@ -169,11 +181,6 @@ func addOperatorNkey(ctx context.Context, storage logical.Storage, params NkeyPa
 		addOperatorIssue(ctx, storage, iParams)
 	}
 	return nil
-}
-
-func listOperatorNkeys(ctx context.Context, storage logical.Storage) ([]string, error) {
-	path := getOperatorNkeyPath("")
-	return listNkeys(ctx, storage, path)
 }
 
 func getOperatorNkeyPath(operator string) string {

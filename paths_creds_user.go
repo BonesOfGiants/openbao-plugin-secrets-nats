@@ -62,6 +62,7 @@ func pathUserCreds(b *NatsBackend) []*framework.Path {
 					Required:    false,
 				},
 			},
+			ExistenceCheck: b.pathUserCredsExistenceCheck,
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.ReadOperation: &framework.PathOperation{
 					Callback: b.pathReadUserCreds,
@@ -83,6 +84,16 @@ func pathUserCreds(b *NatsBackend) []*framework.Path {
 					Description: "account identifier",
 					Required:    false,
 				},
+				"after": {
+					Type:        framework.TypeString,
+					Description: `Optional entry to list begin listing after, not required to exist.`,
+					Required:    false,
+				},
+				"limit": {
+					Type:        framework.TypeInt,
+					Description: `Optional number of entries to return; defaults to all entries.`,
+					Required:    false,
+				},
 			},
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.ListOperation: &framework.PathOperation{
@@ -96,11 +107,6 @@ func pathUserCreds(b *NatsBackend) []*framework.Path {
 }
 
 func (b *NatsBackend) pathReadUserCreds(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	err := data.Validate()
-	if err != nil {
-		return logical.ErrorResponse(InvalidParametersError), logical.ErrInvalidRequest
-	}
-
 	// Extract path parameters directly from data.Raw
 	params := UserCredsParameters{
 		Operator: data.Get("operator").(string),
@@ -128,7 +134,6 @@ func (b *NatsBackend) pathReadUserCreds(ctx context.Context, req *logical.Reques
 		}
 	}
 
-	// Generate fresh credentials on-demand
 	userCreds, err := generateUserCreds(ctx, req.Storage, params)
 	if err != nil {
 		return logical.ErrorResponse(fmt.Sprintf("GeneratingCredsFailedError: %s", err.Error())), err
@@ -163,23 +168,22 @@ func parseKeyValueString(input string, result map[string]string) error {
 }
 
 func (b *NatsBackend) pathListUserCreds(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	err := data.Validate()
+	// defer to user issues list,
+	// since we don't keep storage for user creds
+	return b.pathListUserIssues(ctx, req, data)
+}
+
+func (b *NatsBackend) pathUserCredsExistenceCheck(ctx context.Context, req *logical.Request, data *framework.FieldData) (bool, error) {
+	issue, err := readUserIssue(ctx, req.Storage, IssueUserParameters{
+		Operator: data.Get("operator").(string),
+		Account:  data.Get("account").(string),
+		User:     data.Get("user").(string),
+	})
 	if err != nil {
-		return logical.ErrorResponse(InvalidParametersError), logical.ErrInvalidRequest
+		return false, err
 	}
 
-	var params UserCredsParameters
-	err = stm.MapToStruct(data.Raw, &params)
-	if err != nil {
-		return logical.ErrorResponse(DecodeFailedError), logical.ErrInvalidRequest
-	}
-
-	entries, err := listUserCreds(ctx, req.Storage, params)
-	if err != nil {
-		return logical.ErrorResponse(ListCredsFailedError), nil
-	}
-
-	return logical.ListResponse(entries), nil
+	return issue != nil, nil
 }
 
 func generateUserCreds(ctx context.Context, storage logical.Storage, params UserCredsParameters) (*UserCredsData, error) {
@@ -443,12 +447,6 @@ func generateUserJWT(ctx context.Context, storage logical.Storage, issue IssueUs
 		Msg("fresh JWT generated")
 
 	return token, expiresAt, nil
-}
-
-func listUserCreds(ctx context.Context, storage logical.Storage, params UserCredsParameters) ([]string, error) {
-	// List user issues (templates) instead of stored creds
-	path := getUserIssuePath(params.Operator, params.Account, "")
-	return listIssues(ctx, storage, path)
 }
 
 func createResponseUserCredsData(UserCredsData *UserCredsData) (*logical.Response, error) {

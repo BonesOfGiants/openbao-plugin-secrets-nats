@@ -42,8 +42,13 @@ func TestCRUDOperatorJWTs(t *testing.T) {
 			Path:      path,
 			Storage:   reqStorage,
 		})
-		assert.Equal(t, logical.ErrUnsupportedPath, err)
-		assert.True(t, resp.IsError())
+		if err != nil || (resp != nil && resp.IsError()) {
+			t.Fatalf("operator signing nkey ReadOperation request failed, err: %s, resp %#v", err, resp)
+		}
+
+		if resp != nil {
+			t.Fatalf("expected nil resp for operator signing nkey ReadOperation resp: %#v", resp)
+		}
 
 		resp, err = b.HandleRequest(context.Background(), &logical.Request{
 			Operation: logical.DeleteOperation,
@@ -128,8 +133,13 @@ func TestCRUDOperatorJWTs(t *testing.T) {
 			Path:      path,
 			Storage:   reqStorage,
 		})
-		assert.Equal(t, logical.ErrUnsupportedPath, err)
-		assert.True(t, resp.IsError())
+		if err != nil || (resp != nil && resp.IsError()) {
+			t.Fatalf("operator signing nkey ReadOperation request failed, err: %s, resp %#v", err, resp)
+		}
+
+		if resp != nil {
+			t.Fatalf("expected nil resp for operator signing nkey ReadOperation resp: %#v", resp)
+		}
 
 		// then recreate the key and read and delete it
 		resp, err = b.HandleRequest(context.Background(), &logical.Request{

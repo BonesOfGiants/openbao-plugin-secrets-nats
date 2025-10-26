@@ -48,8 +48,13 @@ func TestCRUDAccountImportIssue(t *testing.T) {
 			Path:      path,
 			Storage:   reqStorage,
 		})
-		assert.Equal(t, logical.ErrUnsupportedPath, err)
-		assert.True(t, resp.IsError())
+		if err != nil || (resp != nil && resp.IsError()) {
+			t.Fatalf("account import ReadOperation request failed, err: %s, resp %#v", err, resp)
+		}
+
+		if resp != nil {
+			t.Fatalf("expected nil resp for account import ReadOperation resp: %#v", resp)
+		}
 
 		resp, err = b.HandleRequest(context.Background(), &logical.Request{
 			Operation: logical.DeleteOperation,
@@ -245,8 +250,13 @@ func TestCRUDAccountImportIssue(t *testing.T) {
 			Path:      path,
 			Storage:   reqStorage,
 		})
-		assert.Equal(t, logical.ErrUnsupportedPath, err)
-		assert.True(t, resp.IsError())
+		if err != nil || (resp != nil && resp.IsError()) {
+			t.Fatalf("account import ReadOperation request failed, err: %s, resp %#v", err, resp)
+		}
+
+		if resp != nil {
+			t.Fatalf("expected nil resp for account import ReadOperation resp: %#v", resp)
+		}
 
 		//////////////////////////
 		// Then recreate the key

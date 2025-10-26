@@ -82,6 +82,7 @@ func pathAccountIssue(b *NatsBackend) []*framework.Path {
 					Required:    false,
 				},
 			},
+			ExistenceCheck: b.pathAccountIssueExistenceCheck,
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.CreateOperation: &framework.PathOperation{
 					Callback: b.pathAddAccountIssue,
@@ -105,6 +106,16 @@ func pathAccountIssue(b *NatsBackend) []*framework.Path {
 				"operator": {
 					Type:        framework.TypeString,
 					Description: "operator identifier",
+					Required:    false,
+				},
+				"after": {
+					Type:        framework.TypeString,
+					Description: `Optional entry to list begin listing after, not required to exist.`,
+					Required:    false,
+				},
+				"limit": {
+					Type:        framework.TypeInt,
+					Description: `Optional number of entries to return; defaults to all entries.`,
 					Required:    false,
 				},
 			},
@@ -139,74 +150,60 @@ func (b *NatsBackend) pathAddAccountIssue(ctx context.Context, req *logical.Requ
 }
 
 func (b *NatsBackend) pathReadAccountIssue(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	err := data.Validate()
-	if err != nil {
-		return logical.ErrorResponse(InvalidParametersError), logical.ErrInvalidRequest
-	}
-
-	jsonString, err := json.Marshal(data.Raw)
-	if err != nil {
-		return logical.ErrorResponse(DecodeFailedError), logical.ErrInvalidRequest
-	}
-	params := IssueAccountParameters{}
-	json.Unmarshal(jsonString, &params)
-
-	issue, err := readAccountIssue(ctx, req.Storage, params)
-	if err != nil {
-		return logical.ErrorResponse(ReadingIssueFailedError), nil
-	}
-
-	if issue == nil {
-		return logical.ErrorResponse(IssueNotFoundError), logical.ErrUnsupportedPath
+	issue, err := readAccountIssue(ctx, req.Storage, IssueAccountParameters{
+		Operator: data.Get("operator").(string),
+		Account:  data.Get("account").(string),
+	})
+	if err != nil || issue == nil {
+		return nil, err
 	}
 
 	return createResponseIssueAccountData(issue)
 }
 
+func (b *NatsBackend) pathAccountIssueExistenceCheck(ctx context.Context, req *logical.Request, data *framework.FieldData) (bool, error) {
+	issue, err := readAccountIssue(ctx, req.Storage, IssueAccountParameters{
+		Operator: data.Get("operator").(string),
+		Account:  data.Get("account").(string),
+	})
+	if err != nil {
+		return false, err
+	}
+
+	return issue != nil, nil
+}
+
 func (b *NatsBackend) pathListAccountIssue(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	err := data.Validate()
-	if err != nil {
-		return logical.ErrorResponse(InvalidParametersError), logical.ErrInvalidRequest
+	operator := data.Get("operator").(string)
+	after := data.Get("after").(string)
+	limit := data.Get("limit").(int)
+	if limit <= 0 {
+		limit = -1
 	}
 
-	jsonString, err := json.Marshal(data.Raw)
+	path := getAccountIssuePath(operator, "")
+	entries, err := req.Storage.ListPage(ctx, path, after, limit)
 	if err != nil {
-		return logical.ErrorResponse(DecodeFailedError), logical.ErrInvalidRequest
-	}
-	params := IssueAccountParameters{}
-	json.Unmarshal(jsonString, &params)
-
-	entries, err := listAccountIssues(ctx, req.Storage, params.Operator)
-	if err != nil {
-		return logical.ErrorResponse(ListIssuesFailedError), nil
+		return nil, err
 	}
 
-	return logical.ListResponse(entries), nil
+	return logical.ListResponse(filterSubkeys(entries)), nil
 }
 
 func (b *NatsBackend) pathDeleteAccountIssue(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	err := data.Validate()
-	if err != nil {
-		return logical.ErrorResponse(InvalidParametersError), logical.ErrInvalidRequest
-	}
-
-	jsonString, err := json.Marshal(data.Raw)
-	if err != nil {
-		return logical.ErrorResponse(DecodeFailedError), logical.ErrInvalidRequest
-	}
-	params := IssueAccountParameters{}
-	json.Unmarshal(jsonString, &params)
-
 	// delete issue and all related nkeys and jwt
-	err = deleteAccountIssue(ctx, req.Storage, params)
+	err := deleteAccountIssue(ctx, req.Storage, IssueAccountParameters{
+		Operator: data.Get("operator").(string),
+		Account:  data.Get("account").(string),
+	})
 	if err != nil {
-		return logical.ErrorResponse(DeleteIssueFailedError), nil
+		return nil, err
 	}
+
 	return nil, nil
 }
 
 func addAccountIssue(ctx context.Context, storage logical.Storage, params IssueAccountParameters) error {
-
 	log.Info().
 		Str("operator", params.Operator).Str("account", params.Account).
 		Msgf("issue account")
@@ -254,11 +251,6 @@ func refreshAccount(ctx context.Context, storage logical.Storage, issue *IssueAc
 func readAccountIssue(ctx context.Context, storage logical.Storage, params IssueAccountParameters) (*IssueAccountStorage, error) {
 	path := getAccountIssuePath(params.Operator, params.Account)
 	return getFromStorage[IssueAccountStorage](ctx, storage, path)
-}
-
-func listAccountIssues(ctx context.Context, storage logical.Storage, operator string) ([]string, error) {
-	path := getAccountIssuePath(operator, "")
-	return listIssues(ctx, storage, path)
 }
 
 func deleteAccountIssue(ctx context.Context, storage logical.Storage, params IssueAccountParameters) error {
@@ -610,10 +602,8 @@ func issueAccountJWT(ctx context.Context, storage logical.Storage, issue IssueAc
 
 func updateUserIssues(ctx context.Context, storage logical.Storage, issue IssueAccountStorage) error {
 
-	users, err := listUserIssues(ctx, storage, IssueUserParameters{
-		Operator: issue.Operator,
-		Account:  issue.Account,
-	})
+	path := getUserIssuePath(issue.Operator, issue.Account, "")
+	users, err := storage.List(ctx, path)
 	if err != nil {
 		return err
 	}
@@ -850,7 +840,7 @@ func refreshAccountResolver(ctx context.Context, storage logical.Storage, issue 
 }
 
 func getAccountIssuePath(operator string, account string) string {
-	return "issue/operator/" + operator + "/account/" + account
+	return issueOperatorPrefix + operator + "/account/" + account
 }
 
 func createResponseIssueAccountData(issue *IssueAccountStorage) (*logical.Response, error) {

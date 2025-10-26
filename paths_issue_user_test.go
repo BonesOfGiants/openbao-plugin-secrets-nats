@@ -10,10 +10,10 @@ import (
 	"testing"
 
 	"github.com/openbao/openbao/sdk/v2/logical"
+	"gonum.org/v1/gonum/stat/combin"
 
 	"github.com/nats-io/jwt/v2"
 	"github.com/stretchr/testify/assert"
-	"gonum.org/v1/gonum/stat/combin"
 
 	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/claims/common"
 	userv1 "github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/claims/user/v1alpha1"
@@ -54,8 +54,13 @@ func TestCRUDUserIssue(t *testing.T) {
 			Path:      path,
 			Storage:   reqStorage,
 		})
-		assert.Equal(t, logical.ErrUnsupportedPath, err)
-		assert.True(t, resp.IsError())
+		if err != nil || (resp != nil && resp.IsError()) {
+			t.Fatalf("operator signing nkey ReadOperation request failed, err: %s, resp %#v", err, resp)
+		}
+
+		if resp != nil {
+			t.Fatalf("expected nil resp for operator signing nkey ReadOperation resp: %#v", resp)
+		}
 
 		resp, err = b.HandleRequest(context.Background(), &logical.Request{
 			Operation: logical.DeleteOperation,
@@ -270,8 +275,13 @@ func TestCRUDUserIssue(t *testing.T) {
 			Path:      path,
 			Storage:   reqStorage,
 		})
-		assert.Equal(t, logical.ErrUnsupportedPath, err)
-		assert.True(t, resp.IsError())
+		if err != nil || (resp != nil && resp.IsError()) {
+			t.Fatalf("operator signing nkey ReadOperation request failed, err: %s, resp %#v", err, resp)
+		}
+
+		if resp != nil {
+			t.Fatalf("expected nil resp for operator signing nkey ReadOperation resp: %#v", resp)
+		}
 
 		//////////////////////////
 		// Then recreate the key
@@ -434,8 +444,13 @@ func TestCRUDUserIssue(t *testing.T) {
 			Path:      "nkey/operator/op1/account/ac1/user/us1",
 			Storage:   reqStorage,
 		})
-		assert.Equal(t, logical.ErrUnsupportedPath, err)
-		assert.True(t, resp.IsError())
+		if err != nil || (resp != nil && resp.IsError()) {
+			t.Fatalf("operator signing nkey ReadOperation request failed, err: %s, resp %#v", err, resp)
+		}
+
+		if resp != nil {
+			t.Fatalf("expected nil resp for operator signing nkey ReadOperation resp: %#v", resp)
+		}
 
 		//////////////////////////
 		// read the jwt (should fail)
@@ -581,8 +596,13 @@ func TestCRUDUserIssue(t *testing.T) {
 			Path:      nkeyUserPath,
 			Storage:   reqStorage,
 		})
-		assert.Equal(t, logical.ErrUnsupportedPath, err)
-		assert.True(t, resp.IsError())
+		if err != nil || (resp != nil && resp.IsError()) {
+			t.Fatalf("operator signing nkey ReadOperation request failed, err: %s, resp %#v", err, resp)
+		}
+
+		if resp != nil {
+			t.Fatalf("expected nil resp for operator signing nkey ReadOperation resp: %#v", resp)
+		}
 
 		//////////////////////////
 		// read the jwt

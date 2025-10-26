@@ -63,6 +63,7 @@ func pathAccountImportIssue(b *NatsBackend) []*framework.Path {
 					Required:    false,
 				},
 			},
+			ExistenceCheck: b.pathAccountImportIssueExistenceCheck,
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.CreateOperation: &framework.PathOperation{
 					Callback: b.pathAddAccountImportIssue,
@@ -91,6 +92,16 @@ func pathAccountImportIssue(b *NatsBackend) []*framework.Path {
 				"account": {
 					Type:        framework.TypeString,
 					Description: "account identifier",
+					Required:    false,
+				},
+				"after": {
+					Type:        framework.TypeString,
+					Description: `Optional entry to list begin listing after, not required to exist.`,
+					Required:    false,
+				},
+				"limit": {
+					Type:        framework.TypeInt,
+					Description: `Optional number of entries to return; defaults to all entries.`,
 					Required:    false,
 				},
 			},
@@ -136,49 +147,47 @@ func (b *NatsBackend) pathAddAccountImportIssue(ctx context.Context, req *logica
 }
 
 func (b *NatsBackend) pathReadAccountImportIssue(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	err := data.Validate()
-	if err != nil {
-		return logical.ErrorResponse(InvalidParametersError), logical.ErrInvalidRequest
-	}
-
-	jsonString, err := json.Marshal(data.Raw)
-	if err != nil {
-		return logical.ErrorResponse(DecodeFailedError), logical.ErrInvalidRequest
-	}
-	params := IssueAccountImportParameters{}
-	json.Unmarshal(jsonString, &params)
-
-	issue, err := readAccountImportIssue(ctx, req.Storage, params)
-	if err != nil {
-		return logical.ErrorResponse(ReadingIssueFailedError), nil
-	}
-
-	if issue == nil {
-		return logical.ErrorResponse(IssueNotFoundError), logical.ErrUnsupportedPath
+	issue, err := readAccountImportIssue(ctx, req.Storage, IssueAccountImportParameters{
+		Operator: data.Get("operator").(string),
+		Account:  data.Get("account").(string),
+		Alias:    data.Get("alias").(string),
+	})
+	if err != nil || issue == nil {
+		return nil, err
 	}
 
 	return createResponseIssueAccountImportData(issue)
 }
 
+func (b *NatsBackend) pathAccountImportIssueExistenceCheck(ctx context.Context, req *logical.Request, data *framework.FieldData) (bool, error) {
+	issue, err := readAccountImportIssue(ctx, req.Storage, IssueAccountImportParameters{
+		Operator: data.Get("operator").(string),
+		Account:  data.Get("account").(string),
+		Alias:    data.Get("alias").(string),
+	})
+	if err != nil {
+		return false, err
+	}
+
+	return issue != nil, nil
+}
+
 func (b *NatsBackend) pathListAccountImportIssues(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	err := data.Validate()
-	if err != nil {
-		return logical.ErrorResponse(InvalidParametersError), logical.ErrInvalidRequest
+	operator := data.Get("operator").(string)
+	account := data.Get("account").(string)
+	after := data.Get("after").(string)
+	limit := data.Get("limit").(int)
+	if limit <= 0 {
+		limit = -1
 	}
 
-	jsonString, err := json.Marshal(data.Raw)
+	path := getAccountImportIssuePath(operator, account, "")
+	entries, err := req.Storage.ListPage(ctx, path, after, limit)
 	if err != nil {
-		return logical.ErrorResponse(DecodeFailedError), logical.ErrInvalidRequest
-	}
-	params := IssueAccountImportParameters{}
-	json.Unmarshal(jsonString, &params)
-
-	entries, err := listAccountImportIssues(ctx, req.Storage, params)
-	if err != nil {
-		return logical.ErrorResponse(ListIssuesFailedError), nil
+		return nil, err
 	}
 
-	return logical.ListResponse(entries), nil
+	return logical.ListResponse(filterSubkeys(entries)), nil
 }
 
 func (b *NatsBackend) pathDeleteAccountImportIssue(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
@@ -251,10 +260,6 @@ func readAllAccountImportIssues(ctx context.Context, storage logical.Storage, pa
 	}
 
 	return issues, nil
-}
-func listAccountImportIssues(ctx context.Context, storage logical.Storage, params IssueAccountImportParameters) ([]string, error) {
-	path := getAccountImportIssuePath(params.Operator, params.Account, "")
-	return listIssues(ctx, storage, path)
 }
 
 func deleteAccountImportIssue(ctx context.Context, storage logical.Storage, params IssueAccountImportParameters) error {
@@ -333,7 +338,7 @@ func storeAccountImportIssue(ctx context.Context, storage logical.Storage, param
 }
 
 func getAccountImportIssuePath(operator string, account string, alias string) string {
-	return "issue/operator/" + operator + "/account/" + account + "/import/" + alias
+	return issueOperatorPrefix + operator + "/account/" + account + "/import/" + alias
 }
 
 func createResponseIssueAccountImportData(issue *IssueAccountImportStorage) (*logical.Response, error) {

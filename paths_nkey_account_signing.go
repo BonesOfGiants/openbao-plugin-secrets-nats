@@ -67,6 +67,16 @@ func pathAccountSigningNkey(b *NatsBackend) []*framework.Path {
 					Description: "account identifier",
 					Required:    false,
 				},
+				"after": {
+					Type:        framework.TypeString,
+					Description: `Optional entry to list begin listing after, not required to exist.`,
+					Required:    false,
+				},
+				"limit": {
+					Type:        framework.TypeInt,
+					Description: `Optional number of entries to return; defaults to all entries.`,
+					Required:    false,
+				},
 			},
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.ListOperation: &framework.PathOperation{
@@ -99,27 +109,29 @@ func (b *NatsBackend) pathAddAccountSigningNkey(ctx context.Context, req *logica
 }
 
 func (b *NatsBackend) pathReadAccountSigningNkey(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	err := data.Validate()
-	if err != nil {
-		return logical.ErrorResponse(InvalidParametersError), logical.ErrInvalidRequest
-	}
-
-	var params NkeyParameters
-	err = stm.MapToStruct(data.Raw, &params)
-	if err != nil {
-		return logical.ErrorResponse(DecodeFailedError), logical.ErrInvalidRequest
-	}
-
-	nkey, err := readAccountSigningNkey(ctx, req.Storage, params)
-	if err != nil {
-		return logical.ErrorResponse(ReadingNkeyFailedError), nil
-	}
-
-	if nkey == nil {
-		return logical.ErrorResponse(NkeyNotFoundError), logical.ErrUnsupportedPath
+	nkey, err := readAccountSigningNkey(ctx, req.Storage, NkeyParameters{
+		Operator: data.Get("operator").(string),
+		Account:  data.Get("account").(string),
+		Signing:  data.Get("signing").(string),
+	})
+	if err != nil || nkey == nil {
+		return nil, err
 	}
 
 	return createResponseNkeyData(nkey)
+}
+
+func (b *NatsBackend) pathAccountSigningNkeyExistenceCheck(ctx context.Context, req *logical.Request, data *framework.FieldData) (bool, error) {
+	nkey, err := readAccountSigningNkey(ctx, req.Storage, NkeyParameters{
+		Operator: data.Get("operator").(string),
+		Account:  data.Get("account").(string),
+		Signing:  data.Get("signing").(string),
+	})
+	if err != nil {
+		return false, err
+	}
+
+	return nkey != nil, nil
 }
 
 func (b *NatsBackend) pathListAccountSigningNkeys(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
@@ -128,18 +140,21 @@ func (b *NatsBackend) pathListAccountSigningNkeys(ctx context.Context, req *logi
 		return logical.ErrorResponse(InvalidParametersError), logical.ErrInvalidRequest
 	}
 
-	var params NkeyParameters
-	err = stm.MapToStruct(data.Raw, &params)
-	if err != nil {
-		return logical.ErrorResponse(DecodeFailedError), logical.ErrInvalidRequest
+	operator := data.Get("operator").(string)
+	account := data.Get("account").(string)
+	after := data.Get("after").(string)
+	limit := data.Get("limit").(int)
+	if limit <= 0 {
+		limit = -1
 	}
 
-	entries, err := listAccountSigningNkeys(ctx, req.Storage, params)
+	path := getAccountSigningNkeyPath(operator, account, "")
+	entries, err := req.Storage.ListPage(ctx, path, after, limit)
 	if err != nil {
-		return logical.ErrorResponse(ListNkeysFailedError), nil
+		return nil, err
 	}
 
-	return logical.ListResponse(entries), nil
+	return logical.ListResponse(filterSubkeys(entries)), nil
 }
 
 func (b *NatsBackend) pathDeleteAccountSigningNkey(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
@@ -197,11 +212,6 @@ func addAccountSigningNkey(ctx context.Context, storage logical.Storage, params 
 		addAccountIssue(ctx, storage, iParams)
 	}
 	return nil
-}
-
-func listAccountSigningNkeys(ctx context.Context, storage logical.Storage, params NkeyParameters) ([]string, error) {
-	path := getAccountSigningNkeyPath(params.Operator, params.Account, "")
-	return listNkeys(ctx, storage, path)
 }
 
 func getAccountSigningNkeyPath(operator string, account string, signing string) string {

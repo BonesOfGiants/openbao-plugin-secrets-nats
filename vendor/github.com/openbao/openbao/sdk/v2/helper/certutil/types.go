@@ -31,7 +31,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hashicorp/errwrap"
 	"github.com/openbao/openbao/sdk/v2/helper/errutil"
 )
 
@@ -315,7 +314,7 @@ func (p *ParsedCertBundle) ToCertBundle() (*CertBundle, error) {
 		result.SerialNumber = strings.TrimSpace(GetHexFormatted(p.Certificate.SerialNumber.Bytes(), ":"))
 	}
 
-	if p.CertificateBytes != nil && len(p.CertificateBytes) > 0 {
+	if len(p.CertificateBytes) > 0 {
 		block.Bytes = p.CertificateBytes
 		result.Certificate = strings.TrimSpace(string(pem.EncodeToMemory(&block)))
 	}
@@ -327,7 +326,7 @@ func (p *ParsedCertBundle) ToCertBundle() (*CertBundle, error) {
 		result.CAChain = append(result.CAChain, certificate)
 	}
 
-	if p.PrivateKeyBytes != nil && len(p.PrivateKeyBytes) > 0 {
+	if len(p.PrivateKeyBytes) > 0 {
 		block.Type = string(p.PrivateKeyFormat)
 		block.Bytes = p.PrivateKeyBytes
 		result.PrivateKeyType = p.PrivateKeyType
@@ -358,7 +357,7 @@ func (p *ParsedCertBundle) Verify() error {
 	if p.PrivateKey != nil && p.Certificate != nil {
 		equal, err := ComparePublicKeys(p.Certificate.PublicKey, p.PrivateKey.Public())
 		if err != nil {
-			return errwrap.Wrapf("could not compare public and private keys: {{err}}", err)
+			return fmt.Errorf("could not compare public and private keys: %w", err)
 		}
 		if !equal {
 			return errors.New("public key of certificate does not match private key")
@@ -411,7 +410,7 @@ func (p *ParsedCertBundle) getSigner() (crypto.Signer, error) {
 	var signer crypto.Signer
 	var err error
 
-	if p.PrivateKeyBytes == nil || len(p.PrivateKeyBytes) == 0 {
+	if len(p.PrivateKeyBytes) == 0 {
 		return nil, errutil.UserError{Err: "Given parsed cert bundle does not have private key information"}
 	}
 
@@ -569,12 +568,12 @@ func (p *ParsedCSRBundle) ToCSRBundle() (*CSRBundle, error) {
 		Type: "CERTIFICATE REQUEST",
 	}
 
-	if p.CSRBytes != nil && len(p.CSRBytes) > 0 {
+	if len(p.CSRBytes) > 0 {
 		block.Bytes = p.CSRBytes
 		result.CSR = strings.TrimSpace(string(pem.EncodeToMemory(&block)))
 	}
 
-	if p.PrivateKeyBytes != nil && len(p.PrivateKeyBytes) > 0 {
+	if len(p.PrivateKeyBytes) > 0 {
 		block.Bytes = p.PrivateKeyBytes
 		switch p.PrivateKeyType {
 		case RSAPrivateKey:
@@ -603,7 +602,7 @@ func (p *ParsedCSRBundle) getSigner() (crypto.Signer, error) {
 	var signer crypto.Signer
 	var err error
 
-	if p.PrivateKeyBytes == nil || len(p.PrivateKeyBytes) == 0 {
+	if len(p.PrivateKeyBytes) == 0 {
 		return nil, errutil.UserError{Err: "Given parsed cert bundle does not have private key information"}
 	}
 
@@ -662,7 +661,7 @@ func (p *ParsedCertBundle) GetTLSConfig(usage TLSUsage) (*tls.Config, error) {
 		tlsCert.PrivateKey = p.PrivateKey
 	}
 
-	if p.CertificateBytes != nil && len(p.CertificateBytes) > 0 {
+	if len(p.CertificateBytes) > 0 {
 		tlsCert.Certificate = append(tlsCert.Certificate, p.CertificateBytes)
 	}
 
@@ -674,7 +673,7 @@ func (p *ParsedCertBundle) GetTLSConfig(usage TLSUsage) (*tls.Config, error) {
 		// Technically we only need one cert, but this doesn't duplicate code
 		certBundle, err := p.ToCertBundle()
 		if err != nil {
-			return nil, errwrap.Wrapf("error converting parsed bundle to string bundle when getting TLS config: {{err}}", err)
+			return nil, fmt.Errorf("error converting parsed bundle to string bundle when getting TLS config: %w", err)
 		}
 
 		caPool := x509.NewCertPool()
@@ -692,7 +691,7 @@ func (p *ParsedCertBundle) GetTLSConfig(usage TLSUsage) (*tls.Config, error) {
 		}
 	}
 
-	if tlsCert.Certificate != nil && len(tlsCert.Certificate) > 0 {
+	if len(tlsCert.Certificate) > 0 {
 		tlsConfig.Certificates = []tls.Certificate{tlsCert}
 	}
 
@@ -929,7 +928,7 @@ func (p *KeyBundle) SetParsedPrivateKey(privateKey crypto.Signer, privateKeyType
 func (p *KeyBundle) ToPrivateKeyPemString() (string, error) {
 	block := pem.Block{}
 
-	if p.PrivateKeyBytes != nil && len(p.PrivateKeyBytes) > 0 {
+	if len(p.PrivateKeyBytes) > 0 {
 		block.Bytes = p.PrivateKeyBytes
 		switch p.PrivateKeyType {
 		case RSAPrivateKey:
@@ -948,9 +947,9 @@ func (p *KeyBundle) ToPrivateKeyPemString() (string, error) {
 
 // PolicyIdentifierWithQualifierEntry Structure for Internal Storage
 type PolicyIdentifierWithQualifierEntry struct {
-	PolicyIdentifierOid string `json:"oid",mapstructure:"oid"`
-	CPS                 string `json:"cps,omitempty",mapstructure:"cps"`
-	Notice              string `json:"notice,omitempty",mapstructure:"notice"`
+	PolicyIdentifierOid string `json:"oid" mapstructure:"oid"`
+	CPS                 string `json:"cps,omitempty" mapstructure:"cps"`
+	Notice              string `json:"notice,omitempty" mapstructure:"notice"`
 }
 
 // GetPolicyIdentifierFromString parses out the internal structure of a Policy Identifier
@@ -968,7 +967,7 @@ func GetPolicyIdentifierFromString(policyIdentifier string) (*PolicyIdentifierWi
 	// Now Check If JSON Entry
 	jsonErr := json.Unmarshal([]byte(policyIdentifier), &entry)
 	if jsonErr != nil { // Neither, if we got here
-		return entry, errors.New(fmt.Sprintf("Policy Identifier %q is neither a valid OID: %s, Nor JSON Policy Identifier: %s", policyIdentifier, err.Error(), jsonErr.Error()))
+		return entry, fmt.Errorf("Policy Identifier %q is neither a valid OID: %s, Nor JSON Policy Identifier: %s", policyIdentifier, err.Error(), jsonErr.Error())
 	}
 	return entry, nil
 }

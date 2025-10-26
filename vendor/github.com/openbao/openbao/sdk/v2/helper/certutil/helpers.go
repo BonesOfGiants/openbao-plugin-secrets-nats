@@ -28,7 +28,6 @@ import (
 	"time"
 
 	"github.com/go-viper/mapstructure/v2"
-	"github.com/hashicorp/errwrap"
 	"github.com/openbao/openbao/sdk/v2/helper/errutil"
 	"github.com/openbao/openbao/sdk/v2/helper/jsonutil"
 	"golang.org/x/crypto/cryptobyte"
@@ -101,7 +100,7 @@ func GetHexFormatted(buf []byte, sep string) string {
 	var ret bytes.Buffer
 	for _, cur := range buf {
 		if ret.Len() > 0 {
-			fmt.Fprintf(&ret, sep)
+			fmt.Fprintf(&ret, "%s", sep)
 		}
 		fmt.Fprintf(&ret, "%02x", cur)
 	}
@@ -477,13 +476,13 @@ func ComparePublicKeys(key1Iface, key2Iface crypto.PublicKey) (bool, error) {
 }
 
 // ParsePublicKeyPEM is used to parse RSA and ECDSA public keys from PEMs
-func ParsePublicKeyPEM(data []byte) (interface{}, error) {
+func ParsePublicKeyPEM(data []byte) (crypto.PublicKey, error) {
 	block, data := pem.Decode(data)
 	if block != nil {
 		if len(bytes.TrimSpace(data)) > 0 {
 			return nil, errutil.UserError{Err: "unexpected trailing data after parsed PEM block"}
 		}
-		var rawKey interface{}
+		var rawKey any
 		var err error
 		if rawKey, err = x509.ParsePKIXPublicKey(block.Bytes); err != nil {
 			if cert, err := x509.ParseCertificate(block.Bytes); err == nil {
@@ -936,7 +935,7 @@ func createCertificate(data *CreationBundle, randReader io.Reader, privateKeyGen
 	}
 
 	if err := HandleOtherSANs(certTemplate, data.Params.OtherSANs); err != nil {
-		return nil, errutil.InternalError{Err: errwrap.Wrapf("error marshaling other SANs: {{err}}", err).Error()}
+		return nil, errutil.InternalError{Err: fmt.Errorf("error marshaling other SANs: %w", err).Error()}
 	}
 
 	// Add this before calling addKeyUsages
@@ -1270,7 +1269,7 @@ func createCSR(data *CreationBundle, addBasicConstraints bool, randReader io.Rea
 	}
 
 	if err := HandleOtherCSRSANs(csrTemplate, data.Params.OtherSANs); err != nil {
-		return nil, errutil.InternalError{Err: errwrap.Wrapf("error marshaling other SANs: {{err}}", err).Error()}
+		return nil, errutil.InternalError{Err: fmt.Errorf("error marshaling other SANs: %w", err).Error()}
 	}
 
 	if addBasicConstraints {
@@ -1280,7 +1279,7 @@ func createCSR(data *CreationBundle, addBasicConstraints bool, randReader io.Rea
 		}
 		val, err := asn1.Marshal(basicConstraints{IsCA: true, MaxPathLen: -1})
 		if err != nil {
-			return nil, errutil.InternalError{Err: errwrap.Wrapf("error marshaling basic constraints: {{err}}", err).Error()}
+			return nil, errutil.InternalError{Err: fmt.Errorf("error marshaling basic constraints: %w", err).Error()}
 		}
 		ext := pkix.Extension{
 			Id:       ExtensionBasicConstraintsOID,
@@ -1413,7 +1412,7 @@ func signCertificate(data *CreationBundle, randReader io.Reader) (*ParsedCertBun
 	}
 
 	if err := HandleOtherSANs(certTemplate, data.Params.OtherSANs); err != nil {
-		return nil, errutil.InternalError{Err: errwrap.Wrapf("error marshaling other SANs: {{err}}", err).Error()}
+		return nil, errutil.InternalError{Err: fmt.Errorf("error marshaling other SANs: %w", err).Error()}
 	}
 
 	AddPolicyIdentifiers(data, certTemplate)

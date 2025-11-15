@@ -260,6 +260,9 @@ func (b *NatsBackend) periodicRefreshAccountIssues(ctx context.Context, storage 
 		if err != nil {
 			return err
 		}
+		if account == nil {
+			b.Logger().Warn("Skipping nil account " + accName)
+		}
 
 		accountDirty := false
 

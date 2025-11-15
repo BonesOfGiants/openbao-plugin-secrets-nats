@@ -252,7 +252,8 @@ func (b *NatsBackend) periodicRefreshAccountIssues(ctx context.Context, storage 
 	if err != nil {
 		return err
 	}
-	for _, accName := range issuesList {
+	for _, accName := range filterSubkeys(issuesList) {
+		b.Logger().Info("Refreshing account " + accName)
 		account, err := readAccountIssue(ctx, storage, IssueAccountParameters{
 			Operator: opName,
 			Account:  accName,
@@ -262,6 +263,7 @@ func (b *NatsBackend) periodicRefreshAccountIssues(ctx context.Context, storage 
 		}
 		if account == nil {
 			b.Logger().Warn("Skipping nil account " + accName)
+			continue
 		}
 
 		accountDirty := false

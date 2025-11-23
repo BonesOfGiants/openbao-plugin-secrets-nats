@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 )
 
-// UserCredsParameters now includes template parameters
 type UserCredsParameters struct {
 	Operator   string            `json:"operator"`
 	Account    string            `json:"account"`
@@ -26,7 +25,6 @@ type UserCredsParameters struct {
 	Parameters map[string]string `json:"parameters,omitempty"` // Template substitution parameters
 }
 
-// UserCredsData for response
 type UserCredsData struct {
 	Operator   string            `json:"operator"`
 	Account    string            `json:"account"`
@@ -108,7 +106,7 @@ func pathUserCreds(b *NatsBackend) []*framework.Path {
 
 func (b *NatsBackend) pathReadUserCreds(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 	// Extract path parameters directly from data.Raw
-	params := UserCredsParameters{
+	credsParams := UserCredsParameters{
 		Operator: data.Get("operator").(string),
 		Account:  data.Get("account").(string),
 		User:     data.Get("user").(string),
@@ -117,24 +115,24 @@ func (b *NatsBackend) pathReadUserCreds(ctx context.Context, req *logical.Reques
 	// Parse parameters string from query parameter
 	if parametersStr := data.Get("parameters"); parametersStr != nil {
 		if paramStr, ok := parametersStr.(string); ok && paramStr != "" {
-			params.Parameters = make(map[string]string)
+			credsParams.Parameters = make(map[string]string)
 
 			// Try to parse as JSON first
-			err := json.Unmarshal([]byte(paramStr), &params.Parameters)
+			err := json.Unmarshal([]byte(paramStr), &credsParams.Parameters)
 			if err != nil {
 				// If JSON parsing fails, try key=value format
-				err = parseKeyValueString(paramStr, params.Parameters)
+				err = parseKeyValueString(paramStr, credsParams.Parameters)
 				if err != nil {
 					log.Error().Err(err).Str("parametersStr", paramStr).Msg("Failed to parse parameters")
 					return logical.ErrorResponse("Invalid parameters format. Use key=value,key2=value2 or JSON"), logical.ErrInvalidRequest
 				}
 			}
 
-			log.Debug().Interface("parsedParameters", params.Parameters).Msg("Parsed parameters")
+			log.Debug().Interface("parsedParameters", credsParams.Parameters).Msg("Parsed parameters")
 		}
 	}
 
-	userCreds, err := generateUserCreds(ctx, req.Storage, params)
+	userCreds, err := generateUserCreds(ctx, req.Storage, credsParams)
 	if err != nil {
 		return logical.ErrorResponse(fmt.Sprintf("GeneratingCredsFailedError: %s", err.Error())), err
 	}

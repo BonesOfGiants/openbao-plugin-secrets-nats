@@ -44,22 +44,22 @@ func pathAccountImportIssue(b *NatsBackend) []*framework.Path {
 			Fields: map[string]*framework.FieldSchema{
 				"operator": {
 					Type:        framework.TypeString,
-					Description: "operator identifier",
-					Required:    false,
+					Description: `The operator identifier.`,
+					Required:    true,
 				},
 				"account": {
 					Type:        framework.TypeString,
-					Description: "account identifier",
-					Required:    false,
+					Description: `The account identifier.`,
+					Required:    true,
 				},
 				"alias": {
 					Type:        framework.TypeString,
-					Description: "import identifier",
+					Description: `The name given to this collection of imports. It is for reference purposes only, and does not affect how the imports are added to the account.`,
 					Required:    false,
 				},
 				"imports": {
 					Type:        framework.TypeSlice,
-					Description: "imports",
+					Description: "A list of imports to define on the account issue.",
 					Required:    false,
 				},
 			},
@@ -87,12 +87,12 @@ func pathAccountImportIssue(b *NatsBackend) []*framework.Path {
 				"operator": {
 					Type:        framework.TypeString,
 					Description: "operator identifier",
-					Required:    false,
+					Required:    true,
 				},
 				"account": {
 					Type:        framework.TypeString,
 					Description: "account identifier",
-					Required:    false,
+					Required:    true,
 				},
 				"after": {
 					Type:        framework.TypeString,
@@ -146,17 +146,30 @@ func (b *NatsBackend) pathAddAccountImportIssue(ctx context.Context, req *logica
 	return nil, nil
 }
 
-func (b *NatsBackend) pathReadAccountImportIssue(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+func (b *NatsBackend) pathReadAccountImportIssue(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {
 	issue, err := readAccountImportIssue(ctx, req.Storage, IssueAccountImportParameters{
-		Operator: data.Get("operator").(string),
-		Account:  data.Get("account").(string),
-		Alias:    data.Get("alias").(string),
+		Operator: d.Get("operator").(string),
+		Account:  d.Get("account").(string),
+		Alias:    d.Get("alias").(string),
 	})
 	if err != nil || issue == nil {
 		return nil, err
 	}
 
-	return createResponseIssueAccountImportData(issue)
+	data := &IssueAccountImportData{
+		Operator: issue.Operator,
+		Account:  issue.Account,
+		Alias:    issue.Alias,
+		Imports:  issue.Imports,
+	}
+
+	rval := map[string]any{}
+	err = stm.StructToMap(data, &rval)
+	if err != nil {
+		return nil, err
+	}
+
+	return &logical.Response{Data: rval}, nil
 }
 
 func (b *NatsBackend) pathAccountImportIssueExistenceCheck(ctx context.Context, req *logical.Request, data *framework.FieldData) (bool, error) {
@@ -339,24 +352,4 @@ func storeAccountImportIssue(ctx context.Context, storage logical.Storage, param
 
 func getAccountImportIssuePath(operator string, account string, alias string) string {
 	return issueOperatorPrefix + operator + "/account/" + account + "/import/" + alias
-}
-
-func createResponseIssueAccountImportData(issue *IssueAccountImportStorage) (*logical.Response, error) {
-	data := &IssueAccountImportData{
-		Operator: issue.Operator,
-		Account:  issue.Account,
-		Alias:    issue.Alias,
-		Imports:  issue.Imports,
-	}
-
-	rval := map[string]any{}
-	err := stm.StructToMap(data, &rval)
-	if err != nil {
-		return nil, err
-	}
-
-	resp := &logical.Response{
-		Data: rval,
-	}
-	return resp, nil
 }

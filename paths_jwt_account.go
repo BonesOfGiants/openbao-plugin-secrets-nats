@@ -52,6 +52,29 @@ func pathAccountJWT(b *NatsBackend) []*framework.Path {
 			HelpDescription: ``,
 		},
 		{
+			Pattern: "jwt/operator/" + framework.GenericNameRegex("operator") + "/account-id/" + framework.GenericNameRegex("accountId") + "$",
+			Fields: map[string]*framework.FieldSchema{
+				"operator": {
+					Type:        framework.TypeString,
+					Description: "operator identifier",
+					Required:    true,
+				},
+				"accountId": {
+					Type:        framework.TypeString,
+					Description: "account identifier",
+					Required:    true,
+				},
+			},
+			ExistenceCheck: b.pathAccountJWTExistenceCheck,
+			Operations: map[logical.Operation]framework.OperationHandler{
+				logical.ReadOperation: &framework.PathOperation{
+					Callback: b.pathReadAccountIdJWT,
+				},
+			},
+			HelpSynopsis:    `Manages account JWT's.`,
+			HelpDescription: ``,
+		},
+		{
 			Pattern: "jwt/operator/" + framework.GenericNameRegex("operator") + "/account/?$",
 			Fields: map[string]*framework.FieldSchema{
 				"operator": {
@@ -104,6 +127,25 @@ func (b *NatsBackend) pathReadAccountJWT(ctx context.Context, req *logical.Reque
 	jwt, err := readAccountJWT(ctx, req.Storage, JWTParameters{
 		Operator: data.Get("operator").(string),
 		Account:  data.Get("account").(string),
+	})
+	if err != nil || jwt == nil {
+		return nil, err
+	}
+
+	return createResponseJWTData(jwt)
+}
+
+func (b *NatsBackend) pathReadAccountIdJWT(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	accountId := data.Get("accountId").(string)
+
+	account, exists := b.getAccountFromCache(ctx, req.Storage, accountId)
+	if !exists {
+		return nil, nil
+	}
+
+	jwt, err := readAccountJWT(ctx, req.Storage, JWTParameters{
+		Operator: data.Get("operator").(string),
+		Account:  account,
 	})
 	if err != nil || jwt == nil {
 		return nil, err

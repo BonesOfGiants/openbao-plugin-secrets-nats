@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	lru "github.com/hashicorp/golang-lru/v2"
 	nats "github.com/nats-io/nats.go"
 	"github.com/openbao/openbao/sdk/v2/framework"
 	"github.com/openbao/openbao/sdk/v2/logical"
@@ -21,8 +22,9 @@ type NatsClient struct {
 // target API's client.
 type NatsBackend struct {
 	*framework.Backend
-	lock   sync.RWMutex
-	client *NatsClient
+	lock                 sync.RWMutex
+	client               *NatsClient
+	accountNameToIdCache *lru.Cache[string, string]
 }
 
 func Factory(ctx context.Context, conf *logical.BackendConfig) (logical.Backend, error) {
@@ -45,6 +47,13 @@ const (
 func backend() *NatsBackend {
 	var b = NatsBackend{}
 
+	cache, err := lru.New[string, string](50)
+
+	if err != nil {
+		panic(fmt.Errorf("error creating cache: %w", err))
+	}
+
+	b.accountNameToIdCache = cache
 	b.Backend = &framework.Backend{
 		Help: strings.TrimSpace(backendHelp),
 		PathsSpecial: &logical.Paths{
@@ -89,6 +98,25 @@ func (b *NatsBackend) invalidate(ctx context.Context, key string) {
 	if key == "config" {
 		b.reset()
 	}
+}
+
+func (b *NatsBackend) writeAccountToCache(accountName, accountId string) {
+	b.accountNameToIdCache.Add(accountId, accountName)
+}
+
+func (b *NatsBackend) getAccountFromCache(ctx context.Context, s logical.Storage, accountId string) (string, bool) {
+	accName, exists := b.accountNameToIdCache.Get(accountId)
+	if !exists {
+		err := b.refreshAccountCache(ctx, s)
+		if err != nil {
+			return "", false
+		}
+
+		accName, exists = b.accountNameToIdCache.Get(accountId)
+		return accName, exists
+	}
+
+	return accName, true
 }
 
 func getFromStorage[T any](ctx context.Context, s logical.Storage, path string) (*T, error) {
@@ -140,6 +168,40 @@ func storeInStorage[T any](ctx context.Context, s logical.Storage, path string, 
 
 	if err := s.Put(ctx, entry); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func (b *NatsBackend) refreshAccountCache(ctx context.Context, s logical.Storage) error {
+	b.Logger().Info("Periodic: starting periodic func for syncing accounts to nats")
+	operators, err := s.List(ctx, issueOperatorPrefix) // todo paginate
+	if err != nil {
+		return err
+	}
+	for _, op := range operators {
+		path := getAccountIssuePath(op, "")
+		accounts, err := s.List(ctx, path)
+		if err != nil {
+			return err
+		}
+
+		for _, acc := range accounts {
+			accNkey, err := readAccountNkey(ctx, s, NkeyParameters{
+				Operator: op,
+				Account:  acc,
+			})
+			if err != nil {
+				return err
+			}
+
+			accId, err := toNkeyData(accNkey)
+			if err != nil {
+				return err
+			}
+
+			b.writeAccountToCache(acc, accId.PublicKey)
+		}
 	}
 
 	return nil

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/stm"
 	"github.com/openbao/openbao/sdk/v2/logical"
 
 	"github.com/stretchr/testify/assert"
@@ -204,7 +205,81 @@ func TestCRUDAccountJWTs(t *testing.T) {
 		})
 		assert.NoError(t, err)
 		assert.True(t, resp.IsError())
-
 	})
 
+	t.Run("Test account jwt by id", func(t *testing.T) {
+		// first create operator issue to be able to create account issue
+		resp, err := b.HandleRequest(context.Background(), &logical.Request{
+			Operation: logical.CreateOperation,
+			Path:      "issue/operator/op1",
+			Storage:   reqStorage,
+			Data:      map[string]any{},
+		})
+		assert.NoError(t, err)
+		assert.False(t, resp.IsError())
+
+		// create an account issue
+		resp, err = b.HandleRequest(context.Background(), &logical.Request{
+			Operation: logical.CreateOperation,
+			Path:      "issue/operator/op1/account/acc1",
+			Storage:   reqStorage,
+			Data:      map[string]any{},
+		})
+		assert.NoError(t, err)
+		assert.False(t, resp.IsError())
+
+		resp, err = b.HandleRequest(context.Background(), &logical.Request{
+			Operation: logical.ReadOperation,
+			Path:      "nkey/operator/op1/account/acc1",
+			Storage:   reqStorage,
+			Data:      map[string]any{},
+		})
+		assert.NoError(t, err)
+		assert.False(t, resp.IsError())
+
+		var nkeyData NkeyData
+		stm.MapToStruct(resp.Data, &nkeyData)
+
+		resp, err = b.HandleRequest(context.Background(), &logical.Request{
+			Operation: logical.ReadOperation,
+			Path:      "jwt/operator/op1/account/acc1",
+			Storage:   reqStorage,
+			Data:      map[string]any{},
+		})
+		assert.NoError(t, err)
+		assert.False(t, resp.IsError())
+
+		var expected JWTData
+		var current JWTData
+
+		stm.MapToStruct(resp.Data, &expected)
+
+		resp, err = b.HandleRequest(context.Background(), &logical.Request{
+			Operation: logical.ReadOperation,
+			Path:      "jwt/operator/op1/account-id/" + nkeyData.PublicKey,
+			Storage:   reqStorage,
+			Data:      map[string]any{},
+		})
+		assert.NoError(t, err)
+		assert.False(t, resp.IsError())
+
+		stm.MapToStruct(resp.Data, &current)
+		assert.Equal(t, expected, current)
+	})
+
+	t.Run("Test account jwt by id does not exist", func(t *testing.T) {
+		resp, err := b.HandleRequest(context.Background(), &logical.Request{
+			Operation: logical.ReadOperation,
+			Path:      "jwt/operator/op1/account-id/foo",
+			Storage:   reqStorage,
+			Data:      map[string]any{},
+		})
+		if err != nil || (resp != nil && resp.IsError()) {
+			t.Fatalf("operator signing nkey ReadOperation request failed, err: %s, resp %#v", err, resp)
+		}
+
+		if resp != nil {
+			t.Fatalf("expected nil resp for operator signing nkey ReadOperation resp: %#v", resp)
+		}
+	})
 }

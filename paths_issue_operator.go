@@ -230,6 +230,7 @@ func syncOperatorAccounts(ctx context.Context, storage logical.Storage, issue *I
 		log.Info().Msgf("%s: account server sync disabled", issue.Operator)
 		return nil
 	}
+	defer s.CloseConnection()
 
 	path := getAccountIssuePath(issue.Operator, "")
 	accounts, err := storage.List(ctx, path)

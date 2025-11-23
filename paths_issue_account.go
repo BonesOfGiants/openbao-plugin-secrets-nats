@@ -237,6 +237,7 @@ func refreshAccount(ctx context.Context, storage logical.Storage, issue *IssueAc
 			Err(err).
 			Msg("failed to sync account")
 	} else if s != nil {
+		defer s.CloseConnection()
 		err = syncAccountUpdate(ctx, storage, s, issue)
 		if err != nil {
 			log.Warn().
@@ -284,6 +285,7 @@ func deleteAccountIssue(ctx context.Context, storage logical.Storage, params Iss
 			Err(err).
 			Msg("failed to sync account")
 	} else if s != nil {
+		defer s.CloseConnection()
 		err = syncAccountDelete(ctx, storage, s, issue)
 		if err != nil {
 			return err

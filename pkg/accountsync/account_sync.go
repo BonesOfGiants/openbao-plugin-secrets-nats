@@ -1,23 +1,9 @@
-/*
- * Copyright 2023 The EdgeFarm Authors
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package accountsync
 
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/nats-io/jwt/v2"
@@ -25,6 +11,69 @@ import (
 	"github.com/nats-io/nkeys"
 	"github.com/rs/zerolog/log"
 )
+
+const (
+	ClaimsUpdateSubject = "$SYS.REQ.CLAIMS.UPDATE"
+	ClaimsDeleteSubject = "$SYS.REQ.CLAIMS.DELETE"
+)
+
+// Push accounts mechanism explained
+// =================================
+// General prerequsites
+// ---------------------
+// -> There must be a sys account and a sys account user with permissions:
+// AllowPub: $SYS.REQ.CLAIMS.LIST, $SYS.REQ.CLAIMS.UPDATE, $SYS.REQ.CLAIMS.DELETE
+// AllowSub: _INBOX.>
+// -> open a nats connection with the JWT and SEED of this sys account user
+//    with options for (optional TLS certs), timeouts, reconnect handlers, etc.
+
+// Adding accounts:
+// ----------------
+// Iterate over all accounts to add and get their JWTs
+// On each iteration create a PUB on subject $SYS.REQ.CLAIMS.UPDATE with the JWT as []byte
+// After sending each PUB with the JWT wait for responses using SubscribeSync() within a defined time frame (e.g. 1 second). This information can be used to inform how many servers got the publish.
+
+// Deleting accounts:
+// ------------------
+// Get JWT of account to be deleted
+// create a PUB on subject $SYS.REQ.CLAIMS.DELETE with the JWT as []byte
+// After sending the PUB with the JWT wait for responses using SubscribeSync() within a defined time frame (e.g. 1 second). This information can be used to inform how many servers got the publish.
+
+type Config struct {
+	Servers        []string
+	ConnectTimeout int
+	MaxReconnects  int
+	ReconnectWait  int
+	// Whether to continue with a deletion if the delete fails to sync to the target server
+	IgnoreSyncErrorsOnDelete bool
+}
+
+type AccountSync struct {
+	Config
+	nc *nats.Conn
+}
+
+func NewAccountSync(syncConfig Config, o ...nats.Option) (*AccountSync, error) {
+	url := strings.Join(syncConfig.Servers, ",")
+
+	nc, err := nats.Connect(url, o...)
+	if err != nil {
+		return nil, err
+	}
+
+	return &AccountSync{
+		Config: syncConfig,
+		nc:     nc,
+	}, nil
+}
+
+func (r *AccountSync) CloseConnection() {
+	if r != nil {
+		if r.nc != nil {
+			r.nc.Close()
+		}
+	}
+}
 
 func (r *AccountSync) multiRequest(subject string, operation string, reqData []byte, respHandler func(srv string, data any)) int {
 	ib := nats.NewInbox()

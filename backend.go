@@ -394,6 +394,7 @@ func (b *NatsBackend) periodicRefreshAccountIssues(ctx context.Context, storage 
 	if err != nil {
 		b.Logger().Warn(fmt.Sprintf("Error creating account sync: %v", err))
 	}
+	defer accountSync.CloseConnection()
 
 	path := getAccountIssuePath(operator.Operator, "")
 	issuesList, err := storage.List(ctx, path)

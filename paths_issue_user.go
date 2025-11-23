@@ -534,7 +534,7 @@ func refreshUser(ctx context.Context, storage logical.Storage, issue *IssueUserS
 			return nil
 		}
 
-		err = refreshAccountResolvers(ctx, storage, op)
+		err = syncOperatorAccounts(ctx, storage, op)
 		if err != nil {
 			return err
 		}

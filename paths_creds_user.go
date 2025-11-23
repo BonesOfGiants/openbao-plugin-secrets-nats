@@ -192,37 +192,10 @@ func generateUserCreds(ctx context.Context, storage logical.Storage, params User
 		Interface("parameters", params.Parameters).
 		Msg("generating fresh user credentials")
 
-	// 1. Read the user issue template
-	issue, err := readUserIssue(ctx, storage, IssueUserParameters{
-		Operator: params.Operator,
-		Account:  params.Account,
-		User:     params.User,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("could not read user template: %s", err)
-	}
-	if issue == nil {
-		return nil, logical.ErrUnsupportedPath
-	}
-
-	if params.Parameters == nil {
-		params.Parameters = make(map[string]string, 3)
-	}
-
-	params.Parameters["name()"] = params.User
-	params.Parameters["account()"] = params.Account
-	params.Parameters["operator()"] = params.Operator
-
-	// 2. Apply template parameters to claims
-	processedClaims, err := applyTemplateParameters(issue.ClaimsTemplate, params.Parameters)
-	if err != nil {
-		return nil, fmt.Errorf("could not apply template parameters: %s", err)
-	}
-
 	// 3. Generate fresh JWT
-	jwtToken, expiresAt, err := generateUserJWT(ctx, storage, *issue, processedClaims)
+	jwtToken, expiresAt, err := generateUserJWT(ctx, storage, &params)
 	if err != nil {
-		return nil, fmt.Errorf("could not generate JWT: %s", err)
+		return nil, err
 	}
 
 	// 4. Get user nkey for creds file
@@ -339,7 +312,34 @@ func findTemplateVariables(templateStr string) []string {
 }
 
 // generateUserJWT creates a fresh JWT from the template
-func generateUserJWT(ctx context.Context, storage logical.Storage, issue IssueUserStorage, claims v1alpha1.UserClaims) (string, int64, error) {
+func generateUserJWT(ctx context.Context, storage logical.Storage, params *UserCredsParameters) (string, int64, error) {
+	// 1. Read the user issue template
+	issue, err := readUserIssue(ctx, storage, IssueUserParameters{
+		Operator: params.Operator,
+		Account:  params.Account,
+		User:     params.User,
+	})
+	if err != nil {
+		return "", 0, fmt.Errorf("could not read user template: %s", err)
+	}
+	if issue == nil {
+		return "", 0, logical.ErrUnsupportedPath
+	}
+
+	if params.Parameters == nil {
+		params.Parameters = make(map[string]string, 3)
+	}
+
+	params.Parameters["name()"] = params.User
+	params.Parameters["account()"] = params.Account
+	params.Parameters["operator()"] = params.Operator
+
+	// 2. Apply template parameters to claims
+	claims, err := applyTemplateParameters(issue.ClaimsTemplate, params.Parameters)
+	if err != nil {
+		return "", 0, fmt.Errorf("could not apply template parameters: %s", err)
+	}
+
 	// Get signing key (account or signing key)
 	useSigningKey := issue.UseSigningKey
 	var seed []byte

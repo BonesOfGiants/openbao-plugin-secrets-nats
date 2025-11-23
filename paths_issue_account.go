@@ -3,7 +3,6 @@ package natsbackend
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -12,7 +11,7 @@ import (
 	"github.com/openbao/openbao/sdk/v2/framework"
 	"github.com/openbao/openbao/sdk/v2/logical"
 
-	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/resolver"
+	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/accountsync"
 	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/stm"
 	"github.com/nats-io/nkeys"
 	"github.com/rs/zerolog/log"
@@ -230,9 +229,22 @@ func refreshAccount(ctx context.Context, storage logical.Storage, issue *IssueAc
 		return err
 	}
 
-	err = refreshAccountResolverPush(ctx, storage, issue)
+	s, err := getAccountSync(ctx, storage, issue.Operator)
 	if err != nil {
-		return err
+		log.Error().
+			Str("operator", issue.Operator).
+			Str("account", issue.Account).
+			Err(err).
+			Msg("failed to sync account")
+	} else if s != nil {
+		err = syncAccountUpdate(ctx, storage, s, issue)
+		if err != nil {
+			log.Warn().
+				Str("operator", issue.Operator).
+				Str("account", issue.Account).
+				Err(err).
+				Msg("failed to sync account")
+		}
 	}
 
 	err = updateAccountStatus(ctx, storage, issue)
@@ -264,10 +276,18 @@ func deleteAccountIssue(ctx context.Context, storage logical.Storage, params Iss
 		return nil
 	}
 
-	// update resolver
-	err = refreshAccountResolverDelete(ctx, storage, issue)
+	s, err := getAccountSync(ctx, storage, issue.Operator)
 	if err != nil {
-		return err
+		log.Error().
+			Str("operator", issue.Operator).
+			Str("account", issue.Account).
+			Err(err).
+			Msg("failed to sync account")
+	} else if s != nil {
+		err = syncAccountDelete(ctx, storage, s, issue)
+		if err != nil {
+			return err
+		}
 	}
 
 	// delete account nkey
@@ -628,48 +648,12 @@ func updateUserIssues(ctx context.Context, storage logical.Storage, issue IssueA
 	return nil
 }
 
-type AccountResolverAction string
-
-const (
-	AccountResolverActionPush   AccountResolverAction = "push"
-	AccountResolverActionDelete AccountResolverAction = "delete"
-)
-
-func refreshAccountResolverPush(ctx context.Context, storage logical.Storage, issue *IssueAccountStorage) error {
-	return refreshAccountResolver(ctx, storage, issue, AccountResolverActionPush)
-}
-
-func refreshAccountResolverDelete(ctx context.Context, storage logical.Storage, issue *IssueAccountStorage) error {
-	return refreshAccountResolver(ctx, storage, issue, AccountResolverActionDelete)
-}
-
-func refreshAccountResolver(ctx context.Context, storage logical.Storage, issue *IssueAccountStorage, action AccountResolverAction) error {
-	// read operator issue
-
-	op, err := readOperatorIssue(ctx, storage, IssueOperatorParameters{
-		Operator: issue.Operator,
-	})
-	if err != nil {
-		return err
-	} else if op == nil {
-		log.Warn().
-			Str("operator", issue.Operator).Str("account", issue.Account).
-			Msgf("operator issue does not exist - can't sync account server.")
-		return nil
-	} else if !op.SyncAccountServer {
-		return nil
-	} else if op.Claims.AccountServerURL == "" {
-		log.Warn().
-			Str("operator", issue.Operator).Str("account", issue.Account).
-			Msgf("account server url is not set - can't sync account server.")
-		return nil
-	}
-
-	var deletionFailedErr error
-	if action == AccountResolverActionDelete && !op.ForceAccountDeletion {
-		deletionFailedErr = errors.New("failed to sync account")
-	}
-
+func syncAccountUpdate(
+	ctx context.Context,
+	storage logical.Storage,
+	accountSync *accountsync.AccountSync,
+	issue *IssueAccountStorage,
+) error {
 	// read account jwt
 	accJWT, err := readAccountJWT(ctx, storage, JWTParameters{
 		Operator: issue.Operator,
@@ -678,164 +662,87 @@ func refreshAccountResolver(ctx context.Context, storage logical.Storage, issue 
 	if err != nil {
 		return err
 	} else if accJWT == nil {
-		log.Warn().Str("operator", issue.Operator).
-			Str("account", issue.Account).
-			Msg("cannot sync account server: account jwt does not exist")
-		return deletionFailedErr
+		return fmt.Errorf("unable to sync, account does not exist")
 	}
 
-	// Since JWTs are now generated on-demand, we need to generate the system user JWT
-	// Check if system user template exists first
-	sysUserIssue, err := readUserIssue(ctx, storage, IssueUserParameters{
-		Operator: issue.Operator,
-		Account:  DefaultSysAccountName,
-		User:     DefaultPushUser,
-	})
+	err = accountSync.PushAccount(issue.Account, []byte(accJWT.JWT))
 	if err != nil {
 		return err
-	} else if sysUserIssue == nil {
-		log.Warn().Str("operator", issue.Operator).
-			Str("account", issue.Account).
-			Msg("cannot sync account server: system account user template does not exist")
-		return deletionFailedErr
-	}
-
-	// Generate fresh system user JWT for connection
-	sysUserCreds, err := generateUserCreds(ctx, storage, UserCredsParameters{
-		Operator: issue.Operator,
-		Account:  DefaultSysAccountName,
-		User:     DefaultPushUser,
-	})
-	if err != nil {
-		return err
-	} else if sysUserCreds == nil {
-		log.Warn().Str("operator", issue.Operator).
-			Str("account", issue.Account).
-			Msg("cannot sync account server: failed to generate system user credentials")
-		return deletionFailedErr
-	}
-
-	// read system account user nkey
-	sysUserNkey, err := readUserNkey(ctx, storage, NkeyParameters{
-		Operator: issue.Operator,
-		Account:  DefaultSysAccountName,
-		User:     DefaultPushUser,
-	})
-	if err != nil {
-		return err
-	} else if sysUserNkey == nil {
-		log.Error().Str("operator", issue.Operator).
-			Str("account", issue.Account).
-			Msg("cannot sync account server: system account user nkey does not exist")
-		return deletionFailedErr
-	}
-
-	sysUserKp, err := nkeys.FromSeed(sysUserNkey.Seed)
-	if err != nil {
-		return deletionFailedErr
-	}
-
-	// Extract JWT from creds - we need just the JWT part, not the full creds format
-	// The generateUserCreds returns full creds, but we need to extract JWT for resolver
-	// Parse the creds to get the JWT token
-	credsLines := strings.Split(sysUserCreds.Creds, "\n")
-	var jwtToken string
-	for _, line := range credsLines {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "eyJ") { // JWT tokens start with eyJ
-			jwtToken = line
-			break
-		}
-	}
-	if jwtToken == "" {
-		log.Error().Str("operator", issue.Operator).
-			Str("account", issue.Account).
-			Msg("cannot sync account server: failed to extract JWT from system user creds")
-		return deletionFailedErr
-	}
-
-	// connect to nats
-	resolver, err := resolver.NewResolver(op.Claims.AccountServerURL, []byte(jwtToken), sysUserKp)
-	if err != nil {
-		log.Warn().Str("operator", issue.Operator).
-			Str("account", issue.Account).
-			Err(err).
-			Msg("cannot create conection to account server")
-		resolver.CloseConnection()
-		return deletionFailedErr
-	}
-	defer resolver.CloseConnection()
-
-	switch action {
-	case AccountResolverActionPush:
-		err = resolver.PushAccount(issue.Account, []byte(accJWT.JWT))
-		if err != nil {
-			log.Error().Str("operator", issue.Operator).
-				Str("account", issue.Account).
-				Err(err).
-				Msg("cannot sync account server (add)")
-			resolver.CloseConnection()
-			return nil
-		}
-	case AccountResolverActionDelete:
-		operatorNkey, err := readOperatorNkey(ctx, storage, NkeyParameters{
-			Operator: issue.Operator,
-		})
-		if err != nil {
-			return err
-		} else if operatorNkey == nil {
-			log.Warn().Str("operator", issue.Operator).
-				Msg("cannot sync account server: operator nkey does not exist")
-			return deletionFailedErr
-		}
-		kp, err := toNkeyData(operatorNkey)
-		if err != nil {
-			return err
-		}
-		operatorKeypair, err := nkeys.FromSeed([]byte(kp.Seed))
-		if err != nil {
-			return err
-		}
-
-		// read account jwt
-		accNkey, err := readAccountNkey(ctx, storage, NkeyParameters{
-			Operator: issue.Operator,
-			Account:  issue.Account,
-		})
-		if err != nil {
-			return err
-		} else if accNkey == nil {
-			log.Warn().Str("operator", issue.Operator).
-				Str("account", issue.Account).
-				Msg("cannot sync account server: account nkey does not exist")
-			return deletionFailedErr
-		}
-		kp, err = toNkeyData(accNkey)
-		if err != nil {
-			return err
-		}
-		accountKeyPair, err := nkeys.FromSeed([]byte(kp.Seed))
-		if err != nil {
-			return err
-		}
-		accountPubKey, err := accountKeyPair.PublicKey()
-		if err != nil {
-			return err
-		}
-		_, err = resolver.DeleteAccounts([]string{accountPubKey}, operatorKeypair)
-		if err != nil {
-			log.Error().Str("operator", issue.Operator).
-				Str("account", issue.Account).
-				Err(err).
-				Msg("cannot sync account server (delete)")
-			resolver.CloseConnection()
-			return deletionFailedErr
-		}
 	}
 
 	// update issue status
 	issue.Status.AccountServer.Synced = true
 	issue.Status.AccountServer.LastSync = time.Now().Unix()
+
+	return nil
+}
+
+func syncAccountDelete(
+	ctx context.Context,
+	storage logical.Storage,
+	accountSync *accountsync.AccountSync,
+	issue *IssueAccountStorage,
+) error {
+	wrapErr := func(err error) error {
+		if accountSync.IgnoreSyncErrorsOnDelete {
+			log.Debug().
+				Err(err).
+				Msg("swallowing sync error due to ignoreSyncErrorsOnDelete")
+			return nil
+		} else {
+			return err
+		}
+	}
+
+	operatorNkey, err := readOperatorNkey(ctx, storage, NkeyParameters{
+		Operator: issue.Operator,
+	})
+	if err != nil {
+		return wrapErr(err)
+	} else if operatorNkey == nil {
+		return wrapErr(fmt.Errorf("unable to sync, operator nkey does not exist"))
+	}
+
+	kp, err := toNkeyData(operatorNkey)
+	if err != nil {
+		return wrapErr(err)
+	}
+	operatorKeypair, err := nkeys.FromSeed([]byte(kp.Seed))
+	if err != nil {
+		return wrapErr(err)
+	}
+
+	// read account jwt
+	accNkey, err := readAccountNkey(ctx, storage, NkeyParameters{
+		Operator: issue.Operator,
+		Account:  issue.Account,
+	})
+	if err != nil {
+		return wrapErr(err)
+	} else if accNkey == nil {
+		return wrapErr(fmt.Errorf("unable to sync, account nkey does not exist"))
+	}
+	kp, err = toNkeyData(accNkey)
+	if err != nil {
+		return wrapErr(err)
+	}
+	accountKeyPair, err := nkeys.FromSeed([]byte(kp.Seed))
+	if err != nil {
+		return wrapErr(err)
+	}
+	accountPubKey, err := accountKeyPair.PublicKey()
+	if err != nil {
+		return wrapErr(err)
+	}
+	_, err = accountSync.DeleteAccounts([]string{accountPubKey}, operatorKeypair)
+	if err != nil {
+		return wrapErr(err)
+	}
+
+	// update issue status
+	issue.Status.AccountServer.Synced = true
+	issue.Status.AccountServer.LastSync = time.Now().Unix()
+
 	return nil
 }
 

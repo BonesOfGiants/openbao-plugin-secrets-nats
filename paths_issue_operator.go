@@ -21,27 +21,22 @@ import (
 )
 
 type IssueOperatorStorage struct {
-	Operator             string                    `json:"operator"`
-	CreateSystemAccount  bool                      `json:"createSystemAccount"`
-	SyncAccountServer    bool                      `json:"syncAccountServer"`
-	ForceAccountDeletion bool                      `json:"forceAccountDeletion"`
-	Claims               operatorv1.OperatorClaims `json:"claims"`
+	Operator            string                    `json:"operator"`
+	CreateSystemAccount bool                      `json:"createSystemAccount"`
+	Claims              operatorv1.OperatorClaims `json:"claims"`
 }
 
 // IssueOperatorParameters
 // +k8s:deepcopy-gen=true
 type IssueOperatorParameters struct {
-	Operator             string                    `json:"operator"`
-	CreateSystemAccount  bool                      `json:"createSystemAccount,omitempty"`
-	SyncAccountServer    bool                      `json:"syncAccountServer,omitempty"`
-	ForceAccountDeletion bool                      `json:"forceAccountDeletion,omitempty"`
-	Claims               operatorv1.OperatorClaims `json:"claims"`
+	Operator            string                    `json:"operator"`
+	CreateSystemAccount bool                      `json:"createSystemAccount,omitempty"`
+	Claims              operatorv1.OperatorClaims `json:"claims"`
 }
 
 type IssueOperatorData struct {
 	Operator            string                    `json:"operator"`
 	CreateSystemAccount bool                      `json:"createSystemAccount"`
-	SyncAccountServer   bool                      `json:"syncAccountServer"`
 	Claims              operatorv1.OperatorClaims `json:"claims"`
 	Status              IssueOperatorStatus       `json:"status"`
 }
@@ -221,32 +216,18 @@ func addOperatorIssue(ctx context.Context, storage logical.Storage, params Issue
 		return err
 	}
 
-	return refreshAccountResolvers(ctx, storage, issue)
+	return syncOperatorAccounts(ctx, storage, issue)
 }
 
-func refreshAccountResolvers(ctx context.Context, storage logical.Storage, issue *IssueOperatorStorage) error {
-	if !issue.SyncAccountServer || issue.Claims.AccountServerURL == "" {
-		log.Info().Msgf("%s: account server sync disabled", issue.Operator)
-		return nil
-	}
-
-	// Check if push user template exists
-	pushUser, err := readUserIssue(ctx, storage, IssueUserParameters{
-		Operator: issue.Operator,
-		Account:  DefaultSysAccountName,
-		User:     DefaultPushUser,
-	})
+func syncOperatorAccounts(ctx context.Context, storage logical.Storage, issue *IssueOperatorStorage) error {
+	s, err := getAccountSync(ctx, storage, issue.Operator)
 	if err != nil {
-		return err
-	}
-
-	if pushUser == nil {
-		log.Warn().Str("operator", issue.Operator).Msg("cannot refresh account resolvers, push user template does not exist")
-		return nil
-	}
-
-	if !pushUser.Status.User.Nkey {
-		log.Warn().Str("operator", issue.Operator).Msg("cannot refresh account resolvers, push user has no nkey yet")
+		log.Error().
+			Str("operator", issue.Operator).
+			Err(err).
+			Msg("failed to sync accounts")
+	} else if s == nil {
+		log.Info().Msgf("%s: account server sync disabled", issue.Operator)
 		return nil
 	}
 
@@ -256,7 +237,7 @@ func refreshAccountResolvers(ctx context.Context, storage logical.Storage, issue
 		return err
 	}
 	for _, account := range accounts {
-		err = refreshAccountResolverPush(ctx, storage, &IssueAccountStorage{
+		err = syncAccountUpdate(ctx, storage, s, &IssueAccountStorage{
 			Operator: issue.Operator,
 			Account:  account,
 		})
@@ -392,10 +373,6 @@ func storeOperatorIssue(ctx context.Context, storage logical.Storage, params Iss
 	issue.Claims = params.Claims
 	issue.Operator = params.Operator
 	issue.CreateSystemAccount = params.CreateSystemAccount
-	issue.Claims.SigningKeys = params.Claims.SigningKeys
-	issue.Claims.AccountServerURL = params.Claims.AccountServerURL
-	issue.SyncAccountServer = params.SyncAccountServer
-	issue.ForceAccountDeletion = params.ForceAccountDeletion
 	err = storeInStorage(ctx, storage, path, issue)
 	if err != nil {
 		return nil, err
@@ -735,7 +712,6 @@ func createResponseIssueOperatorData(issue *IssueOperatorStorage, status *IssueO
 	data := &IssueOperatorData{
 		Operator:            issue.Operator,
 		CreateSystemAccount: issue.CreateSystemAccount,
-		SyncAccountServer:   issue.SyncAccountServer,
 		Claims:              issue.Claims,
 		Status:              *status,
 	}

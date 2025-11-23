@@ -1,4 +1,4 @@
-package resolver
+package accountsync
 
 import (
 	"fmt"
@@ -12,7 +12,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func (r *Resolver) CloseConnection() {
+func (r *AccountSync) CloseConnection() {
 	if r != nil {
 		if r.nc != nil {
 			r.nc.Close()
@@ -34,7 +34,6 @@ func createConnection(url string, userJWT []byte, userKp nkeys.KeyPair) (*nats.C
 		return nil, fmt.Errorf("invalid url: %s, currently only nats urls are supported", url)
 	}
 
-	nats.NewInbox()
 	getOpt := func(theJWT string, kp nkeys.KeyPair) nats.Option {
 		return nats.UserJWT(
 			func() (string, error) {

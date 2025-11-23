@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-package resolver
+package accountsync
 
 import (
 	"encoding/json"
@@ -26,15 +26,15 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func (r *Resolver) multiRequest(subject string, operation string, reqData []byte, respHandler func(srv string, data any)) int {
+func (r *AccountSync) multiRequest(subject string, operation string, reqData []byte, respHandler func(srv string, data any)) int {
 	ib := nats.NewInbox()
 	sub, err := r.nc.SubscribeSync(ib)
 	if err != nil {
-		log.Error().Msgf("resolver: failed to subscribe to response subject: %v", err)
+		log.Error().Msgf("sync: failed to subscribe to response subject: %v", err)
 		return 0
 	}
 	if err := r.nc.PublishRequest(subject, ib, reqData); err != nil {
-		log.Error().Msgf("resolver: failed to %s: %v", operation, err)
+		log.Error().Msgf("sync: failed to %s: %v", operation, err)
 		return 0
 	}
 	responses := 0
@@ -44,7 +44,7 @@ func (r *Resolver) multiRequest(subject string, operation string, reqData []byte
 	for ; end.After(now); now = time.Now() { // try with decreasing timeout until we dont get responses
 		if resp, err := sub.NextMsg(end.Sub(now)); err != nil {
 			if err != nats.ErrTimeout || responses == 0 {
-				log.Error().Msgf("resolver: failed to get response to %s: %v", operation, err)
+				log.Error().Msgf("sync: failed to get response to %s: %v", operation, err)
 			}
 		} else if ok, srv, data := processResponse(resp); ok {
 			respHandler(srv, data)
@@ -56,7 +56,8 @@ func (r *Resolver) multiRequest(subject string, operation string, reqData []byte
 	return responses
 }
 
-func (r *Resolver) DeleteAccounts(acc []string, operatorKp nkeys.KeyPair) (int, error) {
+func (r *AccountSync) DeleteAccounts(acc []string, operatorKp nkeys.KeyPair) (int, error) {
+
 	defer operatorKp.Wipe()
 	pub, err := operatorKp.PublicKey()
 	if err != nil {
@@ -83,7 +84,7 @@ func (r *Resolver) DeleteAccounts(acc []string, operatorKp nkeys.KeyPair) (int, 
 	return respPrune, nil
 }
 
-func (r *Resolver) PushAccount(accountName string, accountJWT []byte) error {
+func (r *AccountSync) PushAccount(accountName string, accountJWT []byte) error {
 	resp := r.multiRequest(ClaimsUpdateSubject, "create", accountJWT,
 		func(srv string, data any) {
 			if dataMap, ok := data.(map[string]any); ok {
@@ -118,13 +119,13 @@ func processResponse(resp *nats.Msg) (bool, string, any) {
 		Data any `json:"data"`
 	}{}
 	if err := json.Unmarshal(resp.Data, &serverResp); err != nil {
-		log.Error().Msgf("resolver: failed to parse response: %v data: %s", err, string(resp.Data))
+		log.Error().Msgf("sync: failed to parse response: %v data: %s", err, string(resp.Data))
 	} else if srvName := serverResp.Server.Name; srvName == "" {
-		log.Error().Msgf("resolver: server responded without server name in info: %s", string(resp.Data))
+		log.Error().Msgf("sync: server responded without server name in info: %s", string(resp.Data))
 	} else if err := serverResp.Error; err != nil {
-		log.Error().Msgf("resolver: server %s responded with error: %s", srvName, err.Description)
+		log.Error().Msgf("sync: server %s responded with error: %s", srvName, err.Description)
 	} else if data := serverResp.Data; data == nil {
-		log.Error().Msgf("resolver: server %s responded without data: %s", srvName, string(resp.Data))
+		log.Error().Msgf("sync: server %s responded without data: %s", srvName, string(resp.Data))
 	} else {
 		return true, srvName, data
 	}

@@ -7,6 +7,7 @@ import (
 func pathIssue(b *NatsBackend) []*framework.Path {
 	paths := []*framework.Path{}
 	paths = append(paths, pathOperatorIssue(b)...)
+	paths = append(paths, pathOperatorSyncIssue(b)...)
 	paths = append(paths, pathAccountIssue(b)...)
 	paths = append(paths, pathAccountImportIssue(b)...)
 	paths = append(paths, pathAccountRevocationIssue(b)...)

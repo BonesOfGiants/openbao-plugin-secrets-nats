@@ -7,10 +7,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/accountsync"
 	lru "github.com/hashicorp/golang-lru/v2"
 	nats "github.com/nats-io/nats.go"
+	"github.com/nats-io/nkeys"
 	"github.com/openbao/openbao/sdk/v2/framework"
 	"github.com/openbao/openbao/sdk/v2/logical"
+	"github.com/rs/zerolog/log"
 )
 
 type NatsClient struct {
@@ -239,10 +242,13 @@ func (b *NatsBackend) periodicRefreshAccountRevocations(ctx context.Context, sto
 	if err != nil {
 		return false, err
 	}
+	if len(issues) == 0 {
+		return false, nil
+	}
 
 	now := time.Now().Unix()
-
 	dirty := false
+
 	for _, issue := range issues {
 		if issue.ExpirationS == 0 {
 			continue
@@ -305,9 +311,89 @@ func (b *NatsBackend) periodicRefreshUserIssues(ctx context.Context, storage log
 	return nil
 }
 
+func createSyncAuthCallback(ctx context.Context, storage logical.Storage, op string) nats.Option {
+	return nats.UserJWT(
+		func() (string, error) {
+			jwtToken, _, err := generateUserJWT(ctx, storage, &UserCredsParameters{
+				Operator: op,
+				Account:  DefaultSysAccountName,
+				User:     DefaultPushUser,
+			})
+			if err != nil {
+				return "", fmt.Errorf("could not generate JWT: %w", err)
+			}
+
+			return jwtToken, nil
+		},
+		func(nonce []byte) ([]byte, error) {
+			sysUserNkey, err := readUserNkey(ctx, storage, NkeyParameters{
+				Operator: op,
+				Account:  DefaultSysAccountName,
+				User:     DefaultPushUser,
+			})
+			if err != nil {
+				return nil, err
+			} else if sysUserNkey == nil {
+				return nil, fmt.Errorf("could not get sys user nkey: %w", err)
+			}
+
+			kp, err := nkeys.FromSeed(sysUserNkey.Seed)
+			if err != nil {
+				return nil, err
+			}
+
+			return kp.Sign(nonce)
+		},
+	)
+}
+
+func getAccountSync(ctx context.Context, storage logical.Storage, op string) (*accountsync.AccountSync, error) {
+	path := operatorSyncPath(op)
+	syncConfig, err := getFromStorage[operatorSyncConfigEntry](ctx, storage, path)
+	if err != nil {
+		return nil, err
+	}
+	if syncConfig == nil {
+		return nil, nil
+	}
+
+	return accountsync.NewAccountSync(
+		accountsync.Config{
+			Servers:                  syncConfig.Servers,
+			ConnectTimeout:           syncConfig.ConnectTimeout,
+			ReconnectWait:            syncConfig.ReconnectWait,
+			MaxReconnects:            syncConfig.MaxReconnects,
+			IgnoreSyncErrorsOnDelete: syncConfig.IgnoreSyncErrorsOnDelete,
+		},
+		nats.Name("openbao_account_sync"),
+		createSyncAuthCallback(ctx, storage, op),
+		nats.Timeout(time.Duration(syncConfig.ConnectTimeout)*time.Second),
+		nats.ReconnectWait(time.Duration(syncConfig.ReconnectWait)*time.Second),
+		nats.MaxReconnects(syncConfig.MaxReconnects),
+		nats.DisconnectErrHandler(func(c *nats.Conn, err error) {
+			if err != nil {
+				log.Error().Msgf("Disconnected: error: %v\n", err)
+			}
+			if c.Status() == nats.CLOSED {
+				return
+			}
+		}),
+		nats.ReconnectHandler(func(c *nats.Conn) {
+			log.Info().Msgf("Reconnected [%s]", c.ConnectedUrl())
+		}),
+		nats.ClosedHandler(func(c *nats.Conn) {
+			log.Info().Msgf("Exiting, no servers available, or connection closed")
+		}),
+	)
+}
+
 func (b *NatsBackend) periodicRefreshAccountIssues(ctx context.Context, storage logical.Storage, operator *IssueOperatorStorage) error {
 	opName := operator.Operator
-	sync := operator.SyncAccountServer
+
+	accountSync, err := getAccountSync(ctx, storage, opName)
+	if err != nil {
+		b.Logger().Warn(fmt.Sprintf("Error creating account sync: %v", err))
+	}
 
 	path := getAccountIssuePath(operator.Operator, "")
 	issuesList, err := storage.List(ctx, path)
@@ -371,21 +457,18 @@ func (b *NatsBackend) periodicRefreshAccountIssues(ctx context.Context, storage 
 			b.Logger().Warn(err.Error())
 		}
 
-		if sync {
+		if accountSync != nil {
 			b.Logger().Debug(fmt.Sprintf("Periodic: account %s in operator %s syncing to acount server", accName, opName))
 			if err != nil {
 				b.Logger().Info(err.Error())
 			}
-			if err = refreshAccountResolverPush(ctx, storage, account); err != nil {
+			if err = syncAccountUpdate(ctx, storage, accountSync, account); err != nil {
 				return err
 			}
 			_, err = storeAccountIssueUpdate(ctx, storage, account)
 			if err != nil {
 				return err
 			}
-		} else {
-			b.Logger().Debug(fmt.Sprintf("Periodic: operator %s not configured for auto syncing to account server. Skipping.", opName))
-			continue
 		}
 	}
 	return nil

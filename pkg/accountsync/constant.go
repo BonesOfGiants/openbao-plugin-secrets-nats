@@ -1,4 +1,4 @@
-package resolver
+package accountsync
 
 const (
 	ClaimsUpdateSubject = "$SYS.REQ.CLAIMS.UPDATE"

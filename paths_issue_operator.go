@@ -237,7 +237,7 @@ func syncOperatorAccounts(ctx context.Context, storage logical.Storage, issue *I
 	if err != nil {
 		return err
 	}
-	for _, account := range accounts {
+	for _, account := range filterSubkeys(accounts) {
 		err = syncAccountUpdate(ctx, storage, s, &IssueAccountStorage{
 			Operator: issue.Operator,
 			Account:  account,
@@ -628,7 +628,7 @@ func updateAccountIssues(ctx context.Context, storage logical.Storage, issue Iss
 		return err
 	}
 
-	for _, account := range accounts {
+	for _, account := range filterSubkeys(accounts) {
 		acc, err := readAccountIssue(ctx, storage, IssueAccountParameters{
 			Operator: issue.Operator,
 			Account:  account,

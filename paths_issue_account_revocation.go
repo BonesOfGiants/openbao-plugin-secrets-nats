@@ -251,7 +251,7 @@ func readAllAccountRevocationIssues(ctx context.Context, storage logical.Storage
 
 	issues := []*IssueAccountRevocationStorage{}
 
-	for _, e := range paths {
+	for _, e := range filterSubkeys(paths) {
 		e = getAccountRevocationIssuePath(params.Operator, params.Account, e)
 		issue, err := getFromStorage[IssueAccountRevocationStorage](ctx, storage, e)
 		if err != nil {

@@ -630,7 +630,7 @@ func updateUserIssues(ctx context.Context, storage logical.Storage, issue IssueA
 		return err
 	}
 
-	for _, user := range users {
+	for _, user := range filterSubkeys(users) {
 		user, err := readUserIssue(ctx, storage, IssueUserParameters{
 			Operator: issue.Operator,
 			Account:  issue.Account,

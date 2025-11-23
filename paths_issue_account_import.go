@@ -259,7 +259,7 @@ func readAllAccountImportIssues(ctx context.Context, storage logical.Storage, pa
 
 	issues := []*IssueAccountImportStorage{}
 
-	for _, e := range paths {
+	for _, e := range filterSubkeys(paths) {
 		e = getAccountImportIssuePath(params.Operator, params.Account, e)
 		issue, err := getFromStorage[IssueAccountImportStorage](ctx, storage, e)
 		if err != nil {

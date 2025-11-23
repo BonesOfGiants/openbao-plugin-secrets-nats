@@ -156,10 +156,11 @@ func (b *NatsBackend) pathReadOperatorSyncIssue(ctx context.Context, req *logica
 	}
 
 	data := map[string]any{
-		"servers":        issue.Servers,
-		"connectTimeout": issue.ConnectTimeout,
-		"maxReconnects":  issue.MaxReconnects,
-		"reconnectWait":  issue.ReconnectWait,
+		"servers":                  issue.Servers,
+		"connectTimeout":           issue.ConnectTimeout,
+		"maxReconnects":            issue.MaxReconnects,
+		"reconnectWait":            issue.ReconnectWait,
+		"ignoreSyncErrorsOnDelete": issue.IgnoreSyncErrorsOnDelete,
 	}
 
 	return &logical.Response{Data: data}, nil

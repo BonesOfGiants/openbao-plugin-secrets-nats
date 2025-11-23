@@ -182,7 +182,7 @@ func (b *NatsBackend) refreshAccountCache(ctx context.Context, s logical.Storage
 	if err != nil {
 		return err
 	}
-	for _, op := range operators {
+	for _, op := range filterSubkeys(operators) {
 		path := getAccountIssuePath(op, "")
 		accounts, err := s.List(ctx, path)
 		if err != nil {
@@ -282,7 +282,7 @@ func (b *NatsBackend) periodicRefreshUserIssues(ctx context.Context, storage log
 		return err
 	}
 
-	for _, issueName := range issuesList {
+	for _, issueName := range filterSubkeys(issuesList) {
 		issue, err := readUserIssue(ctx, storage, IssueUserParameters{
 			Operator: operator,
 			Account:  account,

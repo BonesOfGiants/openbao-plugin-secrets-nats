@@ -226,6 +226,7 @@ func syncOperatorAccounts(ctx context.Context, storage logical.Storage, issue *I
 			Str("operator", issue.Operator).
 			Err(err).
 			Msg("failed to sync accounts")
+		return nil
 	} else if s == nil {
 		log.Info().Msgf("%s: account server sync disabled", issue.Operator)
 		return nil

@@ -177,7 +177,7 @@ func storeInStorage[T any](ctx context.Context, s logical.Storage, path string, 
 }
 
 func (b *NatsBackend) refreshAccountCache(ctx context.Context, s logical.Storage) error {
-	b.Logger().Info("Periodic: starting periodic func for syncing accounts to nats")
+	b.Logger().Info("refreshing account id cache")
 	operators, err := s.List(ctx, issueOperatorPrefix) // todo paginate
 	if err != nil {
 		return err
@@ -189,13 +189,17 @@ func (b *NatsBackend) refreshAccountCache(ctx context.Context, s logical.Storage
 			return err
 		}
 
-		for _, acc := range accounts {
+		for _, acc := range filterSubkeys(accounts) {
 			accNkey, err := readAccountNkey(ctx, s, NkeyParameters{
 				Operator: op,
 				Account:  acc,
 			})
 			if err != nil {
 				return err
+			}
+			if accNkey == nil {
+				b.Logger().Warn("unable to get account nkey for account %s", acc)
+				continue
 			}
 
 			accId, err := toNkeyData(accNkey)
@@ -216,19 +220,20 @@ func (b *NatsBackend) periodicFunc(ctx context.Context, sys *logical.Request) er
 	if err != nil {
 		return err
 	}
-	for _, operator := range operators {
+	for _, operator := range filterSubkeys(operators) {
 		operatorIssue, err := readOperatorIssue(ctx, sys.Storage, IssueOperatorParameters{
 			Operator: operator,
 		})
 		if err != nil {
 			return err
 		}
-		if operatorIssue != nil {
-			b.Logger().Debug(fmt.Sprintf("Periodic: operator %s selected for auto sync to account server", operator))
+		if operatorIssue == nil {
+			b.Logger().Warn("unable to get operator issue %s", operator)
+			continue
+		}
 
-			if err = b.periodicRefreshAccountIssues(ctx, sys.Storage, operatorIssue); err != nil {
-				b.Logger().Warn(err.Error())
-			}
+		if err = b.periodicRefreshAccountIssues(ctx, sys.Storage, operatorIssue); err != nil {
+			b.Logger().Warn(err.Error())
 		}
 	}
 	return nil

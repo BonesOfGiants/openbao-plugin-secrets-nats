@@ -14,17 +14,8 @@ type operatorSyncConfigEntry struct {
 	ReconnectWait  int      `json:"reconnectWait"`
 	// Whether to continue with a deletion if the delete fails to sync to the target server
 	IgnoreSyncErrorsOnDelete bool `json:"ignoreSyncErrorsOnDelete"`
-}
 
-// IssueOperatorSyncParameters is the user facing interface for configuring a user issue.
-// Using pascal case on purpose.
-// +k8s:deepcopy-gen=true
-type IssueOperatorSyncParameters struct {
-	Operator       string   `json:"operator"`
-	Servers        []string `json:"servers"`
-	ConnectTimeout int      `json:"connectTimeout"`
-	MaxReconnects  int      `json:"maxReconnects"`
-	ReconnectWait  int      `json:"reconnectWait"`
+	operator string
 }
 
 func pathOperatorSyncIssue(b *NatsBackend) []*framework.Path {
@@ -58,7 +49,7 @@ func pathOperatorSyncIssue(b *NatsBackend) []*framework.Path {
 					Required:    false,
 				},
 			},
-			ExistenceCheck: b.pathOperatorSyncIssueExistenceCheck,
+			ExistenceCheck: b.pathOperatorSyncExistenceCheck,
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.CreateOperation: &framework.PathOperation{
 					Callback: b.pathOperatorSyncCreateUpdate,
@@ -67,15 +58,24 @@ func pathOperatorSyncIssue(b *NatsBackend) []*framework.Path {
 					Callback: b.pathOperatorSyncCreateUpdate,
 				},
 				logical.ReadOperation: &framework.PathOperation{
-					Callback: b.pathReadOperatorSyncIssue,
+					Callback: b.pathOperatorSyncRead,
 				},
 				logical.DeleteOperation: &framework.PathOperation{
-					Callback: b.pathDeleteOperatorSyncIssue,
+					Callback: b.pathOperatorSyncDelete,
 				},
 			},
 			HelpSynopsis: `Manages sync config for operator issue.`,
 		},
 	}
+}
+
+func (b *NatsBackend) OperatorSyncConfig(ctx context.Context, s logical.Storage, operator string) (*operatorSyncConfigEntry, error) {
+	path := operatorSyncPath(operator)
+	issue, err := getFromStorage[operatorSyncConfigEntry](ctx, s, path)
+	if issue != nil {
+		issue.operator = operator
+	}
+	return issue, err
 }
 
 func (b *NatsBackend) pathOperatorSyncCreateUpdate(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {
@@ -95,8 +95,7 @@ func (b *NatsBackend) pathOperatorSyncCreateUpdate(ctx context.Context, req *log
 		return logical.ErrorResponse("operator does not exist"), err
 	}
 
-	path := operatorSyncPath(op)
-	issue, err := getFromStorage[operatorSyncConfigEntry](ctx, req.Storage, path)
+	issue, err := b.OperatorSyncConfig(ctx, req.Storage, op)
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +129,7 @@ func (b *NatsBackend) pathOperatorSyncCreateUpdate(ctx context.Context, req *log
 		issue.ReconnectWait = d.Get("reconnectWait").(int)
 	}
 
-	entry, err := logical.StorageEntryJSON(path, issue)
+	entry, err := logical.StorageEntryJSON(operatorSyncPath(op), issue)
 	if err != nil {
 		return nil, err
 	}
@@ -146,11 +145,10 @@ func (b *NatsBackend) pathOperatorSyncCreateUpdate(ctx context.Context, req *log
 	return nil, nil
 }
 
-func (b *NatsBackend) pathReadOperatorSyncIssue(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {
+func (b *NatsBackend) pathOperatorSyncRead(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {
 	op := d.Get("operator").(string)
 
-	path := operatorSyncPath(op)
-	issue, err := getFromStorage[operatorSyncConfigEntry](ctx, req.Storage, path)
+	issue, err := b.OperatorSyncConfig(ctx, req.Storage, op)
 	if err != nil || issue == nil {
 		return nil, err
 	}
@@ -166,11 +164,10 @@ func (b *NatsBackend) pathReadOperatorSyncIssue(ctx context.Context, req *logica
 	return &logical.Response{Data: data}, nil
 }
 
-func (b *NatsBackend) pathOperatorSyncIssueExistenceCheck(ctx context.Context, req *logical.Request, d *framework.FieldData) (bool, error) {
+func (b *NatsBackend) pathOperatorSyncExistenceCheck(ctx context.Context, req *logical.Request, d *framework.FieldData) (bool, error) {
 	op := d.Get("operator").(string)
 
-	path := operatorSyncPath(op)
-	issue, err := getFromStorage[operatorSyncConfigEntry](ctx, req.Storage, path)
+	issue, err := b.OperatorSyncConfig(ctx, req.Storage, op)
 	if err != nil {
 		return false, err
 	}
@@ -178,7 +175,7 @@ func (b *NatsBackend) pathOperatorSyncIssueExistenceCheck(ctx context.Context, r
 	return issue != nil, nil
 }
 
-func (b *NatsBackend) pathDeleteOperatorSyncIssue(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {
+func (b *NatsBackend) pathOperatorSyncDelete(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {
 	op := d.Get("operator").(string)
 
 	path := operatorSyncPath(op)

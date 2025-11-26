@@ -580,11 +580,11 @@ func issueSystemAccount(ctx context.Context, storage logical.Storage, issue Issu
 					},
 				},
 				DefaultPermissions: common.Permissions{
-					Pub: common.Permission{
+					Pub: &common.Permission{
 						Allow: []string{},
 						Deny:  []string{},
 					},
-					Sub: common.Permission{
+					Sub: &common.Permission{
 						Allow: []string{},
 						Deny:  []string{},
 					},

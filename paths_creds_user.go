@@ -2,6 +2,7 @@ package natsbackend
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -10,7 +11,6 @@ import (
 	"github.com/openbao/openbao/sdk/v2/logical"
 
 	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/claims/user/v1alpha1"
-	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/stm"
 	"github.com/nats-io/jwt/v2"
 	"github.com/nats-io/nkeys"
 	"github.com/rs/zerolog/log"
@@ -26,13 +26,17 @@ type UserCredsParameters struct {
 }
 
 type UserCredsData struct {
-	Operator   string            `json:"operator"`
-	Account    string            `json:"account"`
-	User       string            `json:"user"`
-	Creds      string            `json:"creds"`
-	Parameters map[string]string `json:"parameters,omitempty"`
-	ExpiresAt  int64             `json:"expiresAt,omitempty"` // Unix timestamp when JWT expires
+	Creds      string `json:"creds"`
+	ExpiresAt  int64  `json:"expiresAt,omitempty"` // Unix timestamp when JWT expires
+	Parameters map[string]string
+	Sub        string
 }
+
+const (
+	// An extra bit of time added to the lease duration to ensure that
+	// under normal circumstances a revoke at the end of a lease is a noop
+	leaseDurationBuffer = time.Duration(5) * time.Second
+)
 
 func pathUserCreds(b *NatsBackend) []*framework.Path {
 	return []*framework.Path{
@@ -104,144 +108,162 @@ func pathUserCreds(b *NatsBackend) []*framework.Path {
 	}
 }
 
-func (b *NatsBackend) pathReadUserCreds(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	// Extract path parameters directly from data.Raw
-	credsParams := UserCredsParameters{
-		Operator: data.Get("operator").(string),
-		Account:  data.Get("account").(string),
-		User:     data.Get("user").(string),
+func (b *NatsBackend) userCredsSecretType() *framework.Secret {
+	return &framework.Secret{
+		Type:   userCredsType,
+		Renew:  nil,
+		Fields: map[string]*framework.FieldSchema{},
+		Revoke: b.userCredsRevoke,
+	}
+}
+
+func (b *NatsBackend) userCredsRevoke(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	op := req.Secret.InternalData["op"].(string)
+	acc := req.Secret.InternalData["acc"].(string)
+	sub := req.Secret.InternalData["sub"].(string)
+	exp := req.Secret.InternalData["exp"].(int64)
+
+	if exp <= time.Now().Unix() {
+		// jwt is already expired, no need to do anything
+		return nil, nil
 	}
 
-	// Parse parameters string from query parameter
-	if parametersStr := data.Get("parameters"); parametersStr != nil {
-		if paramStr, ok := parametersStr.(string); ok && paramStr != "" {
-			credsParams.Parameters = make(map[string]string)
-
-			// Try to parse as JSON first
-			err := json.Unmarshal([]byte(paramStr), &credsParams.Parameters)
-			if err != nil {
-				// If JSON parsing fails, try key=value format
-				err = parseKeyValueString(paramStr, credsParams.Parameters)
-				if err != nil {
-					log.Error().Err(err).Str("parametersStr", paramStr).Msg("Failed to parse parameters")
-					return logical.ErrorResponse("Invalid parameters format. Use key=value,key2=value2 or JSON"), logical.ErrInvalidRequest
-				}
-			}
-
-			log.Debug().Interface("parsedParameters", credsParams.Parameters).Msg("Parsed parameters")
-		}
-	}
-
-	userCreds, err := generateUserCreds(ctx, req.Storage, credsParams)
+	err := b.addAccountRevocationIssue(ctx, req.Storage, IssueAccountRevocationParameters{
+		Operator: op,
+		Account:  acc,
+		Subject:  sub,
+	}, true)
 	if err != nil {
-		return logical.ErrorResponse(fmt.Sprintf("GeneratingCredsFailedError: %s", err.Error())), err
-	}
-
-	if userCreds == nil {
-		return logical.ErrorResponse("UserTemplateNotFoundError"), nil
-	}
-
-	return createResponseUserCredsData(userCreds)
-}
-
-func parseKeyValueString(input string, result map[string]string) error {
-	if input == "" {
-		return nil
-	}
-
-	pairs := strings.SplitSeq(input, ",")
-	for pair := range pairs {
-		parts := strings.SplitN(strings.TrimSpace(pair), "=", 2)
-		if len(parts) != 2 {
-			return fmt.Errorf("invalid key=value pair: %s", pair)
+		if errors.Is(err, accountNotFoundError) {
+			return nil, nil
 		}
-		key := strings.TrimSpace(parts[0])
-		value := strings.TrimSpace(parts[1])
-		if key == "" {
-			return fmt.Errorf("empty key in pair: %s", pair)
-		}
-		result[key] = value
-	}
-	return nil
-}
 
-func (b *NatsBackend) pathListUserCreds(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	// defer to user issues list,
-	// since we don't keep storage for user creds
-	return b.pathListUserIssues(ctx, req, data)
-}
-
-func (b *NatsBackend) pathUserCredsExistenceCheck(ctx context.Context, req *logical.Request, data *framework.FieldData) (bool, error) {
-	issue, err := readUserIssue(ctx, req.Storage, IssueUserParameters{
-		Operator: data.Get("operator").(string),
-		Account:  data.Get("account").(string),
-		User:     data.Get("user").(string),
-	})
-	if err != nil {
-		return false, err
+		return nil, fmt.Errorf("failed to add account revocation: %w", err)
 	}
 
-	return issue != nil, nil
+	return nil, nil
 }
 
-func generateUserCreds(ctx context.Context, storage logical.Storage, params UserCredsParameters) (*UserCredsData, error) {
-	log.Info().
-		Str("operator", params.Operator).
-		Str("account", params.Account).
-		Str("user", params.User).
-		Interface("parameters", params.Parameters).
-		Msg("generating fresh user credentials")
+func (b *NatsBackend) pathReadUserCreds(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {
+	op := d.Get("operator").(string)
+	acc := d.Get("account").(string)
+	user := d.Get("user").(string)
 
-	// 3. Generate fresh JWT
-	jwtToken, expiresAt, err := generateUserJWT(ctx, storage, &params)
+	path := getUserIssuePath(op, acc, user)
+	issue, err := getFromStorage[IssueUserStorage](ctx, req.Storage, path)
 	if err != nil {
 		return nil, err
 	}
+	if issue == nil {
+		return nil, nil
+	}
 
-	// 4. Get user nkey for creds file
-	userNkey, err := readUserNkey(ctx, storage, NkeyParameters{
-		Operator: params.Operator,
-		Account:  params.Account,
-		User:     params.User,
+	parameters, err := parseUserParameters(d.Get("parameters"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse parameters: %w", err)
+	}
+
+	fmt.Printf("params: %+v, raw: %+v\n", parameters, d.Get("parameters"))
+
+	userNkey, err := readUserNkey(ctx, req.Storage, NkeyParameters{
+		Operator: issue.Operator,
+		Account:  issue.Account,
+		User:     issue.User,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("could not read user nkey: %s", err)
+		return nil, fmt.Errorf("failed to read user nkey: %w", err)
 	}
 	if userNkey == nil {
-		return nil, logical.ErrUnsupportedPath
+		return nil, nil
 	}
 
-	// 5. Create creds file
-	userKeyPair, err := nkeys.FromSeed(userNkey.Seed)
+	nkey, err := nkeys.FromSeed(userNkey.Seed)
 	if err != nil {
 		return nil, fmt.Errorf("could not create keypair from seed: %s", err)
 	}
-	seed, err := userKeyPair.Seed()
+
+	result, err := generateUserCreds(ctx, req.Storage, &userJwtParams{
+		operator:   op,
+		account:    acc,
+		group:      user,
+		user:       user,
+		ttl:        issue.ExpirationS,
+		signingKey: issue.UseSigningKey,
+		claims:     &issue.ClaimsTemplate,
+		parameters: parameters,
+		nkey:       nkey,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("could not get seed: %s", err)
+		return nil, fmt.Errorf("failed to generate user creds: %w", err)
+	}
+	if result == nil {
+		return nil, fmt.Errorf("unexpected null creds")
 	}
 
-	creds, err := jwt.FormatUserConfig(jwtToken, seed)
-	if err != nil {
-		return nil, fmt.Errorf("could not format user creds: %s", err)
+	resp := b.Secret(userCredsType).Response(map[string]any{
+		"operator":   op,
+		"account":    acc,
+		"user":       user,
+		"creds":      result.creds,
+		"parameters": result.parameters,
+		"expiresAt":  result.expiresAt,
+	}, map[string]any{
+		"op":  op,
+		"acc": acc,
+		"sub": result.sub,
+		"exp": result.expiresAt,
+	})
+
+	resp.Secret.LeaseOptions.TTL = time.Duration(issue.ExpirationS)*time.Second + leaseDurationBuffer
+	resp.Secret.LeaseOptions.MaxTTL = resp.Secret.TTL
+
+	return resp, nil
+}
+
+func parseUserParameters(parameters any) (map[string]string, error) {
+	result := map[string]string{}
+
+	if parameters == nil {
+		return result, nil
 	}
 
-	return &UserCredsData{
-		Operator:   params.Operator,
-		Account:    params.Account,
-		User:       params.User,
-		Creds:      string(creds),
-		Parameters: params.Parameters,
-		ExpiresAt:  expiresAt,
-	}, nil
+	str, ok := parameters.(string)
+	if !ok {
+		return nil, fmt.Errorf("not a valid string")
+	}
+	if str == "" {
+		return result, nil
+	}
+
+	err := json.Unmarshal([]byte(str), &result)
+	if err != nil {
+		for pair := range strings.SplitSeq(str, ",") {
+			parts := strings.SplitN(strings.TrimSpace(pair), "=", 2)
+			if len(parts) != 2 {
+				return nil, fmt.Errorf("invalid key=value pair: %s", pair)
+			}
+			key := strings.TrimSpace(parts[0])
+			value := strings.TrimSpace(parts[1])
+			if key == "" {
+				return nil, fmt.Errorf("empty key in pair: %s", pair)
+			}
+			result[key] = value
+		}
+	}
+
+	return result, nil
 }
 
 // applyTemplateParameters replaces placeholders in claims template with actual values
-func applyTemplateParameters(template v1alpha1.UserClaims, parameters map[string]string) (v1alpha1.UserClaims, error) {
+func applyTemplateParameters(template *v1alpha1.UserClaims, parameters map[string]string) (*v1alpha1.UserClaims, error) {
+	if template == nil {
+		return &v1alpha1.UserClaims{}, nil
+	}
+
 	// Convert template to JSON for string replacement
 	templateBytes, err := json.Marshal(template)
 	if err != nil {
-		return template, fmt.Errorf("could not marshal template: %s", err)
+		return nil, fmt.Errorf("could not marshal template: %s", err)
 	}
 
 	templateStr := string(templateBytes)
@@ -276,7 +298,7 @@ func applyTemplateParameters(template v1alpha1.UserClaims, parameters map[string
 		return template, fmt.Errorf("could not unmarshal processed template: %s", err)
 	}
 
-	return processedClaims, nil
+	return &processedClaims, nil
 }
 
 func findTemplateVariables(templateStr string) []string {
@@ -311,151 +333,186 @@ func findTemplateVariables(templateStr string) []string {
 	return variables
 }
 
-// generateUserJWT creates a fresh JWT from the template
-func generateUserJWT(ctx context.Context, storage logical.Storage, params *UserCredsParameters) (string, int64, error) {
-	// 1. Read the user issue template
-	issue, err := readUserIssue(ctx, storage, IssueUserParameters{
-		Operator: params.Operator,
-		Account:  params.Account,
-		User:     params.User,
+func (b *NatsBackend) pathListUserCreds(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	// defer to user issues list,
+	// since we don't keep storage for user creds
+	return b.pathListUserIssues(ctx, req, data)
+}
+
+func (b *NatsBackend) pathUserCredsExistenceCheck(ctx context.Context, req *logical.Request, data *framework.FieldData) (bool, error) {
+	issue, err := readUserIssue(ctx, req.Storage, IssueUserParameters{
+		Operator: data.Get("operator").(string),
+		Account:  data.Get("account").(string),
+		User:     data.Get("user").(string),
 	})
 	if err != nil {
-		return "", 0, fmt.Errorf("could not read user template: %s", err)
-	}
-	if issue == nil {
-		return "", 0, logical.ErrUnsupportedPath
+		return false, err
 	}
 
-	if params.Parameters == nil {
-		params.Parameters = make(map[string]string, 3)
-	}
+	return issue != nil, nil
+}
 
-	params.Parameters["name()"] = params.User
-	params.Parameters["account()"] = params.Account
-	params.Parameters["operator()"] = params.Operator
+type userCredsResult struct {
+	creds      string
+	parameters map[string]string
+	sub        string
+	expiresAt  int64
+}
 
-	// 2. Apply template parameters to claims
-	claims, err := applyTemplateParameters(issue.ClaimsTemplate, params.Parameters)
+func generateUserCreds(ctx context.Context, s logical.Storage, p *userJwtParams) (*userCredsResult, error) {
+	result, err := generateUserJWT(ctx, s, p)
 	if err != nil {
-		return "", 0, fmt.Errorf("could not apply template parameters: %s", err)
+		return nil, fmt.Errorf("failed to generate jwt: %w", err)
 	}
 
-	// Get signing key (account or signing key)
-	useSigningKey := issue.UseSigningKey
+	seed, err := p.nkey.Seed()
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode seed: %w", err)
+	}
+
+	creds, err := jwt.FormatUserConfig(result.jwt, seed)
+	if err != nil {
+		return nil, fmt.Errorf("failed to format user creds: %w", err)
+	}
+
+	publicKey, err := p.nkey.PublicKey()
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode public key: %w", err)
+	}
+
+	return &userCredsResult{
+		creds:      string(creds),
+		parameters: result.parameters,
+		sub:        publicKey,
+		expiresAt:  result.expiresAt,
+	}, nil
+}
+
+type userJwtParams struct {
+	operator   string
+	account    string
+	group      string
+	user       string
+	claims     *v1alpha1.UserClaims
+	signingKey string
+	ttl        int
+	nkey       nkeys.KeyPair
+	parameters map[string]string
+}
+
+type userJwtResult struct {
+	jwt        string
+	parameters map[string]string
+	expiresAt  int64
+}
+
+func generateUserJWT(ctx context.Context, s logical.Storage, p *userJwtParams) (userJwtResult, error) {
+	parameters := p.parameters
+
+	if parameters == nil {
+		parameters = make(map[string]string, 3)
+	}
+
+	parameters["name()"] = p.user
+	parameters["account()"] = p.account
+	parameters["operator()"] = p.operator
+
+	claims, err := applyTemplateParameters(p.claims, parameters)
+	if err != nil {
+		return userJwtResult{}, fmt.Errorf("could not apply template parameters: %s", err)
+	}
+
 	var seed []byte
 
-	accountNkey, err := readAccountNkey(ctx, storage, NkeyParameters{
-		Operator: issue.Operator,
-		Account:  issue.Account,
+	accountNkey, err := readAccountNkey(ctx, s, NkeyParameters{
+		Operator: p.operator,
+		Account:  p.account,
 	})
 	if err != nil {
-		return "", 0, fmt.Errorf("could not read account nkey: %s", err)
+		return userJwtResult{}, fmt.Errorf("failed to read account nkey: %w", err)
 	}
 	if accountNkey == nil {
-		return "", 0, fmt.Errorf("account nkey does not exist: %s", issue.Account)
+		return userJwtResult{}, fmt.Errorf("account nkey not found: %v", p.account)
 	}
 
-	accountKeyPair, err := nkeys.FromSeed(accountNkey.Seed)
-	if err != nil {
-		return "", 0, err
-	}
-	accountPublicKey, err := accountKeyPair.PublicKey()
-	if err != nil {
-		return "", 0, err
-	}
-
-	if useSigningKey == "" {
+	if p.signingKey == "" {
 		seed = accountNkey.Seed
 	} else {
-		signingNkey, err := readAccountSigningNkey(ctx, storage, NkeyParameters{
-			Operator: issue.Operator,
-			Account:  issue.Account,
-			Signing:  useSigningKey,
+		signingNkey, err := readAccountSigningNkey(ctx, s, NkeyParameters{
+			Operator: p.operator,
+			Account:  p.account,
+			Signing:  p.signingKey,
 		})
 		if err != nil {
-			return "", 0, fmt.Errorf("could not read signing nkey: %s", err)
+			return userJwtResult{}, fmt.Errorf("failed to read signing key: %s", err)
 		}
 		if signingNkey == nil {
-			return "", 0, fmt.Errorf("account signing nkey does not exist: %s", useSigningKey)
+			return userJwtResult{}, fmt.Errorf("signing key not found: %v, %s", p.account, p.signingKey)
 		}
 		seed = signingNkey.Seed
+
+		accountKeyPair, err := nkeys.FromSeed(accountNkey.Seed)
+		if err != nil {
+			return userJwtResult{}, fmt.Errorf("failed to decode account nkey: %w", err)
+		}
+		accountPublicKey, err := accountKeyPair.PublicKey()
+		if err != nil {
+			return userJwtResult{}, fmt.Errorf("failed to decode account public key: %w", err)
+		}
+
+		claims.IssuerAccount = accountPublicKey
 	}
 
 	signingKeyPair, err := nkeys.FromSeed(seed)
 	if err != nil {
-		return "", 0, err
+		return userJwtResult{}, fmt.Errorf("failed to decode signing key: %w", err)
 	}
 	signingPublicKey, err := signingKeyPair.PublicKey()
 	if err != nil {
-		return "", 0, err
+		return userJwtResult{}, fmt.Errorf("failed to decode account public key: %w", err)
 	}
 
-	// Get user public key for subject
-	userNkey, err := readUserNkey(ctx, storage, NkeyParameters{
-		Operator: issue.Operator,
-		Account:  issue.Account,
-		User:     issue.User,
-	})
+	sub, err := p.nkey.PublicKey()
 	if err != nil {
-		return "", 0, fmt.Errorf("could not read user nkey: %s", err)
-	}
-	if userNkey == nil {
-		return "", 0, fmt.Errorf("user nkey does not exist")
+		return userJwtResult{}, fmt.Errorf("failed to decode public key: %w", err)
 	}
 
-	userKeyPair, err := nkeys.FromSeed(userNkey.Seed)
-	if err != nil {
-		return "", 0, err
-	}
-	userPublicKey, err := userKeyPair.PublicKey()
-	if err != nil {
-		return "", 0, err
-	}
-
-	// Set required fields
-	if useSigningKey != "" {
-		claims.IssuerAccount = accountPublicKey
-	}
-	claims.ClaimsData.Subject = userPublicKey
+	claims.ClaimsData.Subject = sub
 	claims.ClaimsData.Issuer = signingPublicKey
+
+	if p.group != "" {
+		claims.Tags = append(claims.Tags, p.group)
+	}
 
 	// Set expiration if configured
 	var expiresAt int64
-	if issue.ExpirationS > 0 {
-		expiresAt = time.Now().Add(time.Duration(issue.ExpirationS) * time.Second).Unix()
+	if p.ttl > 0 {
+		expiresAt = time.Now().Add(time.Duration(p.ttl) * time.Second).Unix()
 		claims.ClaimsData.Expires = expiresAt
 	}
 
 	// Convert and encode JWT
-	natsJwt, err := v1alpha1.Convert(&claims)
+	natsJwt, err := v1alpha1.Convert(claims)
 	if err != nil {
-		return "", 0, fmt.Errorf("could not convert claims to nats jwt: %s", err)
+		return userJwtResult{}, fmt.Errorf("failed to convert claims to nats jwt: %s", err)
 	}
 
-	token, err := natsJwt.Encode(signingKeyPair)
+	jwt, err := natsJwt.Encode(signingKeyPair)
 	if err != nil {
-		return "", 0, fmt.Errorf("could not encode jwt: %s", err)
+		return userJwtResult{}, fmt.Errorf("failed to encode jwt: %s", err)
 	}
 
 	log.Info().
-		Str("operator", issue.Operator).
-		Str("account", issue.Account).
-		Str("user", issue.User).
+		Str("operator", p.operator).
+		Str("account", p.account).
+		Str("group", p.group).
+		Str("user", p.user).
 		Int64("expiresAt", expiresAt).
 		Msg("fresh JWT generated")
 
-	return token, expiresAt, nil
-}
-
-func createResponseUserCredsData(UserCredsData *UserCredsData) (*logical.Response, error) {
-	rval := map[string]any{}
-	err := stm.StructToMap(UserCredsData, &rval)
-	if err != nil {
-		return nil, err
-	}
-
-	resp := &logical.Response{
-		Data: rval,
-	}
-	return resp, nil
+	return userJwtResult{
+		jwt:        jwt,
+		expiresAt:  expiresAt,
+		parameters: parameters,
+	}, nil
 }

@@ -28,10 +28,17 @@ func convertUserLimits(in *User, out *jwt.User) {
 }
 
 func convertUserPermissionLimits(in *User, out *jwt.User) error {
-	out.UserPermissionLimits.Pub.Allow = in.UserPermissionLimits.Pub.Allow
-	out.UserPermissionLimits.Pub.Deny = in.UserPermissionLimits.Pub.Deny
-	out.UserPermissionLimits.Sub.Allow = in.UserPermissionLimits.Sub.Allow
-	out.UserPermissionLimits.Sub.Deny = in.UserPermissionLimits.Sub.Deny
+	out.Permissions = jwt.Permissions{}
+
+	if in.Permissions.Pub != nil {
+		out.Permissions.Pub.Allow = jwt.StringList(in.Permissions.Pub.Allow)
+		out.Permissions.Pub.Deny = jwt.StringList(in.Permissions.Pub.Deny)
+	}
+	if in.Permissions.Sub != nil {
+		out.Permissions.Sub.Allow = jwt.StringList(in.Permissions.Sub.Allow)
+		out.Permissions.Sub.Deny = jwt.StringList(in.Permissions.Sub.Deny)
+	}
+
 	if in.UserPermissionLimits.Resp != nil {
 		out.UserPermissionLimits.Resp = &jwt.ResponsePermission{}
 		out.UserPermissionLimits.Resp.MaxMsgs = in.UserPermissionLimits.Resp.MaxMsgs

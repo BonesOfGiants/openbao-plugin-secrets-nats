@@ -23,8 +23,8 @@ func TestCRUDUserCreds(t *testing.T) {
 			Path:      path,
 			Storage:   reqStorage,
 		})
-		assert.Equal(t, logical.ErrUnsupportedPath, err)
-		assert.True(t, resp.IsError())
+		assert.Nil(t, err)
+		assert.Nil(t, resp)
 	})
 
 	t.Run("Test CRUD for user creds with template", func(t *testing.T) {
@@ -101,11 +101,10 @@ func TestCRUDUserCreds(t *testing.T) {
 		assert.Equal(t, "acc1", resp.Data["account"])
 		assert.Equal(t, "u1", resp.Data["user"])
 
-		// Check that expiresAt is set (JSON unmarshaling converts to float64)
+		// Check that expiresAt is set
 		assert.NotNil(t, resp.Data["expiresAt"])
-		expiresAt, ok := resp.Data["expiresAt"].(float64)
-		assert.True(t, ok, "expiresAt should be float64")
-		assert.Greater(t, expiresAt, float64(0))
+		assert.IsType(t, int64(0), resp.Data["expiresAt"])
+		assert.Greater(t, resp.Data["expiresAt"].(int64), int64(0))
 
 		// 5. Test that we can read credentials multiple times (each should be fresh)
 		// Note: JWTs might be the same if generated within the same second due to timestamp precision
@@ -150,8 +149,8 @@ func TestCRUDUserCreds(t *testing.T) {
 			Path:      credsPath,
 			Storage:   reqStorage,
 		})
-		assert.Equal(t, logical.ErrUnsupportedPath, err)
-		assert.True(t, resp.IsError())
+		assert.Nil(t, err)
+		assert.Nil(t, resp)
 	})
 
 	t.Run("Test user creds with template parameters", func(t *testing.T) {
@@ -200,12 +199,16 @@ func TestCRUDUserCreds(t *testing.T) {
 		assert.NotNil(t, resp.Data["creds"])
 		assert.NotEmpty(t, resp.Data["creds"].(string))
 
-		// Check that parameters are returned (JSON unmarshaling converts to map[string]any)
+		// Check that parameters are returned
 		assert.NotNil(t, resp.Data["parameters"])
-		params, ok := resp.Data["parameters"].(map[string]any)
-		assert.True(t, ok, "parameters should be map[string]any")
-		assert.Equal(t, "12345", params["user_id"])
-		assert.Equal(t, "us-east-1", params["region"])
+		assert.IsType(t, map[string]string{}, resp.Data["parameters"])
+		assert.EqualValues(t, map[string]string{
+			"name()":     "u2",
+			"account()":  "acc1",
+			"operator()": "op1",
+			"user_id":    "12345",
+			"region":     "us-east-1",
+		}, resp.Data["parameters"])
 
 		// Test with key=value parameters
 		resp2, err := b.HandleRequest(context.Background(), &logical.Request{
@@ -220,10 +223,14 @@ func TestCRUDUserCreds(t *testing.T) {
 		assert.False(t, resp2.IsError())
 		assert.NotNil(t, resp2.Data["creds"])
 
-		params2, ok := resp2.Data["parameters"].(map[string]any)
-		assert.True(t, ok, "parameters should be map[string]any")
-		assert.Equal(t, "67890", params2["user_id"])
-		assert.Equal(t, "eu-west-1", params2["region"])
+		assert.IsType(t, map[string]string{}, resp2.Data["parameters"])
+		assert.EqualValues(t, map[string]string{
+			"name()":     "u2",
+			"account()":  "acc1",
+			"operator()": "op1",
+			"user_id":    "67890",
+			"region":     "eu-west-1",
+		}, resp2.Data["parameters"])
 
 		// Test that missing required parameters still works if the template doesn't use all variables
 		// (Based on logs, it seems the validation allows partial parameters)

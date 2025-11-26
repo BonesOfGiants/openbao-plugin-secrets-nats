@@ -74,11 +74,11 @@ func TestConvert(t *testing.T) {
 			SigningKeys: []string{},
 			Revocations: map[string]int64{"r3": 1675804525, "r4": 1675804524},
 			DefaultPermissions: common.Permissions{
-				Pub: common.Permission{
+				Pub: &common.Permission{
 					Allow: []string{"pub1", "pub2"},
 					Deny:  []string{"pub3", "pub4"},
 				},
-				Sub: common.Permission{
+				Sub: &common.Permission{
 					Allow: []string{"sub5", "sub6"},
 					Deny:  []string{"sub7", "sub8"},
 				},

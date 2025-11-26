@@ -12,5 +12,6 @@ func pathIssue(b *NatsBackend) []*framework.Path {
 	paths = append(paths, pathAccountImportIssue(b)...)
 	paths = append(paths, pathAccountRevocationIssue(b)...)
 	paths = append(paths, pathUserIssue(b)...)
+	paths = append(paths, pathUserGroupIssue(b)...)
 	return paths
 }

@@ -70,6 +70,7 @@ func NewAccountSync(syncConfig Config, o ...nats.Option) (*AccountSync, error) {
 func (r *AccountSync) CloseConnection() {
 	if r != nil {
 		if r.nc != nil {
+			log.Debug().Msg("sync: closing connection")
 			r.nc.Close()
 		}
 	}

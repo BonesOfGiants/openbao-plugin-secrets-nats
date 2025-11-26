@@ -475,8 +475,8 @@ func TestCRUDUserIssue(t *testing.T) {
 			Path:      "creds/operator/op1/account/ac1/user/us1",
 			Storage:   reqStorage,
 		})
-		assert.Equal(t, logical.ErrUnsupportedPath, err)
-		assert.True(t, resp.IsError())
+		assert.Nil(t, err)
+		assert.Nil(t, resp)
 	})
 
 	t.Run("Test sys account with default-push user", func(t *testing.T) {
@@ -596,13 +596,8 @@ func TestCRUDUserIssue(t *testing.T) {
 			Path:      nkeyUserPath,
 			Storage:   reqStorage,
 		})
-		if err != nil || (resp != nil && resp.IsError()) {
-			t.Fatalf("operator signing nkey ReadOperation request failed, err: %s, resp %#v", err, resp)
-		}
-
-		if resp != nil {
-			t.Fatalf("expected nil resp for operator signing nkey ReadOperation resp: %#v", resp)
-		}
+		assert.Nil(t, err)
+		assert.Nil(t, resp)
 
 		//////////////////////////
 		// read the jwt
@@ -612,8 +607,8 @@ func TestCRUDUserIssue(t *testing.T) {
 			Path:      jwtUserPath,
 			Storage:   reqStorage,
 		})
-		assert.Equal(t, logical.ErrUnsupportedPath, err)
-		assert.False(t, resp.IsError())
+		assert.ErrorIs(t, err, logical.ErrUnsupportedPath)
+		assert.Nil(t, resp)
 
 		//////////////////////////
 		// read the creds
@@ -623,8 +618,8 @@ func TestCRUDUserIssue(t *testing.T) {
 			Path:      credsUserPath,
 			Storage:   reqStorage,
 		})
-		assert.Equal(t, logical.ErrUnsupportedPath, err)
-		assert.True(t, resp.IsError())
+		assert.Nil(t, err)
+		assert.Nil(t, resp)
 	})
 
 }

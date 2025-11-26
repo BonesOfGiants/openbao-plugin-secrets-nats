@@ -43,10 +43,10 @@ type ClaimsData struct {
 type Permissions struct {
 	// Specifies the publish permissions
 	// +kubebuilder:validation:Optional
-	Pub Permission `json:"pub"`
+	Pub *Permission `json:"pub,omitempty"`
 	// Specifies the subscribe permissions
 	// +kubebuilder:validation:Optional
-	Sub Permission `json:"sub"`
+	Sub *Permission `json:"sub,omitempty"`
 	// Specifies the response permissions
 	// +kubebuilder:validation:Optional
 	Resp *ResponsePermission `json:"resp,omitempty"`

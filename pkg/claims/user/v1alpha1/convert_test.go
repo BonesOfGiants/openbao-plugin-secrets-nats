@@ -17,11 +17,11 @@ func TestConvert(t *testing.T) {
 		User: User{
 			UserPermissionLimits: UserPermissionLimits{
 				Permissions: common.Permissions{
-					Pub: common.Permission{
+					Pub: &common.Permission{
 						Allow: []string{"pub1", "pub2"},
 						Deny:  []string{"pub3", "pub4"},
 					},
-					Sub: common.Permission{
+					Sub: &common.Permission{
 						Allow: []string{"sub1", "sub2"},
 						Deny:  []string{"sub3", "sub4"},
 					},

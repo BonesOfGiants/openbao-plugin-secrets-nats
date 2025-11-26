@@ -42,6 +42,7 @@ const (
 	issueOperatorPrefix = "issue/operator/"
 	jwtOperatorPrefix   = "jwt/operator/"
 	nkeyOperatorPrefix  = "nkey/operator/"
+	userCredsType       = "user_creds"
 )
 
 // backend defines the target API backend
@@ -72,7 +73,9 @@ func backend() *NatsBackend {
 			pathCreds(&b),
 			[]*framework.Path{},
 		),
-		Secrets:           []*framework.Secret{},
+		Secrets: []*framework.Secret{
+			b.userCredsSecretType(),
+		},
 		BackendType:       logical.TypeLogical,
 		Invalidate:        b.invalidate,
 		WALRollbackMinAge: 30 * time.Second,
@@ -259,7 +262,7 @@ func (b *NatsBackend) periodicRefreshAccountRevocations(ctx context.Context, sto
 			continue
 		}
 
-		if (issue.CreationTime + issue.ExpirationS) < now {
+		if (issue.CreationTime + int64(issue.ExpirationS)) < now {
 			err = deleteAccountRevocationIssue(ctx, storage, IssueAccountRevocationParameters{
 				Operator: issue.Operator,
 				Account:  issue.Account,
@@ -319,35 +322,59 @@ func (b *NatsBackend) periodicRefreshUserIssues(ctx context.Context, storage log
 func createSyncAuthCallback(ctx context.Context, storage logical.Storage, op string) nats.Option {
 	return nats.UserJWT(
 		func() (string, error) {
-			jwtToken, _, err := generateUserJWT(ctx, storage, &UserCredsParameters{
+			issue, err := readUserIssue(ctx, storage, IssueUserParameters{
 				Operator: op,
 				Account:  DefaultSysAccountName,
 				User:     DefaultPushUser,
 			})
 			if err != nil {
-				return "", fmt.Errorf("could not generate JWT: %w", err)
+				return "", fmt.Errorf("failed to read system user: %w", err)
 			}
 
-			return jwtToken, nil
+			userNkey, err := readUserNkey(ctx, storage, NkeyParameters{
+				Operator: op,
+				Account:  DefaultSysAccountName,
+				User:     DefaultPushUser,
+			})
+			if err != nil {
+				return "", fmt.Errorf("failed to read system user nkey: %w", err)
+			}
+
+			nkey, err := nkeys.FromSeed(userNkey.Seed)
+			if err != nil {
+				return "", fmt.Errorf("failed to decode system user nkey: %w", err)
+			}
+
+			result, err := generateUserJWT(ctx, storage, &userJwtParams{
+				operator:   op,
+				account:    DefaultSysAccountName,
+				user:       DefaultPushUser,
+				parameters: nil,
+				claims:     &issue.ClaimsTemplate,
+				nkey:       nkey,
+			})
+			if err != nil {
+				return "", fmt.Errorf("failed to generate user jwt: %w", err)
+			}
+
+			return result.jwt, nil
 		},
 		func(nonce []byte) ([]byte, error) {
-			sysUserNkey, err := readUserNkey(ctx, storage, NkeyParameters{
+			userNkey, err := readUserNkey(ctx, storage, NkeyParameters{
 				Operator: op,
 				Account:  DefaultSysAccountName,
 				User:     DefaultPushUser,
 			})
 			if err != nil {
-				return nil, err
-			} else if sysUserNkey == nil {
-				return nil, fmt.Errorf("could not get sys user nkey: %w", err)
+				return nil, fmt.Errorf("failed to read system user nkey: %w", err)
 			}
 
-			kp, err := nkeys.FromSeed(sysUserNkey.Seed)
+			nkey, err := nkeys.FromSeed(userNkey.Seed)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to decode system user nkey: %w", err)
 			}
 
-			return kp.Sign(nonce)
+			return nkey.Sign(nonce)
 		},
 	)
 }

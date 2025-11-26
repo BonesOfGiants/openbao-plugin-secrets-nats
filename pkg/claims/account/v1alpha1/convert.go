@@ -100,14 +100,6 @@ func convertLimits(in *Account, out *jwt.Account) {
 	}
 }
 
-func convertSigningKeyKind(kind string) jwt.ScopeType {
-	switch kind {
-	case "user":
-		return jwt.UserScopeType
-	}
-	return jwt.UserScopeType
-}
-
 func convertSigningKeys(in *Account, out *jwt.Account) {
 	if in.SigningKeys == nil {
 		return
@@ -125,15 +117,15 @@ func convertRevocations(in *Account, out *jwt.Account) {
 }
 
 func convertDefaultPermissions(in *Account, out *jwt.Account) {
-	out.DefaultPermissions = jwt.Permissions{
-		Pub: jwt.Permission{
-			Allow: jwt.StringList(in.DefaultPermissions.Pub.Allow),
-			Deny:  jwt.StringList(in.DefaultPermissions.Pub.Deny),
-		},
-		Sub: jwt.Permission{
-			Allow: jwt.StringList(in.DefaultPermissions.Sub.Allow),
-			Deny:  jwt.StringList(in.DefaultPermissions.Sub.Deny),
-		},
+	out.DefaultPermissions = jwt.Permissions{}
+
+	if in.DefaultPermissions.Pub != nil {
+		out.DefaultPermissions.Pub.Allow = jwt.StringList(in.DefaultPermissions.Pub.Allow)
+		out.DefaultPermissions.Pub.Deny = jwt.StringList(in.DefaultPermissions.Pub.Deny)
+	}
+	if in.DefaultPermissions.Sub != nil {
+		out.DefaultPermissions.Sub.Allow = jwt.StringList(in.DefaultPermissions.Sub.Allow)
+		out.DefaultPermissions.Sub.Deny = jwt.StringList(in.DefaultPermissions.Sub.Deny)
 	}
 	if in.DefaultPermissions.Resp != nil {
 		out.DefaultPermissions.Resp = &jwt.ResponsePermission{

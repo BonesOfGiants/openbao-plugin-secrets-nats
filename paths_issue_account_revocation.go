@@ -3,6 +3,7 @@ package natsbackend
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/openbao/openbao/sdk/v2/framework"
@@ -18,7 +19,7 @@ type IssueAccountRevocationStorage struct {
 	Account      string `json:"account"`
 	Subject      string `json:"sub"`
 	CreationTime int64  `json:"creationTime"`
-	ExpirationS  int64  `json:"expirationS,omitempty"`
+	ExpirationS  int    `json:"expirationS,omitempty"`
 }
 
 // IssueAccountRevocationParameters is the user facing interface for configuring a user issue.
@@ -28,7 +29,7 @@ type IssueAccountRevocationParameters struct {
 	Operator    string `json:"operator"`
 	Account     string `json:"account"`
 	Subject     string `json:"sub"`
-	ExpirationS int64  `json:"expirationS,omitempty"`
+	ExpirationS int    `json:"expirationS,omitempty"`
 }
 
 type IssueAccountRevocationData struct {
@@ -36,8 +37,12 @@ type IssueAccountRevocationData struct {
 	Account      string `json:"account"`
 	Subject      string `json:"sub"`
 	CreationTime int64  `json:"creationTime"`
-	ExpirationS  int64  `json:"expirationS"`
+	ExpirationS  int    `json:"expirationS"`
 }
+
+var (
+	accountNotFoundError = errors.New("account not found")
+)
 
 func pathAccountRevocationIssue(b *NatsBackend) []*framework.Path {
 	return []*framework.Path{
@@ -140,7 +145,7 @@ func (b *NatsBackend) pathAddAccountRevocationIssue(ctx context.Context, req *lo
 	log.Debug().
 		Msg("Parsed parameters")
 
-	err = addAccountRevocationIssue(ctx, req.Storage, params, true)
+	err = b.addAccountRevocationIssue(ctx, req.Storage, params, true)
 	if err != nil {
 		return logical.ErrorResponse(AddingIssueFailedError), nil
 	}
@@ -211,26 +216,29 @@ func (b *NatsBackend) pathDeleteAccountRevocationIssue(ctx context.Context, req 
 	return nil, nil
 }
 
-func addAccountRevocationIssue(ctx context.Context, storage logical.Storage, params IssueAccountRevocationParameters, refresh bool) error {
+func (b *NatsBackend) addAccountRevocationIssue(ctx context.Context, storage logical.Storage, params IssueAccountRevocationParameters, refresh bool) error {
 	log.Info().
 		Str("operator", params.Operator).Str("account", params.Account).Str("sub", params.Subject).
 		Msgf("issue account revocation")
 
+	accountIssue, err := readAccountIssue(ctx, storage, IssueAccountParameters{
+		Operator: params.Operator,
+		Account:  params.Account,
+	})
+	if err != nil {
+		return err
+	}
+	if accountIssue == nil {
+		return accountNotFoundError
+	}
+
 	// store issue
-	_, err := storeAccountRevocationIssue(ctx, storage, params)
+	_, err = storeAccountRevocationIssue(ctx, storage, params)
 	if err != nil {
 		return err
 	}
 
 	if refresh {
-		accountIssue, err := readAccountIssue(ctx, storage, IssueAccountParameters{
-			Operator: params.Operator,
-			Account:  params.Account,
-		})
-		if err != nil {
-			return err
-		}
-
 		return refreshAccount(ctx, storage, accountIssue)
 	}
 

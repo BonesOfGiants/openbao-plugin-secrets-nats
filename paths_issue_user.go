@@ -20,7 +20,7 @@ type IssueUserStorage struct {
 	UseSigningKey  string              `json:"useSigningKey"`
 	RevokeOnDelete bool                `json:"revokeOnDelete,omitempty"`
 	ClaimsTemplate v1alpha1.UserClaims `json:"claimsTemplate"`
-	ExpirationS    int64               `json:"expirationS,omitempty"`
+	ExpirationS    int                 `json:"expirationS,omitempty"`
 	Status         IssueUserStatus     `json:"status"`
 }
 
@@ -34,14 +34,14 @@ type IssueUserParameters struct {
 	UseSigningKey  string              `json:"useSigningKey,omitempty"`
 	RevokeOnDelete bool                `json:"revokeOnDelete,omitempty"`
 	ClaimsTemplate v1alpha1.UserClaims `json:"claimsTemplate"`
-	ExpirationS    int64               `json:"expirationS,omitempty"`
+	ExpirationS    int                 `json:"expirationS,omitempty"`
 }
 
 type UserRevocationParameters struct {
 	Operator    string `json:"operator"`
 	Account     string `json:"account"`
 	User        string `json:"user"`
-	ExpirationS *int64 `json:"expirationS,omitempty"`
+	ExpirationS *int   `json:"expirationS,omitempty"`
 }
 
 type IssueUserData struct {
@@ -51,7 +51,7 @@ type IssueUserData struct {
 	UseSigningKey  string              `json:"useSigningKey"`
 	RevokeOnDelete bool                `json:"revokeOnDelete"`
 	ClaimsTemplate v1alpha1.UserClaims `json:"claimsTemplate"`
-	ExpirationS    int64               `json:"expirationS"`
+	ExpirationS    int                 `json:"expirationS"`
 	Status         IssueUserStatus     `json:"status"`
 }
 
@@ -211,7 +211,7 @@ func (b *NatsBackend) pathAddUserIssue(ctx context.Context, req *logical.Request
 	// Add debug logging
 	log.Debug().
 		Interface("claimsTemplate", params.ClaimsTemplate).
-		Int64("expirationS", params.ExpirationS).
+		Int("expirationS", params.ExpirationS).
 		Msg("Parsed parameters")
 
 	err = addUserIssue(ctx, req.Storage, params)
@@ -345,7 +345,7 @@ func (b *NatsBackend) pathAddUserIssueRevocation(ctx context.Context, req *logic
 		return logical.ErrorResponse(IssueNotFoundError), logical.ErrUnsupportedPath
 	}
 
-	err = addAccountRevocationIssue(ctx, req.Storage, IssueAccountRevocationParameters{
+	err = b.addAccountRevocationIssue(ctx, req.Storage, IssueAccountRevocationParameters{
 		Operator:    params.Operator,
 		Account:     params.Account,
 		Subject:     nkeyData.PublicKey,

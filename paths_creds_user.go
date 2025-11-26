@@ -121,9 +121,9 @@ func (b *NatsBackend) userCredsRevoke(ctx context.Context, req *logical.Request,
 	op := req.Secret.InternalData["op"].(string)
 	acc := req.Secret.InternalData["acc"].(string)
 	sub := req.Secret.InternalData["sub"].(string)
-	exp := req.Secret.InternalData["exp"].(int64)
+	exp := req.Secret.InternalData["exp"].(float64)
 
-	if exp <= time.Now().Unix() {
+	if int64(exp) <= time.Now().Unix() {
 		// jwt is already expired, no need to do anything
 		return nil, nil
 	}

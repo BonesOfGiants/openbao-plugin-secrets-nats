@@ -38,7 +38,7 @@ jobs:
     name: Build
     needs: version
     runs-on: ubuntu-latest
-    if: ${{ needs.version.outputs.type != "chore" }}
+    if: ${{ needs.version.outputs.type != 'chore' }}
     strategy:
       matrix:
         os: ['linux', 'windows', 'darwin']

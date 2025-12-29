@@ -1,0 +1,314 @@
+package natsbackend
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"github.com/openbao/openbao/sdk/v2/framework"
+	"github.com/openbao/openbao/sdk/v2/logical"
+
+	"github.com/nats-io/jwt/v2"
+	"github.com/nats-io/nkeys"
+)
+
+const (
+	// An extra bit of time to ensure that under normal circumstances a revoke at the end of a lease is a noop
+	revokeDurationBuffer = (time.Duration(5) * time.Second)
+)
+
+type credsPather interface {
+	credsPath() string
+}
+
+func pathUserCreds(b *backend) []*framework.Path {
+	return []*framework.Path{
+		{
+			Pattern: credsPathPrefix + operatorRegex + "/" + accountRegex + "/" + userRegex + "$",
+			Fields: map[string]*framework.FieldSchema{
+				"operator": operatorField,
+				"account":  accountField,
+				"user":     userField,
+				"signing_key": {
+					Type:        framework.TypeString,
+					Description: "Specify a signing key to use for these creds.",
+					Required:    false,
+				},
+				"tags": {
+					Type:        framework.TypeStringSlice,
+					Description: "Additional tags to add to the user claims.",
+					Required:    false,
+				},
+			},
+			ExistenceCheck: b.pathUserCredsExistenceCheck,
+			Operations: map[logical.Operation]framework.OperationHandler{
+				logical.ReadOperation: &framework.PathOperation{
+					Callback: b.pathUserCredsRead,
+				},
+			},
+			HelpSynopsis:    `Generates fresh user credentials on demand.`,
+			HelpDescription: `Reads the user template and generates fresh credentials with current timestamp and provided parameters.`,
+		},
+		{
+			Pattern: credsPathPrefix + operatorRegex + "/" + accountRegex + "/?$",
+			Fields: map[string]*framework.FieldSchema{
+				"operator": operatorField,
+				"account":  accountField,
+				"after":    afterField,
+				"limit":    limitField,
+			},
+			Operations: map[logical.Operation]framework.OperationHandler{
+				logical.ListOperation: &framework.PathOperation{
+					Callback: b.pathUserCredsList,
+				},
+			},
+			HelpSynopsis:    "List available user credential templates",
+			HelpDescription: "List all users that have credential templates configured",
+		},
+	}
+}
+
+func (b *backend) userCredsSecretType() *framework.Secret {
+	return &framework.Secret{
+		Type:   userCredsType,
+		Renew:  nil,
+		Fields: map[string]*framework.FieldSchema{},
+		Revoke: b.userCredsRevoke,
+	}
+}
+
+func (b *backend) pathUserCredsRead(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {
+	id := UserIdField(d)
+	user, err := b.User(ctx, req.Storage, id)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, nil
+	}
+
+	ttl := time.Duration(0)
+	ttlRaw, ok := d.GetOk("ttl")
+	if ok {
+		ttl = time.Duration(ttlRaw.(int)) * time.Second
+	} else if user.CredsDefaultTtl > 0 {
+		ttl = user.CredsDefaultTtl
+	} else {
+		ttl = b.System().DefaultLeaseTTL()
+	}
+
+	var warnings []string
+	if user.CredsMaxTtl > 0 && ttl > user.CredsMaxTtl {
+		warnings = append(warnings, fmt.Sprintf("ttl of %s is greater than the user's creds_max_ttl of %s; capping accordingly", ttl.String(), user.CredsMaxTtl.String()))
+		ttl = user.CredsMaxTtl
+	}
+
+	maxTtl := b.System().MaxLeaseTTL()
+	if ttl > maxTtl {
+		warnings = append(warnings, fmt.Sprintf("ttl of %s is greater than OpenBao's max lease ttl %s; capping accordingly", ttl.String(), maxTtl.String()))
+		ttl = maxTtl
+	}
+
+	var tags []string = nil
+	if tagsRaw, ok := d.GetOk("tags"); ok {
+		tags = tagsRaw.([]string)
+	}
+
+	signingKeyName := d.Get("signing_key").(string)
+
+	if signingKeyName == "" {
+		signingKeyName = user.DefaultSigningKey
+	}
+
+	userIdKey, err := b.Nkey(ctx, req.Storage, user)
+	if err != nil {
+		return nil, err
+	}
+	if userIdKey == nil {
+		return nil, nil
+	}
+
+	idKey, err := userIdKey.keyPair()
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode user identity key: %w", err)
+	}
+	sub, err := idKey.PublicKey()
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode public key: %w", err)
+	}
+
+	var claims *jwt.UserClaims = nil
+	if user.RawClaims != nil {
+		err = json.Unmarshal(user.RawClaims, &claims)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if claims == nil {
+		claims = jwt.NewUserClaims(sub)
+	} else {
+		claims.Subject = sub
+	}
+
+	signingKey, enrichWarnings, err := b.enrichUserClaims(ctx, req.Storage, enrichUserParams{
+		op:         id.op,
+		acc:        id.acc,
+		user:       id.user,
+		claims:     claims,
+		signingKey: signingKeyName,
+		tags:       tags,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	result := b.generateUserCreds(idKey, signingKey, claims, ttl)
+	if len(result.errors) > 0 {
+		errResp := logical.ErrorResponse("failed to generate user creds")
+		for _, w := range result.warnings {
+			errResp.AddWarning(w)
+		}
+
+		errResp.Data["data"] = map[string]any{
+			"additional_errors": result.errors,
+		}
+		return errResp, nil
+	}
+
+	resp := b.Secret(userCredsType).Response(map[string]any{
+		"operator":  id.op,
+		"account":   id.acc,
+		"user":      id.user,
+		"creds":     result.creds,
+		"jwt":       result.jwt,
+		"seed":      string(userIdKey.Seed),
+		"expiresAt": result.expiresAt,
+	}, map[string]any{
+		"op":  id.op,
+		"acc": id.acc,
+		"sub": sub,
+		"exp": result.expiresAt,
+	})
+
+	for _, w := range enrichWarnings {
+		resp.AddWarning(w)
+	}
+	for _, w := range result.warnings {
+		resp.AddWarning(w)
+	}
+	resp.Secret.LeaseOptions.TTL = ttl
+	resp.Secret.LeaseOptions.MaxTTL = resp.Secret.TTL
+
+	return resp, nil
+}
+
+func (b *backend) pathUserCredsList(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	// defer to user list,
+	// since we don't keep storage for user creds
+	return b.pathUserList(ctx, req, data)
+}
+
+func (b *backend) pathUserCredsExistenceCheck(ctx context.Context, req *logical.Request, d *framework.FieldData) (bool, error) {
+	user, err := b.User(ctx, req.Storage, UserIdField(d))
+	if err != nil {
+		return false, err
+	}
+
+	return user != nil, nil
+}
+
+type userCredsParams = userJwtParams
+
+type userCredsResult struct {
+	warnings  []string
+	errors    []error
+	creds     string
+	jwt       string
+	seed      string
+	expiresAt time.Time
+}
+
+func (r *userCredsResult) AddWarning(warning ...string) {
+	r.warnings = append(r.warnings, warning...)
+}
+
+func (r *userCredsResult) AddError(err ...error) {
+	r.errors = append(r.errors, err...)
+}
+
+func (b *backend) generateUserCreds(idKey nkeys.KeyPair, signingKey nkeys.KeyPair, claims *jwt.UserClaims, ttl time.Duration) *userCredsResult {
+	res := &userCredsResult{}
+
+	jwtResult := encodeUserJWT(signingKey, claims, ttl)
+	res.expiresAt = jwtResult.expiresAt
+	res.warnings = jwtResult.warnings
+	res.errors = jwtResult.errors
+	if len(res.errors) > 0 {
+		return res
+	}
+	res.jwt = jwtResult.jwt
+
+	seed, err := idKey.Seed()
+	if err != nil {
+		res.AddError(fmt.Errorf("failed to decode seed: %w", err))
+		return res
+	}
+	res.seed = string(seed)
+
+	creds, err := jwt.FormatUserConfig(jwtResult.jwt, seed)
+	if err != nil {
+		res.AddError(fmt.Errorf("failed to format user creds: %w", err))
+		return res
+	}
+	res.creds = string(creds)
+
+	return res
+}
+
+func (b *backend) userCredsRevoke(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	expRaw := req.Secret.InternalData["exp"]
+
+	exp := time.Unix(expRaw.(int64), 0)
+	now := time.Now()
+	ttl := exp.Sub(now)
+
+	if ttl <= revokeDurationBuffer {
+		// jwt is already (nearly) expired, no need to do anything
+		return nil, nil
+	}
+
+	id := AccountRevocationId(
+		req.Secret.InternalData["op"].(string),
+		req.Secret.InternalData["acc"].(string),
+		req.Secret.InternalData["sub"].(string),
+	)
+
+	account, err := b.Account(ctx, req.Storage, id.accountId())
+	if err != nil {
+		return nil, err
+	}
+	if account == nil {
+		// target account does not exist, no need to do anything
+		return nil, nil
+	}
+
+	revocation := NewAccountRevocationWithParams(id, now, ttl)
+	err = storeInStorage(ctx, req.Storage, id.configPath(), revocation)
+	if err != nil {
+		return nil, err
+	}
+
+	accountSync, err := b.getAccountSync(ctx, req.Storage, id.operatorId())
+	if err != nil {
+		return nil, fmt.Errorf("unable to sync jwt for account %q: %w", id.acc, err)
+	} else if accountSync != nil {
+		err := b.syncAccountUpdate(ctx, req.Storage, accountSync, id.accountId())
+		if err != nil {
+			return nil, fmt.Errorf("unable to sync jwt for account %q: %s", id.acc, err)
+		}
+	}
+
+	return nil, nil
+}

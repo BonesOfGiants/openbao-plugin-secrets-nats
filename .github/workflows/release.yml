@@ -1,0 +1,154 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - master
+      - beta
+
+permissions:
+  contents: write
+  id-token: write
+  packages: write
+
+env:
+  OUTPUT_DIR: bin
+  PLUGIN_NAME: openbao-plugin-secrets-nats
+
+jobs:
+  version:
+    name: Determine version
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.new_tag }}
+      version: ${{ steps.version.outputs.new_version }}
+      changelog: ${{ steps.version.outputs.changelog }}
+      type: ${{ steps.version.outputs.release_type }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Determine next version
+        id: version
+        uses: mathieudutour/github-tag-action@v6.2
+        with:
+          dry_run: true
+          github_token: ${{ github.token }}
+          custom_release_rules: chore:chore
+
+  build:
+    name: Build
+    needs: version
+    runs-on: ubuntu-latest
+    if: ${{ needs.version.outputs.type != "chore" }}
+    strategy:
+      matrix:
+        os: ['linux', 'windows', 'darwin']
+        architecture: [amd64, arm64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+
+      - name: Build the artifacts
+        run: |
+          make "OUTPUT_DIR=${{ env.OUTPUT_DIR }}" "GOOS=${{ matrix.os }}" "GOARCH=${{ matrix.architecture }}" VERSION=${{ needs.version.outputs.version }} build
+
+      - name: Upload built artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-${{ matrix.os }}-${{ matrix.architecture }}
+          path: ${{ env.OUTPUT_DIR }}/*
+          retention-days: 1
+          overwrite: true
+
+  release:
+    name: Release
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ env.OUTPUT_DIR }}
+          pattern: plugin-*
+          merge-multiple: true
+
+      - name: Tag release
+        id: version
+        uses: mathieudutour/github-tag-action@v6.2
+        with:
+          tag_prefix: ""
+          custom_tag: ${{ needs.version.outputs.tag }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ needs.version.outputs.tag }}
+          name: Release ${{ needs.version.outputs.tag }}
+          body: ${{ needs.version.outputs.changelog }}
+
+      - name: Upload artifacts
+        run: gh release upload "${{ needs.version.outputs.tag }}" "${{ env.OUTPUT_DIR }}/*"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  push-oci:
+    name: Push OCI
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    env:
+      BUILDX_NO_DEFAULT_ATTESTATIONS: 1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ env.OUTPUT_DIR }}
+          pattern: plugin-*
+          merge-multiple: true
+
+      - name: Export targets
+        id: export-targets
+        run: echo "targets=$(make "OUTPUT_DIR=${{ env.OUTPUT_DIR }}" print-targets)" >> "$GITHUB_OUTPUT"
+
+      - name: Login to Github Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+    
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          file: Containerfile
+          context: .
+          tags: ghcr.io/bonesofgiants/openbao-plugin-secrets-nats:${{ needs.version.outputs.tag }}
+          platforms: ${{ steps.export-targets.outputs.targets }}
+          annotations: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.description=A fully-managed interface for NATS JWT authentication/authorization in OpenBao.
+          build-args: |
+            BIN=${{ env.OUTPUT_DIR }}
+            PLUGIN_NAME=${{ env.PLUGIN_NAME }}

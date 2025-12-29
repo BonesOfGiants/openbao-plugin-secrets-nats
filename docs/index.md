@@ -276,6 +276,8 @@ a signing key in the `default_signing_key` field of the operator.
 
 The plugin can be configured to automatically push account updates and deletes to a target NATS cluster.
 
+<!-- todo flesh out -->
+
 ### Managed and pre-existing operators
 
 Operators can either be local or managed. More information on this distinction is available in the 
@@ -305,23 +307,6 @@ Additionally, the plugin does not currently support importing of pre-existing op
     - revocations
         - note: revocations result in a sync, so be careful of creating too many revocations at once
 -->
-
-
-### Account configuration
-
-A complete example of all possible fields when creating or updating an operator follows.
-
-
-Note that some fields within `claims` may be incompatible with each other in a real JWT,
-and will result in a validation error when issuing a JWT. See the [NATS documentation](#TODO) and 
-[jwt package](#TODO) for more informations on specific claims.
-
-```json
-{
-    "signing_key_name": "sk1",
-    "claims": {}
-}
-```
 
 ### Account claims
 

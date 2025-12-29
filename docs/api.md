@@ -578,7 +578,7 @@ Calling the same endpoint more than once is a noop.
 > all NATS server configs using this operator. 
 > Account and user JWTs are not affected by operator JWT reissues.
 >
-> Modifying an operator's signing keys will also [suspend the active sync configuration](#TODO).
+> Modifying an operator's signing keys will also [suspend the active sync configuration](./index.md#account-syncing).
 
 | Method | Path                                          |
 | :----- | :-------------------------------------------- |
@@ -676,7 +676,7 @@ This endpoint deletes an operator signing key.
 > all NATS server configs using this operator. 
 > Account and user JWTs are not affected by operator JWT reissues.
 >
-> Modifying an operator's signing keys will also [suspend the active sync configuration](#TODO).
+> Modifying an operator's signing keys will also [suspend the active sync configuration](./index.md#account-syncing).
 
 | Method   | Path                                          |
 | :------- | :-------------------------------------------- |
@@ -715,7 +715,7 @@ This endpoint create an account configuration under the specified operator.
 - `signing_key_name` `(string: "")` - Optionally specify the name of an operator signing key to use when signing this account's JWT.
   If not set or set to `""`, the operator's identity key will be used to sign the account JWT.
 - `claims` `(map: {})` - Override default claims in the JWT issued for this operator. See [nats-io/jwt](https://pkg.go.dev/github.com/nats-io/jwt/v2#AccountClaims) 
-  for available fields. See [the guide](#TODO) for caveats and an example of all available fields.
+  for available fields. See [the guide](./index.md#account-claims) for caveats and an example of all available fields.
 
 ### Sample payload
 

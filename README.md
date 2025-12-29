@@ -31,9 +31,9 @@ Create a configuration registering the plugin:
 cat << EOF > openbao-config.hcl 
 plugin "secret" "nats" {
     image = "ghcr.io/bonesofgiants/openbao-plugin-secrets-nats"
-    version = "v2.1.1"
+    version = "v1.0.3"
     binary_name = "openbao-plugin-secrets-nats"
-    sha256sum = "dec5b2c17a4616de030d7945cf4b4eeb87c037a30e4fa3b99c2bd4502e25e1bc"
+    sha256sum = "8a02d607d61450b2e23a919129486eb83856534f5aadb1ba829f1f357ad67ea8"
 }
 
 plugin_directory = "$HOME/openbao_plugins" # or wherever it pleases
@@ -74,8 +74,8 @@ In a separate terminal, register the plugin with the following command:
 <!-- todo: post real version and sha256 & use semantic-release to auto-update the README -->
 ```sh
 $ bao plugin register \
-    -version=v2.1.1 \
-    -sha256=dec5b2c17a4616de030d7945cf4b4eeb87c037a30e4fa3b99c2bd4502e25e1bc \
+    -version=v1.0.3 \
+    -sha256=8a02d607d61450b2e23a919129486eb83856534f5aadb1ba829f1f357ad67ea8 \
     -command=openbao-plugin-secrets-nats \
     nats
 Success! TODO

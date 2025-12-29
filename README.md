@@ -138,8 +138,6 @@ $ nats --creds=./user.creds pub events.hello "Hello world!"
 15:03:16 Published 12 bytes to "events.hello"
 ```
 
-## Developing
-
 <!-- todo: create developer guide -->
 
 ## Acknowledgements

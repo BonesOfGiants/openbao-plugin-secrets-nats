@@ -253,6 +253,7 @@ func (b *backend) issueAndSaveOperatorJWT(ctx context.Context, storage logical.S
 		claims = jwt.NewOperatorClaims(sub)
 	} else {
 		claims.Subject = sub
+		claims.Issuer = sub
 	}
 
 	warnings, err := b.enrichOperatorClaims(ctx, storage, id, operator.SysAccountName, claims)
@@ -330,11 +331,6 @@ func (b *backend) enrichOperatorClaims(ctx context.Context, s logical.Storage, i
 	}
 
 	return warnings, nil
-}
-
-type operatorJwtParams struct {
-	claims     *jwt.OperatorClaims
-	signingKey nkeys.KeyPair
 }
 
 func encodeOperatorJwt(signingKey nkeys.KeyPair, claims *jwt.OperatorClaims) *jwtResult {
@@ -439,7 +435,71 @@ func (b *backend) issueAndSaveAccountJWT(ctx context.Context, storage logical.St
 		claims = jwt.NewAccountClaims(sub)
 	} else {
 		claims.Subject = sub
+
+		// ensure consistency with expected defaults
+		if claims.SigningKeys == nil {
+			claims.SigningKeys = jwt.SigningKeys{}
+		}
+		if claims.Mappings == nil {
+			claims.Mappings = jwt.Mapping{}
+		}
+
+		// we need to futz with the raw mapping
+		// because the claims don't differentiate
+		// between missing and 0
+		var mapClaims map[string]any
+		err = json.Unmarshal(account.RawClaims, &mapClaims)
+
+		natsRaw, ok := mapClaims["nats"]
+		if !ok {
+			goto cont
+		}
+		nats, ok := natsRaw.(map[string]any)
+		if !ok {
+			goto cont
+		}
+		limitsRaw, ok := nats["limits"]
+		if !ok {
+			goto cont
+		}
+		limits, ok := limitsRaw.(map[string]any)
+		if !ok {
+			goto cont
+		}
+		_, ok = limits["subs"]
+		if !ok {
+			claims.Limits.Subs = jwt.NoLimit
+		}
+		_, ok = limits["data"]
+		if !ok {
+			claims.Limits.Data = jwt.NoLimit
+		}
+		_, ok = limits["payload"]
+		if !ok {
+			claims.Limits.Payload = jwt.NoLimit
+		}
+		_, ok = limits["imports"]
+		if !ok {
+			claims.Limits.Imports = jwt.NoLimit
+		}
+		_, ok = limits["exports"]
+		if !ok {
+			claims.Limits.Exports = jwt.NoLimit
+		}
+		_, ok = limits["wildcards"]
+		if !ok {
+			claims.Limits.WildcardExports = true
+		}
+		_, ok = limits["conn"]
+		if !ok {
+			claims.Limits.Conn = jwt.NoLimit
+		}
+		_, ok = limits["leaf"]
+		if !ok {
+			claims.Limits.LeafNodeConn = jwt.NoLimit
+		}
 	}
+cont:
 
 	enrichWarnings, err := b.enrichAccountClaims(ctx, storage, account.accountId, claims)
 	if err != nil {

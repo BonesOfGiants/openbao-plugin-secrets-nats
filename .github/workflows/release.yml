@@ -148,7 +148,6 @@ jobs:
           platforms: ${{ steps.export-targets.outputs.targets }}
           annotations: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.description=A fully-managed interface for NATS JWT authentication/authorization in OpenBao.
           build-args: |
             BIN=${{ env.OUTPUT_DIR }}
             PLUGIN_NAME=${{ env.PLUGIN_NAME }}

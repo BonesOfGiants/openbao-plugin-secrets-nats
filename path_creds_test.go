@@ -1,6 +1,7 @@
 package natsbackend
 
 import (
+	"encoding/json"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -16,72 +17,68 @@ func TestBackend_User_Creds(ts *testing.T) {
 
 	// run in a synctest bubble to accurately assess ttl/expires
 	synctest.Test(ts, func(t *testing.T) {
-		claims := &jwt.UserClaims{
-			ClaimsData: jwt.ClaimsData{
-				// overwritten
-				IssuedAt: 1766703476,
-				Subject:  "test-subject",
-				Issuer:   "test-subject",
-				Name:     "test-name",
+		claims := `
+		{
+			"aud": "test-audience",
+			"exp": 1766703476,
+			"iat": 1766703476,
+			"iss": "test-subject",
+			"name": "test-name",
+			"nats": {
+				"allowed_connection_types": [
+					"LEAFNODE"
+				],
+				"bearer_token": true,
+				"issuer_account": "test-account",
+				"proxy_required": true,
+				"pub": {
+					"allow": [
+						"allowed"
+					],
+					"deny": [
+						"denied"
+					]
+				},
+				"resp": {
+					"max": 10,
+					"ttl": 10
+				},
+				"src": [
+					"192.0.2.0/24"
+				],
+				"subs": 0,
+				"data": 0,
+				"payload": 0,
+				"sub": {
+					"allow": [
+						"allowed"
+					],
+					"deny": [
+						"denied"
+					]
+				},
+				"tags": [
+					"test-tag"
+				],
+				"times": [
+					{
+						"end": "12:00:00",
+						"start": "10:00:00"
+					}
+				],
+				"times_location": "America/New_York",
+				"type": "test-type"
+			},
+			"nbf": 1766703476,
+			"sub": "test-subject"
+		}`
 
-				// preserved
-				Expires:   1766703476,
-				Audience:  "test-audience",
-				NotBefore: 1766703476,
-			},
-			User: jwt.User{
-				IssuerAccount: "test-account", // overwritten
-				UserPermissionLimits: jwt.UserPermissionLimits{
-					Permissions: jwt.Permissions{
-						Pub: jwt.Permission{
-							Allow: jwt.StringList{"allowed"},
-							Deny:  jwt.StringList{"denied"},
-						},
-						Sub: jwt.Permission{
-							Allow: jwt.StringList{"allowed"},
-							Deny:  jwt.StringList{"denied"},
-						},
-						Resp: &jwt.ResponsePermission{
-							MaxMsgs: 10,
-							Expires: 10,
-						},
-					},
-					Limits: jwt.Limits{
-						UserLimits: jwt.UserLimits{
-							Src: jwt.CIDRList{
-								"192.0.2.0/24",
-							},
-							Times: []jwt.TimeRange{
-								{
-									Start: "10:00:00",
-									End:   "12:00:00",
-								},
-							},
-							Locale: "America/New_York",
-						},
-						NatsLimits: jwt.NatsLimits{
-							Subs:    0,
-							Data:    0,
-							Payload: 0,
-						},
-					},
-					BearerToken:   true,
-					ProxyRequired: true,
-					AllowedConnectionTypes: jwt.StringList{
-						jwt.ConnectionTypeLeafnode,
-					},
-				},
-				GenericFields: jwt.GenericFields{
-					Tags:    jwt.TagList{"test-tag"},
-					Type:    "test-type",
-					Version: 0,
-				},
-			},
-		}
+		var parsedClaims jwt.UserClaims
+		err := json.Unmarshal([]byte(claims), &parsedClaims)
 
 		id := UserId("op1", "acc1", "user1")
 		SetupTestUser(b, id, map[string]any{
-			"claims": unmarshalToMap(fromUserClaims(claims)),
+			"claims": unmarshalToMap([]byte(claims)),
 		})
 
 		resp, err := ReadNkeyRaw(b, id)
@@ -136,8 +133,8 @@ func TestBackend_User_Creds(ts *testing.T) {
 		assert.Equal(b, userJwt, string(claimBytes))
 
 		// custom claim data
-		assert.Equal(b, claims.ClaimsData.Audience, userClaims.ClaimsData.Audience)
-		assert.Equal(b, claims.ClaimsData.NotBefore, userClaims.ClaimsData.NotBefore)
+		assert.Equal(b, parsedClaims.ClaimsData.Audience, userClaims.ClaimsData.Audience)
+		assert.Equal(b, parsedClaims.ClaimsData.NotBefore, userClaims.ClaimsData.NotBefore)
 
 		// fixed claim data
 		accountPublicKey := ReadPublicKey(b, id.accountId())
@@ -149,7 +146,7 @@ func TestBackend_User_Creds(ts *testing.T) {
 		assert.Equal(b, "", userClaims.User.IssuerAccount)
 
 		// user config
-		assert.Equal(b, claims.User.UserPermissionLimits, userClaims.User.UserPermissionLimits)
+		assert.Equal(b, parsedClaims.User.UserPermissionLimits, userClaims.User.UserPermissionLimits)
 
 		// test system sets a 24hr default lease ttl
 		expectedExpires := time.Now().Add(24 * time.Hour)

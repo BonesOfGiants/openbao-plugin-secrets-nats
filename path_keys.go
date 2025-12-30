@@ -17,7 +17,7 @@ import (
 type userScope struct {
 	// representing jwt.UserPermissionLimits
 	Template    json.RawMessage `json:"template,omitempty"`
-	Description string          `json:"description"`
+	Description string          `json:"description,omitempty"`
 }
 
 // NkeySorage represents a Nkey stored in the backend
@@ -708,7 +708,22 @@ func (b *backend) pathAccountSigningNkeyRead(ctx context.Context, req *logical.R
 		return nil, nil
 	}
 
-	return createNkeyResponse(nkey)
+	resp, err := createNkeyResponse(nkey)
+	if err != nil {
+		return nil, err
+	}
+
+	if nkey.Scoped {
+		resp.Data["scoped"] = nkey.Scoped
+		if nkey.UserScope.Template != nil {
+			resp.Data["template"] = nkey.UserScope.Template
+		}
+		if nkey.UserScope.Description != "" {
+			resp.Data["description"] = nkey.UserScope.Template
+		}
+	}
+
+	return resp, nil
 }
 
 func (b *backend) pathAccountSigningNkeyExistenceCheck(ctx context.Context, req *logical.Request, d *framework.FieldData) (bool, error) {

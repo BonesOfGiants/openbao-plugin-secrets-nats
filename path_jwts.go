@@ -645,6 +645,16 @@ func encodeAccountJwt(signingKey nkeys.KeyPair, claims *jwt.AccountClaims) *jwtR
 	return res
 }
 
+type LimitFlags uint8
+
+const (
+	LimitFlagsSubs      LimitFlags = 1 << iota // 1
+	LimitFlagsData                             // 2
+	LimitFlagsPayload                          // 4
+	LimitFlagsSrc                              // 8
+	LimitFlagsHasLimits                        // 16
+)
+
 type enrichUserParams struct {
 	op         string
 	acc        string
@@ -653,6 +663,7 @@ type enrichUserParams struct {
 	claims     *jwt.UserClaims
 	signingKey string
 	tags       []string
+	limitFlags LimitFlags
 }
 
 func (b *backend) enrichUserClaims(ctx context.Context, s logical.Storage, p enrichUserParams) (nkeys.KeyPair, jwtWarnings, error) {
@@ -669,6 +680,10 @@ func (b *backend) enrichUserClaims(ctx context.Context, s logical.Storage, p enr
 		return nil, nil, err
 	}
 
+	claims := p.claims
+
+	warnings := jwtWarnings{}
+
 	var signingKey nkeys.KeyPair
 	if p.signingKey != "" {
 		nkey, err := b.Nkey(ctx, s, accId.signingKeyId(p.signingKey))
@@ -684,6 +699,30 @@ func (b *backend) enrichUserClaims(ctx context.Context, s logical.Storage, p enr
 			return nil, nil, err
 		}
 		signingKey = sk
+
+		if nkey.Scoped {
+			// scoped users are not allowed to specify any values within UserPermissionLimits
+			if p.limitFlags&LimitFlagsHasLimits != 0 {
+				warnings = append(warnings, "ignoring limits in user claims due to scope")
+			}
+			claims.UserPermissionLimits = jwt.UserPermissionLimits{}
+		} else {
+			// mimic behavior of jwt.NewUserClaims
+			if p.limitFlags&LimitFlagsSrc != 0 {
+				if claims.Src == nil {
+					claims.Src = jwt.CIDRList{}
+				}
+			}
+			if p.limitFlags&LimitFlagsSubs != 0 {
+				claims.Limits.Subs = -1
+			}
+			if p.limitFlags&LimitFlagsData != 0 {
+				claims.Limits.Data = -1
+			}
+			if p.limitFlags&LimitFlagsPayload != 0 {
+				claims.Limits.Payload = -1
+			}
+		}
 	}
 
 	if signingKey == nil {
@@ -694,8 +733,6 @@ func (b *backend) enrichUserClaims(ctx context.Context, s logical.Storage, p enr
 	if p.session != "" {
 		name = p.session
 	}
-
-	claims := p.claims
 
 	claims.ClaimsData.Name = name
 

@@ -146,44 +146,18 @@ func (b *backend) pathUserCredsRead(ctx context.Context, req *logical.Request, d
 		}
 	}
 
+	limitFlags := LimitFlags(0)
+
 	if claims == nil {
 		claims = jwt.NewUserClaims(sub)
 	} else {
 		claims.Subject = sub
 
-		// ensure consistency with expected defaults
-		if claims.Src == nil {
-			claims.Src = jwt.CIDRList{}
-		}
-
-		// we need to futz with the raw mapping
-		// because the claims don't differentiate
-		// between missing and 0
-		var mapClaims map[string]any
-		err = json.Unmarshal(user.RawClaims, &mapClaims)
-
-		natsRaw, ok := mapClaims["nats"]
-		if !ok {
-			goto cont
-		}
-		nats, ok := natsRaw.(map[string]any)
-		if !ok {
-			goto cont
-		}
-		_, ok = nats["subs"]
-		if !ok {
-			claims.Limits.Subs = jwt.NoLimit
-		}
-		_, ok = nats["data"]
-		if !ok {
-			claims.Limits.Data = jwt.NoLimit
-		}
-		_, ok = nats["payload"]
-		if !ok {
-			claims.Limits.Payload = jwt.NoLimit
+		limitFlags, err = readLimitFlags(user.RawClaims)
+		if err != nil {
+			return nil, err
 		}
 	}
-cont:
 
 	signingKey, enrichWarnings, err := b.enrichUserClaims(ctx, req.Storage, enrichUserParams{
 		op:         id.op,
@@ -192,6 +166,7 @@ cont:
 		claims:     claims,
 		signingKey: signingKeyName,
 		tags:       tags,
+		limitFlags: limitFlags,
 	})
 	if err != nil {
 		return nil, err
@@ -250,6 +225,45 @@ func (b *backend) pathUserCredsExistenceCheck(ctx context.Context, req *logical.
 	}
 
 	return user != nil, nil
+}
+
+func readLimitFlags(claims json.RawMessage) (LimitFlags, error) {
+	// we need to futz with the raw mapping
+	// because the claims don't differentiate
+	// between missing and 0
+	var mapClaims map[string]any
+	err := json.Unmarshal(claims, &mapClaims)
+	if err != nil {
+		return 0, err
+	}
+
+	natsRaw, ok := mapClaims["nats"]
+	if !ok {
+		return 0, nil
+	}
+	nats, ok := natsRaw.(map[string]any)
+	if !ok {
+		return 0, nil
+	}
+
+	var flags LimitFlags
+	for k, _ := range nats {
+		switch k {
+		case "pub", "sub", "resp", "times", "times_location",
+			"bearer_token", "proxy_required", "allowed_connection_types":
+			flags |= LimitFlagsHasLimits
+		case "src":
+			flags |= LimitFlagsHasLimits & LimitFlagsSrc
+		case "subs":
+			flags |= LimitFlagsHasLimits & LimitFlagsSubs
+		case "data":
+			flags |= LimitFlagsHasLimits & LimitFlagsData
+		case "payload":
+			flags |= LimitFlagsHasLimits & LimitFlagsPayload
+		}
+	}
+
+	return flags, nil
 }
 
 type userCredsResult struct {

@@ -128,44 +128,18 @@ func (b *backend) pathEphemeralUserCredsRead(ctx context.Context, req *logical.R
 		}
 	}
 
+	limitFlags := LimitFlags(0)
+
 	if claims == nil {
 		claims = jwt.NewUserClaims(sub)
 	} else {
 		claims.Subject = sub
 
-		// ensure consistency with expected defaults
-		if claims.Src == nil {
-			claims.Src = jwt.CIDRList{}
-		}
-
-		// we need to futz with the raw mapping
-		// because the claims don't differentiate
-		// between missing and 0
-		var mapClaims map[string]any
-		err = json.Unmarshal(user.RawClaims, &mapClaims)
-
-		natsRaw, ok := mapClaims["nats"]
-		if !ok {
-			goto cont
-		}
-		nats, ok := natsRaw.(map[string]any)
-		if !ok {
-			goto cont
-		}
-		_, ok = nats["subs"]
-		if !ok {
-			claims.Limits.Subs = jwt.NoLimit
-		}
-		_, ok = nats["data"]
-		if !ok {
-			claims.Limits.Data = jwt.NoLimit
-		}
-		_, ok = nats["payload"]
-		if !ok {
-			claims.Limits.Payload = jwt.NoLimit
+		limitFlags, err = readLimitFlags(user.RawClaims)
+		if err != nil {
+			return nil, err
 		}
 	}
-cont:
 
 	signingKey, enrichWarnings, err := b.enrichUserClaims(ctx, req.Storage, enrichUserParams{
 		op:         id.op,
@@ -175,6 +149,7 @@ cont:
 		claims:     claims,
 		signingKey: signingKeyName,
 		tags:       tags,
+		limitFlags: limitFlags,
 	})
 	if err != nil {
 		return nil, err

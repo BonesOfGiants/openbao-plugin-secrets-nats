@@ -280,6 +280,15 @@ func (b *backend) pathOperatorSyncRead(ctx context.Context, req *logical.Request
 		return nil, nil
 	}
 
+	status := map[string]any{
+		"status":         sync.Status.Status,
+		"last_sync_time": sync.Status.LastSyncTime,
+	}
+
+	if len(sync.Status.Errors) > 0 {
+		status["errors"] = sync.Status.Errors
+	}
+
 	data := map[string]any{
 		"servers":                      sync.Servers,
 		"connect_timeout":              sync.ConnectTimeout,
@@ -287,11 +296,7 @@ func (b *backend) pathOperatorSyncRead(ctx context.Context, req *logical.Request
 		"reconnect_wait":               sync.ReconnectWait,
 		"ignore_sync_errors_on_delete": sync.IgnoreSyncErrorsOnDelete,
 		"sync_user_name":               sync.SyncUserName,
-		"status": map[string]any{
-			"status":         sync.Status.Status,
-			"last_sync_time": sync.Status.LastSyncTime,
-			"errors":         sync.Status.Errors,
-		},
+		"status":                       status,
 	}
 
 	return &logical.Response{Data: data}, nil

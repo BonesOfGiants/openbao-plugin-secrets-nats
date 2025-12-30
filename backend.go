@@ -369,7 +369,7 @@ func (b *backend) createSyncAuthCallback(ctx context.Context, storage logical.St
 				return "", err
 			}
 
-			if enrichWarnings != nil && len(enrichWarnings) > 0 {
+			if len(enrichWarnings) > 0 {
 				b.Logger().Debug("got warnings enriching user claims", "warnings", enrichWarnings)
 			}
 
@@ -628,17 +628,6 @@ func (b *backend) walRollback(ctx context.Context, req *logical.Request, kind st
 	return nil
 }
 
-// Converts account claims into RawClaims.
-// If the conversion fails, panic.
-func fromAccountClaims(claims *jwt.AccountClaims) json.RawMessage {
-	data, err := json.Marshal(claims)
-	if err != nil {
-		panic(err)
-	}
-
-	return data
-}
-
 // Converts operator claims into RawClaims.
 // If the conversion fails, panic.
 func fromOperatorClaims(claims *jwt.OperatorClaims) json.RawMessage {
@@ -650,9 +639,9 @@ func fromOperatorClaims(claims *jwt.OperatorClaims) json.RawMessage {
 	return data
 }
 
-// Converts user claims into RawClaims.
+// Converts account claims into RawClaims.
 // If the conversion fails, panic.
-func fromUserClaims(claims *jwt.UserClaims) json.RawMessage {
+func fromAccountClaims(claims *jwt.AccountClaims) json.RawMessage {
 	data, err := json.Marshal(claims)
 	if err != nil {
 		panic(err)

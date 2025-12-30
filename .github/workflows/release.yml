@@ -32,7 +32,6 @@ jobs:
         with:
           dry_run: true
           github_token: ${{ github.token }}
-          custom_release_rules: chore:chore
 
   build:
     name: Build
@@ -56,7 +55,7 @@ jobs:
 
       - name: Build the artifacts
         run: |
-          make "OUTPUT_DIR=${{ env.OUTPUT_DIR }}" "GOOS=${{ matrix.os }}" "GOARCH=${{ matrix.architecture }}" VERSION=${{ needs.version.outputs.version }} build
+          make "OUTPUT_DIR=${{ env.OUTPUT_DIR }}" "GOOS=${{ matrix.os }}" "GOARCH=${{ matrix.architecture }}" VERSION=${{ needs.version.outputs.tag }} build
 
       - name: Upload built artifacts
         uses: actions/upload-artifact@v4

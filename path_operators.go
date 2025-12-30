@@ -100,7 +100,6 @@ func (id operatorId) signingKeyId(name string) operatorSigningKeyId {
 var (
 	DefaultSysAccountClaims = &jwt.AccountClaims{
 		Account: jwt.Account{
-			Imports: jwt.Imports{},
 			Exports: jwt.Exports{
 				{
 					Name:                 "account-monitoring-services",
@@ -122,30 +121,6 @@ var (
 						Description: `Account specific monitoring stream`,
 						InfoURL:     "https://docs.nats.io/nats-server/configuration/sys_accounts",
 					},
-				},
-			},
-			Limits: jwt.OperatorLimits{
-				NatsLimits: jwt.NatsLimits{
-					Subs:    -1,
-					Data:    -1,
-					Payload: -1,
-				},
-				AccountLimits: jwt.AccountLimits{
-					Imports:         -1,
-					Exports:         -1,
-					WildcardExports: true,
-					Conn:            -1,
-					LeafNodeConn:    -1,
-				},
-			},
-			DefaultPermissions: jwt.Permissions{
-				Pub: jwt.Permission{
-					Allow: []string{},
-					Deny:  []string{},
-				},
-				Sub: jwt.Permission{
-					Allow: []string{},
-					Deny:  []string{},
 				},
 			},
 		},

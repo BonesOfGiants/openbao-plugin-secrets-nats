@@ -252,8 +252,6 @@ func (b *backend) pathUserCredsExistenceCheck(ctx context.Context, req *logical.
 	return user != nil, nil
 }
 
-type userCredsParams = userJwtParams
-
 type userCredsResult struct {
 	warnings  []string
 	errors    []error

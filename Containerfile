@@ -5,6 +5,6 @@ ARG PLUGIN_NAME
 ARG TARGETOS
 ARG TARGETARCH
 
-COPY $BIN/$PLUGIN_NAME-$TARGETOS-$TARGETARCH /plugin
+COPY $BIN/$PLUGIN_NAME-$TARGETOS-$TARGETARCH /openbao-plugin-secrets-nats
 
-ENTRYPOINT ["/plugin"]
+ENTRYPOINT ["/openbao-plugin-secrets-nats"]

@@ -720,12 +720,6 @@ func (b *backend) enrichUserClaims(ctx context.Context, s logical.Storage, p enr
 	return signingKey, nil, nil
 }
 
-type userJwtParams struct {
-	claims     *jwt.UserClaims
-	signingKey nkeys.KeyPair
-	ttl        time.Duration
-}
-
 func encodeUserJWT(signingKey nkeys.KeyPair, claims *jwt.UserClaims, ttl time.Duration) *jwtResult {
 	res := NewJwtResult()
 

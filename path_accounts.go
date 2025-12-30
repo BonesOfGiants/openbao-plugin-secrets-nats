@@ -612,47 +612,6 @@ func (b *backend) deleteAccount(ctx context.Context, storage logical.Storage, id
 	return deleteFromStorage(ctx, storage, id.configPath())
 }
 
-func (b *backend) migrateUsers(ctx context.Context, storage logical.Storage, from accountId, to accountId, users []string) error {
-	if users == nil {
-		// use all users
-	}
-
-	for _, v := range users {
-		fromUserId := from.userId(v)
-		toUserId := to.userId(v)
-
-		entry, err := storage.Get(ctx, fromUserId.configPath())
-		if err != nil {
-			return err
-		}
-		entry.Key = toUserId.configPath()
-		err = storage.Put(ctx, entry)
-		if err != nil {
-			return err
-		}
-		err = storage.Delete(ctx, fromUserId.configPath())
-		if err != nil {
-			return err
-		}
-
-		entry, err = storage.Get(ctx, fromUserId.nkeyPath())
-		if err != nil {
-
-		}
-		entry.Key = toUserId.nkeyPath()
-		err = storage.Put(ctx, entry)
-		if err != nil {
-			return err
-		}
-		err = storage.Delete(ctx, fromUserId.nkeyPath())
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
 // todo maybe instead of syncing immediately, we should debounce
 // like adding to a queue, maybe?
 func (b *backend) syncAccountUpdate(

@@ -13,7 +13,7 @@ To learn specifically about how plugins work, see documentation on [OpenBao plug
 
 ## Usage
 
-Detailed [documentation](./docs/index.md) and [API reference](https://github.com/BonesOfGiants/openbao-plugin-secrets-nats/wiki/API#createupdate-account-configuration) are available in the repository wiki.
+Detailed [documentation](https://github.com/BonesOfGiants/openbao-plugin-secrets-nats/wiki) and [API reference](https://github.com/BonesOfGiants/openbao-plugin-secrets-nats/wiki/API) are available in the repository wiki.
 
 ### Quickstart
 

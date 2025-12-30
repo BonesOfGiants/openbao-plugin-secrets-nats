@@ -835,8 +835,7 @@ func (b *backend) pathUserNkeyRead(ctx context.Context, req *logical.Request, d 
 	}
 
 	return &logical.Response{
-		Data:   data,
-		Secret: &logical.Secret{},
+		Data: data,
 	}, nil
 }
 
@@ -887,8 +886,7 @@ func createNkeyResponse(nkey *nkeyEntry) (*logical.Response, error) {
 	}
 
 	return &logical.Response{
-		Data:   data,
-		Secret: &logical.Secret{},
+		Data: data,
 	}, nil
 }
 

@@ -325,6 +325,16 @@ func (b *backend) createSyncAuthCallback(ctx context.Context, storage logical.St
 	// todo im not sure what the implications of caching the storage instance
 	// here is. An alternative would be to calculate this in getAccountSync and
 	// then let the disconnect upon credential expiry invalidate the accountSync cache
+	idKey, err := nkeys.CreateUser()
+	if err != nil {
+		b.Logger().Error("failed to create user identity key", "error", err)
+		return nil
+	}
+	sub, err := idKey.PublicKey()
+	if err != nil {
+		b.Logger().Error("failed to decode identity key", "error", err)
+		return nil
+	}
 	return nats.UserJWT(
 		func() (string, error) {
 			operator, err := b.Operator(ctx, storage, opId)
@@ -341,15 +351,6 @@ func (b *backend) createSyncAuthCallback(ctx context.Context, storage logical.St
 			}
 			if syncConfig == nil {
 				return "", fmt.Errorf("sync config does not exist: %w", err)
-			}
-
-			idKey, err := nkeys.CreateUser()
-			if err != nil {
-				return "", fmt.Errorf("failed to create user identity key: %w", err)
-			}
-			sub, err := idKey.PublicKey()
-			if err != nil {
-				return "", fmt.Errorf("failed to decode identity key: %w", err)
 			}
 
 			claims, err := copyClaims(&DefaultSyncUserClaims)
@@ -397,21 +398,7 @@ func (b *backend) createSyncAuthCallback(ctx context.Context, storage logical.St
 				return nil, fmt.Errorf("sync config does not exist: %w", err)
 			}
 
-			userId := opId.userId(operator.SysAccountName, syncConfig.SyncUserName)
-			userNkey, err := b.Nkey(ctx, storage, userId)
-			if err != nil {
-				return nil, fmt.Errorf("failed to read sync user nkey: %w", err)
-			}
-			if userNkey == nil {
-				return nil, fmt.Errorf("sync user nkey does not exist: %w", err)
-			}
-
-			nkey, err := nkeys.FromSeed(userNkey.Seed)
-			if err != nil {
-				return nil, fmt.Errorf("failed to decode sync user nkey: %w", err)
-			}
-
-			return nkey.Sign(nonce)
+			return idKey.Sign(nonce)
 		},
 	)
 }

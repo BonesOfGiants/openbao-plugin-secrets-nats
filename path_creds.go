@@ -222,7 +222,7 @@ cont:
 		"op":  id.op,
 		"acc": id.acc,
 		"sub": sub,
-		"exp": result.expiresAt,
+		"exp": result.expiresAt.Unix(),
 	})
 
 	for _, w := range enrichWarnings {

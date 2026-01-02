@@ -81,6 +81,7 @@ update your API calls accordingly.
   - [Request parameters](#request-parameters-16)
 - [Create/Update account import configuration](#createupdate-account-import-configuration)
   - [Request parameters](#request-parameters-17)
+    - [Import parameters](#import-parameters)
   - [Sample payload](#sample-payload-3)
   - [Sample request](#sample-request-17)
 - [List account imports](#list-account-imports)
@@ -139,7 +140,7 @@ update your API calls accordingly.
 - [Delete ephemeral user configuration](#delete-ephemeral-user-configuration)
   - [Request parameters](#request-parameters-32)
   - [Sample request](#sample-request-32)
-- [Get user credentials](#get-user-credentials)
+- [Generate user credentials](#generate-user-credentials)
   - [Request parameters](#request-parameters-33)
   - [Sample request](#sample-request-33)
   - [Sample response](#sample-response-18)
@@ -331,10 +332,10 @@ List all of the operators that are configured.
 
 For convenience, the following paths are aliases that also work to list operators:
 
-| Path                            |
-| :------------------------------ |
-| `/nats/operator-keys`           |
-| `/nats/operator-jwts`           |
+| Path                  |
+| :-------------------- |
+| `/nats/operator-keys` |
+| `/nats/operator-jwts` |
 
 ### Request parameters
 
@@ -748,8 +749,8 @@ $ curl \
 
 List all of the accounts that are configured under an operator.
 
-| Method | Path                        |
-| :----- | :-------------------------- |
+| Method | Path                                 |
+| :----- | :----------------------------------- |
 | `LIST` | `/nats/accounts/:operator`           |
 | `GET`  | `/nats/accounts/:operator?list=true` |
 
@@ -859,12 +860,21 @@ $ curl \
 
 This endpoint create an account import configuration for the given account.
 
+As a convenience, the [import parameters](#import-parameters) for a single import claim may be passed
+as top-level parameters. `imports` may not be passed along with root-level parameters. 
+If creating an account import with more than one import claim using the CLI,  
+JSON input must be used as the CLI cannot pass nested values using parameter arguments.
+
+Root-level parameters cannot be used to modify an existing account import with more than one
+import claim. When modifying an existing account import, the list of imports will be overwritten
+entirely. 
+
 > [!WARNING]
 > Modifying an accounts's claims will reissue the account JWT. If a [sync config](#createupdate-sync-config)
 > is configured, account JWT changes will be automatically synced to the NATS server.
 
-| Method | Path                                |
-| :----- | :---------------------------------- |
+| Method | Path                                             |
+| :----- | :----------------------------------------------- |
 | `POST` | `/nats/account-imports/:operator/:account/:name` |
 
 ### Request parameters
@@ -872,7 +882,21 @@ This endpoint create an account import configuration for the given account.
 - `operator` `(string: <required>)` - The name of the operator. Included in the path.
 - `account` `(string: <required>)` - The name of the account. Included in the path.
 - `name` `(string: <required>)` - A name for the import configuration. Included in the path.
-- `imports` `(array: [])` - A list of imports TODO PARAMS. At least one import must be defined.
+- `imports` `(array: [])` - The list of import objects (see [possible fields below](#import-parameters)). At least one import must be defined.
+
+#### Import parameters
+
+Imports must follow the [nats-io/jwt](https://pkg.go.dev/github.com/nats-io/jwt/v2#Import) spec. 
+See [the guide](./index.md#account-claims) for a sample import including all possible fields.
+
+- `name` `(string)` - The name of the import.
+- `subject` `(string: <required>)` - The subject being imported.
+- `account` `(string: <required>)` - The account id to import from. This must be an account public key (`A123...`), **not** an account name.
+- `token` `(string: "")` - An [activation token](https://docs.nats.io/using-nats/nats-tools/nsc/services#generating-an-activation-token). Required for imports of private exports (those with `"token_req": true`).
+- `local_subject` `(string: "")` - An optional mapping to a different subject in the account.
+- `type` `(string: <required>)` - Describes the type of the import. Valid values are `stream` and `service`.
+- `share` `(bool: false)` - If importing a service, indicates if the import supports latency tracking.
+- `allow_trace` `(bool: false)` - If importing a stream, indicates if the import allows message tracing.
 
 ### Sample payload
 
@@ -903,8 +927,8 @@ $ curl \
 
 List all of the imports for the given account.
 
-| Method | Path                                              |
-| :----- | :------------------------------------------------ |
+| Method | Path                                                 |
+| :----- | :--------------------------------------------------- |
 | `LIST` | `/nats/account-imports/:operator/:account`           |
 | `GET`  | `/nats/account-imports/:operator/:account?list=true` |
 
@@ -1037,8 +1061,8 @@ $ curl \
 
 List all of the signing keys for the given account.
 
-| Method | Path                                                       |
-| :----- | :--------------------------------------------------------- |
+| Method | Path                                                      |
+| :----- | :-------------------------------------------------------- |
 | `LIST` | `/nats/account-signing-keys/:operator/:account`           |
 | `GET`  | `/nats/account-signing-keys/:operator/:account?list=true` |
 
@@ -1136,9 +1160,6 @@ $ curl \
 ## Create/Update user configuration
 
 This endpoint create a user configuration under the specified operator and account.
-
-<!-- todo unravel the mystery of how these are supposed to be parsed and where
-but at the very least I know that I want to adopt the key:value tag system for parameters -->
 
 | Method | Path                                   |
 | :----- | :------------------------------------- |
@@ -1468,7 +1489,7 @@ $ curl \
     http://127.0.0.1:8200/v1/nats/ephemeral-users/dev-cluster/my-account/my-ephemeral-user
 ```
 
-## Get user credentials
+## Generate user credentials
 
 This endpoint generates credentials for a user.
 
@@ -1601,8 +1622,8 @@ $ curl \
 
 List all of the revocations for the given account.
 
-| Method | Path                                              |
-| :----- | :------------------------------------------------ |
+| Method | Path                                             |
+| :----- | :----------------------------------------------- |
 | `LIST` | `/nats/revocations/:operator/:account`           |
 | `GET`  | `/nats/revocations/:operator/:account?list=true` |
 
@@ -1761,8 +1782,8 @@ This endpoint rotates a signing key of an account to a new randomly generated on
 > this will immediately invalidate all user credentials signed by the old key.
 > Users signed by the account identity key are unaffected.
 
-| Method | Path                                                         |
-| :----- | :----------------------------------------------------------- |
+| Method | Path                                                        |
+| :----- | :---------------------------------------------------------- |
 | `POST` | `/nats/rotate-account-signing-key/:operator/:account/:name` |
 
 ### Request parameters

@@ -4,11 +4,17 @@ import (
 	"context"
 	"fmt"
 	"iter"
+	"maps"
+	"slices"
 
 	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/shimtx"
 	"github.com/nats-io/jwt/v2"
 	"github.com/openbao/openbao/sdk/v2/framework"
 	"github.com/openbao/openbao/sdk/v2/logical"
+)
+
+var (
+	rootParamsKeys = []string{"name", "subject", "account", "token", "local_subject", "type", "share", "allow_trace"}
 )
 
 type accountImportEntry struct {
@@ -48,8 +54,8 @@ func AccountImportId(op, acc, name string) accountImportId {
 func AccountImportIdField(d *framework.FieldData) accountImportId {
 	return accountImportId{
 		op:   d.Get("operator").(string),
-		acc:  d.Get("account").(string),
-		name: d.Get("name").(string),
+		acc:  d.Get("import_account").(string),
+		name: d.Get("import_name").(string),
 	}
 }
 
@@ -68,11 +74,11 @@ func (id accountImportId) configPath() string {
 func pathConfigAccountImport(b *backend) []*framework.Path {
 	return []*framework.Path{
 		{
-			Pattern: accountImportsPathPrefix + operatorRegex + "/" + accountRegex + "/" + nameRegex + "$",
+			Pattern: accountImportsPathPrefix + operatorRegex + "/" + framework.GenericNameRegex("import_account") + "/" + framework.GenericNameRegex("import_name") + "$",
 			Fields: map[string]*framework.FieldSchema{
-				"operator": operatorField,
-				"account":  accountField,
-				"name": {
+				"operator":       operatorField,
+				"import_account": accountField,
+				"import_name": {
 					Type:        framework.TypeString,
 					Description: `The name given to this collection of imports.`,
 					Required:    true,
@@ -80,7 +86,48 @@ func pathConfigAccountImport(b *backend) []*framework.Path {
 				"imports": {
 					Type:        framework.TypeSlice,
 					Description: "A list of import definitions to define on the account. At least one import must be specified.",
-					Required:    true,
+					Required:    false,
+				},
+				"name": {
+					Type:        framework.TypeString,
+					Description: "The name of the import.",
+					Required:    false,
+				},
+				"subject": {
+					Type:        framework.TypeString,
+					Description: "The subject being imported.",
+					Required:    false,
+				},
+				"account": {
+					Type:        framework.TypeString,
+					Description: "The subject being imported.",
+					Required:    false,
+				},
+				"token": {
+					Type:        framework.TypeString,
+					Description: "An optional activation token. Required for imports of private exports.",
+					Required:    false,
+				},
+				"local_subject": {
+					Type:        framework.TypeString,
+					Description: "An optional mapping to a different subject in the account.",
+					Required:    false,
+				},
+				"type": {
+					Type:          framework.TypeString,
+					AllowedValues: []any{"stream", "service"},
+					Description:   "Describes the type of the import. Valid values are `stream` and `service`.",
+					Required:      false,
+				},
+				"share": {
+					Type:        framework.TypeBool,
+					Description: "If importing a service, indicates if the import supports latency tracking.",
+					Required:    false,
+				},
+				"allow_trace": {
+					Type:        framework.TypeBool,
+					Description: "If importing a stream, indicates if the import allows message tracing.",
+					Required:    false,
 				},
 			},
 			ExistenceCheck: b.pathAccountImportExistenceCheck,
@@ -152,99 +199,66 @@ func (b *backend) pathAccountImportCreateUpdate(ctx context.Context, req *logica
 			return logical.ErrorResponse("imports must be an array, got %T", importsRaw), nil
 		}
 
+		for v := range maps.Keys(d.Raw) {
+			if slices.Contains(rootParamsKeys, v) {
+				return logical.ErrorResponse("may not specify imports array along with root-level import parameters"), nil
+			}
+		}
+
 		jwtDirty = jwtDirty || (len(importsRaw) != len(accImport.Imports))
 
-		imports := make(jwt.Imports, len(importsRaw))
-		prevImports := accImport.Imports
-		if prevImports == nil {
-			prevImports = imports
+		imports := accImport.Imports
+		if imports == nil {
+			imports = make(jwt.Imports, 0, len(importsRaw))
 		}
 		for i, v := range importsRaw {
 			if importRaw, ok := v.(map[string]any); ok {
-				imp := jwt.Import{}
-				imports[i] = &imp
-
-				var prev *jwt.Import
-				if i < prevImports.Len() {
-					prev = prevImports[i]
+				var imp *jwt.Import
+				if i < imports.Len() {
+					imp = imports[i]
 				} else {
+					imp = &jwt.Import{}
+					imports = append(imports, imp)
 					jwtDirty = true
 				}
 
-				if nameRaw, ok := importRaw["name"]; ok {
-					name, ok := nameRaw.(string)
-					if !ok {
-						return logical.ErrorResponse("import[%d].name must be a string, got %T", i, importRaw["name"]), nil
-					}
-					imp.Name = name
-					jwtDirty = jwtDirty || (imp.Name != prev.Name)
-				}
-				if subjectRaw, ok := importRaw["subject"]; ok {
-					subject, ok := subjectRaw.(string)
-					if !ok {
-						return logical.ErrorResponse("import[%d].subject must be a string, got %T", i, importRaw["account"]), nil
-					}
-					imp.Subject = jwt.Subject(subject)
-					jwtDirty = jwtDirty || (imp.Subject != prev.Subject)
+				_, importDirty, err := updateImportParams(importRaw, imp)
+				if err != nil {
+					return logical.ErrorResponse("import[%d]: %w", i, err), nil
 				}
 
-				if accountRaw, ok := importRaw["account"]; ok {
-					account, ok := accountRaw.(string)
-					if !ok {
-						return logical.ErrorResponse("import[%d].account must be a string, got %T", i, importRaw["account"]), nil
-					}
-					imp.Account = account
-					jwtDirty = jwtDirty || (imp.Account != prev.Account)
-				}
-
-				if tokenRaw, ok := importRaw["token"]; ok {
-					token, ok := tokenRaw.(string)
-					if !ok {
-						return logical.ErrorResponse("import[%d].token must be a string, got %T", i, importRaw["token"]), nil
-					}
-					imp.Token = token
-					jwtDirty = jwtDirty || (imp.Token != prev.Token)
-				}
-
-				if localSubjectRaw, ok := importRaw["localSubject"]; ok {
-					localSubject, ok := localSubjectRaw.(string)
-					if !ok {
-						return logical.ErrorResponse("import[%d].localSubject must be a string, got %T", i, importRaw["localSubject"]), nil
-					}
-					imp.LocalSubject = jwt.RenamingSubject(localSubject)
-					jwtDirty = jwtDirty || (imp.LocalSubject != prev.LocalSubject)
-				}
-
-				if typeRaw, ok := importRaw["type"]; ok {
-					typ, ok := typeRaw.(string)
-					if !ok {
-						return logical.ErrorResponse("import[%d].type must be an int, got %T", i, importRaw["type"]), nil
-					}
-					switch typ {
-					case "stream":
-						imp.Type = jwt.Stream
-					case "service":
-						imp.Type = jwt.Service
-					default:
-						return logical.ErrorResponse(`import[%d].type must be either "stream" or "service", got %q`, i, importRaw["type"]), nil
-					}
-					jwtDirty = jwtDirty || (imp.Type != prev.Type)
-				}
-
-				if shareRaw, ok := importRaw["share"]; ok {
-					share, ok := shareRaw.(bool)
-					if !ok {
-						return logical.ErrorResponse("import[%d].share must be a bool, got %T", i, importRaw["share"]), nil
-					}
-					imp.Share = share
-					jwtDirty = jwtDirty || (imp.Share != prev.Share)
-				}
+				jwtDirty = jwtDirty || importDirty
 			} else {
 				return logical.ErrorResponse("import must be a map, got %T", v), nil
 			}
 		}
 
 		accImport.Imports = imports
+	} else {
+		var imp *jwt.Import
+		if len(accImport.Imports) > 0 {
+			imp = accImport.Imports[0]
+		} else {
+			imp = &jwt.Import{}
+		}
+
+		hasParams, importDirty, err := updateImportParams(d.Raw, imp)
+		if err != nil {
+			return logical.ErrorResponse("import[0]: %w", err), nil
+		}
+
+		if hasParams {
+			switch {
+			case len(accImport.Imports) > 1:
+				return logical.ErrorResponse("cannot specify root-level parameters on an account import with more than one import claim"), nil
+			case len(accImport.Imports) == 1:
+				accImport.Imports[0] = imp
+			default:
+				accImport.Imports = jwt.Imports{imp}
+			}
+		}
+
+		jwtDirty = jwtDirty || importDirty
 	}
 
 	if len(accImport.Imports) == 0 {
@@ -429,4 +443,101 @@ func (b *backend) listAccountImports(
 			}
 		}
 	}
+}
+
+func updateImportParams(params map[string]any, imp *jwt.Import) (bool, bool, error) {
+	dirty := false
+	hasParams := false
+
+	if nameRaw, ok := params["name"]; ok {
+		hasParams = true
+		name, ok := nameRaw.(string)
+		if !ok {
+			return false, false, fmt.Errorf("name must be a string, got %T", params["name"])
+		}
+		dirty = dirty || (name != imp.Name)
+		imp.Name = name
+	}
+	if subjectRaw, ok := params["subject"]; ok {
+		hasParams = true
+		subject, ok := subjectRaw.(string)
+		if !ok {
+			return false, false, fmt.Errorf("subject must be a string, got %T", params["account"])
+		}
+		sub := jwt.Subject(subject)
+		dirty = dirty || (sub != imp.Subject)
+		imp.Subject = sub
+	}
+
+	if accountRaw, ok := params["account"]; ok {
+		hasParams = true
+		account, ok := accountRaw.(string)
+		if !ok {
+			return false, false, fmt.Errorf("account must be a string, got %T", params["account"])
+		}
+		dirty = dirty || (account != imp.Account)
+		imp.Account = account
+	}
+
+	if tokenRaw, ok := params["token"]; ok {
+		hasParams = true
+		token, ok := tokenRaw.(string)
+		if !ok {
+			return false, false, fmt.Errorf("token must be a string, got %T", params["token"])
+		}
+		dirty = dirty || (token != imp.Token)
+		imp.Token = token
+	}
+
+	if localSubjectRaw, ok := params["localSubject"]; ok {
+		hasParams = true
+		localSubject, ok := localSubjectRaw.(string)
+		if !ok {
+			return false, false, fmt.Errorf("localSubject must be a string, got %T", params["localSubject"])
+		}
+		sub := jwt.RenamingSubject(localSubject)
+		dirty = dirty || (sub != imp.LocalSubject)
+		imp.LocalSubject = sub
+	}
+
+	if typeRaw, ok := params["type"]; ok {
+		hasParams = true
+		typ, ok := typeRaw.(string)
+		if !ok {
+			return false, false, fmt.Errorf("type must be a string, got %T", params["type"])
+		}
+		var exportType jwt.ExportType
+		switch typ {
+		case "stream":
+			exportType = jwt.Stream
+		case "service":
+			exportType = jwt.Service
+		default:
+			return false, false, fmt.Errorf(`type must be either "stream" or "service", got %q`, params["type"])
+		}
+		dirty = dirty || (exportType != imp.Type)
+		imp.Type = exportType
+	}
+
+	if shareRaw, ok := params["share"]; ok {
+		hasParams = true
+		share, ok := shareRaw.(bool)
+		if !ok {
+			return false, false, fmt.Errorf("share must be a bool, got %T", params["share"])
+		}
+		imp.Share = share
+		dirty = dirty || (share != imp.Share)
+	}
+
+	if allowTraceRaw, ok := params["allow_trace"]; ok {
+		hasParams = true
+		allowTrace, ok := allowTraceRaw.(bool)
+		if !ok {
+			return false, false, fmt.Errorf("share must be a bool, got %T", params["share"])
+		}
+		imp.AllowTrace = allowTrace
+		dirty = dirty || (allowTrace != imp.AllowTrace)
+	}
+
+	return hasParams, dirty, nil
 }

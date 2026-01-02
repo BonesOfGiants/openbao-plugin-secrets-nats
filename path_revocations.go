@@ -203,7 +203,7 @@ func (b *backend) pathAccountRevocationRead(ctx context.Context, req *logical.Re
 	}
 
 	data := map[string]any{
-		"ttl":           rev.Ttl,
+		"ttl":           int(rev.Ttl.Seconds()),
 		"creation_time": rev.CreationTime,
 	}
 

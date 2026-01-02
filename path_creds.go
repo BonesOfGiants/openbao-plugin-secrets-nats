@@ -247,7 +247,7 @@ func readLimitFlags(claims json.RawMessage) (LimitFlags, error) {
 	}
 
 	var flags LimitFlags
-	for k, _ := range nats {
+	for k := range nats {
 		switch k {
 		case "pub", "sub", "resp", "times", "times_location",
 			"bearer_token", "proxy_required", "allowed_connection_types":

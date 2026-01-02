@@ -316,13 +316,13 @@ Additionally, while all claims of the account JWT may be overridden by
 providing custom claims in the `claims` field, there are some important caveats:
 
 1. `exp` is always zeroed out, as account JWTs do not expire.
-2. `issuer` is always overwritten with the operator or signing public key.
+2. `iss` is always overwritten with the operator or signing public key.
 3. `sub` is always overwritten with the account public key.
-4. `issuedat` is always overwritten with the time the JWT was generated.
+4. `iat` is always overwritten with the time the JWT was generated.
 5. `jti` is always overwritten with a hash of the contents.
 6. If you've created any [account signing keys](#account-signing-keys), 
    those keys will be merged with the existing list of signing keys.
-   
+
 <details>
 <summary>Example claims with all fields</summary>
 
@@ -345,7 +345,7 @@ and will result in a validation error when attempting a write.
                 "name": "import-name",
                 "subject": "some.subject",
                 "account": "AA123",
-                "token": "1234",
+                "token": "eyJ0eXAiOiJKV1QiLCJ...",
                 "local_subject": "to.local.subject",
                 "type": "stream",
                 "share": false,
@@ -389,7 +389,7 @@ and will result in a validation error when attempting a write.
             "max_ack_pending": -1,
             "mem_max_stream_bytes": -1,
             "disk_max_stream_bytes": -1,
-            "max_bytes_required": -1,
+            "max_bytes_required": false,
             "tiered_limits": {
                 "tier1": {
                     "mem_storage": -1,
@@ -399,7 +399,7 @@ and will result in a validation error when attempting a write.
                     "max_ack_pending": -1,
                     "mem_max_stream_bytes": -1,
                     "disk_max_stream_bytes": -1,
-                    "max_bytes_required": -1
+                    "max_bytes_required": false
                 }
             }
         },
@@ -454,7 +454,10 @@ and will result in a validation error when attempting a write.
 ## Account imports
 
 This plugin supports declarative imports for accounts. 
-Declarative imports are logically grouped lists of import claims.
+A named import represents logically grouped lists of import claims. These imports are merged into the 
+list of imports on the account claim whenever the account JWT is reissued.
+
+
 
 - imports presently require the account public key
   - this can be retrieved from the `nats/account-keys/:op/:acc` path
@@ -493,11 +496,11 @@ The claims object may contain any valid field for a NATS user JWT.
 Additionally, while all claims of the user JWT may be overridden by 
 providing custom claims in the `claims` field, there are some important caveats:
 
-1. `issuer` is always overwritten with the account or signing public key.
-1. `issuer_account` is overwritten with the account public key if using a signing key.
+1. `iss` is always overwritten with the account or signing public key.
 2. `sub` is always overwritten with the user public key.
-3. `issuedat` is always overwritten with the time the JWT was generated.
+3. `iat` is always overwritten with the time the JWT was generated.
 4. `jti` is always overwritten with a hash of the contents.
+5. `nats.issuer_account` is always overwritten with the account public key if using a signing key, or cleared otherwise.
 
 Most fields need not be specified under normal circumstances. It is important to
 specify the pub/sub permissions and limits under the 

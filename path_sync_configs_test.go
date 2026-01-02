@@ -3,7 +3,6 @@ package natsbackend
 import (
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/abstractnats"
 	"github.com/stretchr/testify/assert"
@@ -27,17 +26,15 @@ func TestBackend_Operator_SyncConfig(t *testing.T) {
 				"servers": []string{"nats://localhost:4222"},
 			},
 			expected: map[string]any{
-				"connect_timeout":              time.Duration(0),
+				"connect_timeout":              0,
 				"ignore_sync_errors_on_delete": false,
 				"max_reconnects":               0,
-				"reconnect_wait":               time.Duration(0),
+				"reconnect_wait":               0,
 				"servers":                      []string{"nats://localhost:4222"},
 				"sync_user_name":               DefaultSyncUserName,
 
 				"status": map[string]any{
-					"status":         OperatorSyncStatus(""), // todo look into this, im not setting it to anything when first created
-					"errors":         []string(nil),
-					"last_sync_time": time.Time{},
+					"status": OperatorSyncStatusCreated,
 				},
 			},
 		},
@@ -51,17 +48,15 @@ func TestBackend_Operator_SyncConfig(t *testing.T) {
 				"sync_user_name":  "test-name",
 			},
 			expected: map[string]any{
-				"connect_timeout":              10 * time.Second,
+				"connect_timeout":              10,
 				"ignore_sync_errors_on_delete": false,
 				"max_reconnects":               5,
-				"reconnect_wait":               10 * time.Second,
+				"reconnect_wait":               10,
 				"servers":                      []string{"nats://localhost:4222"},
 				"sync_user_name":               "test-name",
 
 				"status": map[string]any{
-					"status":         OperatorSyncStatus(""), // todo look into this, im not setting it to anything when first created
-					"errors":         []string(nil),
-					"last_sync_time": time.Time{},
+					"status": OperatorSyncStatusCreated,
 				},
 			},
 		},
@@ -77,7 +72,7 @@ func TestBackend_Operator_SyncConfig(t *testing.T) {
 			})
 
 			// create config
-			resp, err := CreateSyncConfig(t, id, tc.data)
+			resp, err := WriteSyncConfig(t, id, tc.data)
 			if err != nil || (resp != nil && resp.IsError()) {
 				if tc.err == nil {
 					t.Fatalf("err: %s; resp: %#v\n", err, resp)
@@ -118,14 +113,14 @@ func TestBackend_Operator_SyncConfig_Update(t *testing.T) {
 			"create_system_account": true,
 		})
 
-		resp, err := CreateSyncConfig(t, id, map[string]any{
+		resp, err := WriteSyncConfig(t, id, map[string]any{
 			"servers":  []string{"nats://localhost:4222"},
 			"sync_now": false,
 		})
 		RequireNoRespError(t, resp, err)
 
 		var receivedJwt string
-		ExpectUpdate(t, nats, &receivedJwt)
+		ExpectUpdateSync(t, nats, &receivedJwt)
 
 		accId := id.accountId("acc1")
 		SetupTestAccount(t, accId, nil)
@@ -148,7 +143,7 @@ func TestBackend_Operator_SyncConfig_Update(t *testing.T) {
 		opPublicKey := ReadPublicKey(t, id)
 
 		// create config disabled
-		resp, err := CreateSyncConfig(t, id, map[string]any{
+		resp, err := WriteSyncConfig(t, id, map[string]any{
 			"servers":  []string{"nats://localhost:4222"},
 			"suspend":  true,
 			"sync_now": false,
@@ -159,7 +154,7 @@ func TestBackend_Operator_SyncConfig_Update(t *testing.T) {
 		SetupTestAccount(t, accId, nil)
 
 		// re-enable config
-		resp, err = CreateSyncConfig(t, id, map[string]any{
+		resp, err = WriteSyncConfig(t, id, map[string]any{
 			"suspend":  false,
 			"sync_now": false,
 		})

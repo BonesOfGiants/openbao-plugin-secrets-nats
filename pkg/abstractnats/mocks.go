@@ -165,7 +165,7 @@ func (m *mockNats) PublishRequest(subj string, reply string, data []byte) error 
 }
 
 func (m *mockNats) Servers() []string {
-	panic("not implemented") // TODO: Implement
+	return []string{"nats://localhost:4222"}
 }
 
 func (m *mockNats) newNatsMockSubscription(subject string) *mockNatsSubscription {

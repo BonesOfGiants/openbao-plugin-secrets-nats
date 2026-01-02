@@ -228,12 +228,16 @@ func (b *backend) pathEphemeralUserRead(ctx context.Context, req *logical.Reques
 	data := map[string]any{}
 
 	if user.CredsDefaultTtl > 0 {
-		data["ttl"] = user.CredsDefaultTtl
+		data["creds_default_ttl"] = user.CredsDefaultTtl.Seconds()
 	}
 
-	// if issue.UseSigningKey != "" {
-	// 	data["useSigningKey"] = issue.UseSigningKey
-	// }
+	if user.CredsMaxTtl > 0 {
+		data["creds_max_ttl"] = user.CredsMaxTtl.Seconds()
+	}
+
+	if user.DefaultSigningKey != "" {
+		data["default_signing_key"] = user.DefaultSigningKey
+	}
 
 	if user.RawClaims != nil {
 		var claims map[string]any

@@ -5,7 +5,5 @@ import (
 )
 
 func TestBackend_EphemeralUser_Config(t *testing.T) {
-	// b := testBackend(ts)
-
-	t.Skip("test not implemented")
+	t.Skip("test not implemented") // todo: implement
 }

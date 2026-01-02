@@ -16,13 +16,25 @@ import (
 )
 
 /*
-list of things that still need tests:
+todo: list of things that still need tests:
 - operator jwt change resulting in sync being suspended
+- managed name clashes with existing account
+- account config
+- ephemeral user config
+- user config
 - all the variations of things that cause account syncing
+	- [ ] operator rotate
+	- [ ] operator signing key rotate
+	- [x] account import create/update/delete
+	- [x] revocation create/update/delete
+	- [ ] user delete resulting in revocation
+	- [ ] account config
+	- [ ] account rotate
+	- [ ] account signing key rotate
 - operator signing key delete resulting in accounts being resigned using the id key
 - key list tests + change the alias lists to use the proper fn call
-- managed name clashes with existing account
-- walrollback behavior with deleted tests
+- walrollback behavior with deleted accounts
+- ttl of eph/creds, including default, max, and ttl passed into creds endpoint directly
 */
 
 func testFactory(ctx context.Context, conf *logical.BackendConfig, n abstractnats.MockNatsConnection) (logical.Backend, error) {
@@ -311,7 +323,7 @@ func WriteConfig(t testContext, id configPather, data map[string]any) (*logical.
 	})
 }
 
-func CreateSyncConfig(t testContext, id operatorId, data map[string]any) (*logical.Response, error) {
+func WriteSyncConfig(t testContext, id operatorId, data map[string]any) (*logical.Response, error) {
 	t.Helper()
 
 	if data == nil {
@@ -487,7 +499,7 @@ func RotateKey(t testContext, id rotatePather, data map[string]any) (*logical.Re
 	})
 }
 
-func ExpectUpdate(t testContext, m abstractnats.MockNatsConnection, outJwt *string) {
+func ExpectUpdateSync(t testContext, m abstractnats.MockNatsConnection, outJwt *string) {
 	t.Helper()
 
 	sub := m.ExpectInboxSubscription()

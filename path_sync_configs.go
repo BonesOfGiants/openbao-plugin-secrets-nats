@@ -38,6 +38,7 @@ type operatorSyncConfigEntry struct {
 type OperatorSyncStatus string
 
 const (
+	OperatorSyncStatusCreated   OperatorSyncStatus = "created"
 	OperatorSyncStatusActive    OperatorSyncStatus = "active"
 	OperatorSyncStatusSuspended OperatorSyncStatus = "suspended"
 	OperatorSyncStatusError     OperatorSyncStatus = "error"
@@ -157,6 +158,9 @@ func NewOperatorSync(id operatorId) *operatorSyncConfigEntry {
 	return &operatorSyncConfigEntry{
 		operatorId:   id,
 		SyncUserName: DefaultSyncUserName,
+		Status: operatorSyncStatus{
+			Status: OperatorSyncStatusCreated,
+		},
 	}
 }
 
@@ -281,8 +285,11 @@ func (b *backend) pathOperatorSyncRead(ctx context.Context, req *logical.Request
 	}
 
 	status := map[string]any{
-		"status":         sync.Status.Status,
-		"last_sync_time": sync.Status.LastSyncTime,
+		"status": sync.Status.Status,
+	}
+
+	if sync.Status.LastSyncTime != (time.Time{}) {
+		status["last_sync_time"] = sync.Status.LastSyncTime
 	}
 
 	if len(sync.Status.Errors) > 0 {
@@ -291,9 +298,9 @@ func (b *backend) pathOperatorSyncRead(ctx context.Context, req *logical.Request
 
 	data := map[string]any{
 		"servers":                      sync.Servers,
-		"connect_timeout":              sync.ConnectTimeout,
+		"connect_timeout":              int(sync.ConnectTimeout.Seconds()),
 		"max_reconnects":               sync.MaxReconnects,
-		"reconnect_wait":               sync.ReconnectWait,
+		"reconnect_wait":               int(sync.ReconnectWait.Seconds()),
 		"ignore_sync_errors_on_delete": sync.IgnoreSyncErrorsOnDelete,
 		"sync_user_name":               sync.SyncUserName,
 		"status":                       status,

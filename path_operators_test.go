@@ -474,7 +474,7 @@ func TestBackend_Cascading_Delete(_t *testing.T) {
 	// operator
 	SetupTestOperator(t, opId, nil)
 	// operator sync config
-	CreateSyncConfig(t, opId, map[string]any{
+	WriteSyncConfig(t, opId, map[string]any{
 		"servers": []string{"nats://localhost:4222"},
 		"suspend": true,
 	})

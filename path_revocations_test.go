@@ -6,8 +6,11 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/abstractnats"
+	"github.com/nats-io/jwt/v2"
 	"github.com/openbao/openbao/sdk/v2/logical"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBackend_Revocation_Config(t *testing.T) {
@@ -15,16 +18,7 @@ func TestBackend_Revocation_Config(t *testing.T) {
 		t := testBackend(_t)
 
 		accId := AccountId("op1", "acc1")
-		SetupTestAccount(t, accId, map[string]any{
-			"claims": map[string]any{
-				"nats": map[string]any{
-					"limits": map[string]any{
-						"imports": -1,
-						"exports": -1,
-					},
-				},
-			},
-		})
+		SetupTestAccount(t, accId, nil)
 
 		WriteConfig(t, accId.revocationId("U123"), nil)
 
@@ -51,16 +45,7 @@ func TestBackend_Revocation_List(_t *testing.T) {
 	t := testBackend(_t)
 
 	accId := AccountId("op1", "acc1")
-	SetupTestAccount(t, accId, map[string]any{
-		"claims": map[string]any{
-			"nats": map[string]any{
-				"limits": map[string]any{
-					"imports": -1,
-					"exports": -1,
-				},
-			},
-		},
-	})
+	SetupTestAccount(t, accId, nil)
 
 	WriteConfig(t, accId.revocationId("U123"), nil)
 	WriteConfig(t, accId.revocationId("U234"), nil)
@@ -98,25 +83,17 @@ func TestBackend_Revocation_AutoDelete(t *testing.T) {
 		t := testBackend(_t)
 
 		accId := AccountId("op1", "acc1")
-		SetupTestAccount(t, accId, map[string]any{
-			"claims": map[string]any{
-				"nats": map[string]any{
-					"limits": map[string]any{
-						"imports": -1,
-						"exports": -1,
-					},
-				},
-			},
-		})
+		SetupTestAccount(t, accId, nil)
 
 		WriteConfig(t, accId.revocationId("U123"), map[string]any{
 			"ttl": "10s",
 		})
 
-		revConfig := ReadConfig[accountRevocationEntry](t, accId.revocationId("U123"))
+		resp, err := ReadConfigRaw(t, accId.revocationId("U123"))
+		RequireNoRespError(t, resp, err)
 
-		assert.Equal(t, time.Now(), revConfig.CreationTime)
-		assert.Equal(t, 10*time.Second, revConfig.Ttl)
+		assert.Equal(t, time.Now(), resp.Data["creation_time"])
+		assert.Equal(t, 10, resp.Data["ttl"])
 
 		// the account jwt should contain the revoke with the proper time
 		accJwt := ReadAccountJwt(t, accId)
@@ -137,5 +114,111 @@ func TestBackend_Revocation_AutoDelete(t *testing.T) {
 		// the revocation should be removed from the jwt
 		accJwt = ReadAccountJwt(t, accId)
 		assert.NotContains(t, accJwt.Account.Revocations, "U123")
+	})
+}
+
+func TestBackend_Revocation_Sync(t *testing.T) {
+	t.Run("sync on revocation create", func(_t *testing.T) {
+		nats := abstractnats.NewMock(_t)
+		t := testBackendWithNats(_t, nats)
+
+		accId := AccountId("op1", "acc1")
+		SetupTestAccount(t, accId, nil)
+
+		resp, err := WriteSyncConfig(t, accId.operatorId(), map[string]any{
+			"servers":  []string{"nats://localhost:4222"},
+			"sync_now": false,
+		})
+		RequireNoRespError(t, resp, err)
+
+		var receivedJwt string
+		ExpectUpdateSync(t, nats, &receivedJwt)
+
+		userId := "U123"
+		WriteConfig(t, accId.revocationId(userId), map[string]any{
+			"ttl": "10s",
+		})
+
+		claims, err := jwt.DecodeAccountClaims(receivedJwt)
+		require.NoError(t, err)
+
+		assert.Contains(t, claims.Revocations, userId)
+	})
+	t.Run("sync on revocation delete", func(_t *testing.T) {
+		nats := abstractnats.NewMock(_t)
+		t := testBackendWithNats(_t, nats)
+
+		accId := AccountId("op1", "acc1")
+		SetupTestAccount(t, accId, nil)
+
+		resp, err := WriteSyncConfig(t, accId.operatorId(), map[string]any{
+			"servers":  []string{"nats://localhost:4222"},
+			"suspend":  true,
+			"sync_now": false,
+		})
+		RequireNoRespError(t, resp, err)
+
+		userId := "U123"
+		WriteConfig(t, accId.revocationId(userId), map[string]any{
+			"ttl": "10s",
+		})
+
+		resp, err = WriteSyncConfig(t, accId.operatorId(), map[string]any{
+			"suspend":  false,
+			"sync_now": false,
+		})
+		RequireNoRespError(t, resp, err)
+
+		var receivedJwt string
+		ExpectUpdateSync(t, nats, &receivedJwt)
+
+		resp, err = DeleteConfig(t, accId.revocationId(userId))
+		RequireNoRespError(t, resp, err)
+
+		claims, err := jwt.DecodeAccountClaims(receivedJwt)
+		require.NoError(t, err)
+
+		assert.NotContains(t, claims.Revocations, userId)
+	})
+	t.Run("sync on revocation expire", func(t *testing.T) {
+		synctest.Test(t, func(_t *testing.T) {
+			nats := abstractnats.NewMock(_t)
+			t := testBackendWithNats(_t, nats)
+
+			accId := AccountId("op1", "acc1")
+			SetupTestAccount(t, accId, nil)
+
+			resp, err := WriteSyncConfig(t, accId.operatorId(), map[string]any{
+				"servers":  []string{"nats://localhost:4222"},
+				"suspend":  true,
+				"sync_now": false,
+			})
+			RequireNoRespError(t, resp, err)
+
+			userId := "U123"
+			WriteConfig(t, accId.revocationId(userId), map[string]any{
+				"ttl": "10s",
+			})
+
+			resp, err = WriteSyncConfig(t, accId.operatorId(), map[string]any{
+				"suspend":  false,
+				"sync_now": false,
+			})
+			RequireNoRespError(t, resp, err)
+
+			var receivedJwt string
+			ExpectUpdateSync(t, nats, &receivedJwt)
+
+			// let some time pass...
+			time.Sleep(minRollbackAge * 2)
+
+			TickPeriodic(t)
+
+			claims, err := jwt.DecodeAccountClaims(receivedJwt)
+			require.NoError(t, err)
+
+			// the update should not contain the user id
+			assert.NotContains(t, claims.Revocations, userId)
+		})
 	})
 }

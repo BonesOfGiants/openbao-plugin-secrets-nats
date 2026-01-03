@@ -189,7 +189,7 @@ func (b *backend) pathEphemeralUserCreateUpdate(ctx context.Context, req *logica
 	}
 
 	if credsMaxTtlRaw, ok := d.GetOk("creds_max_ttl"); ok {
-		user.CredsDefaultTtl = time.Duration(credsMaxTtlRaw.(int)) * time.Second
+		user.CredsMaxTtl = time.Duration(credsMaxTtlRaw.(int)) * time.Second
 	}
 
 	if claims, ok := d.GetOk("claims"); ok {

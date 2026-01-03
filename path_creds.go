@@ -35,6 +35,11 @@ func pathUserCreds(b *backend) []*framework.Path {
 					Description: "Specify a signing key to use for these creds.",
 					Required:    false,
 				},
+				"ttl": {
+					Type:        framework.TypeDurationSecond,
+					Description: "The TTL of the generated credentials",
+					Required:    false,
+				},
 				"tags": {
 					Type:        framework.TypeStringSlice,
 					Description: "Additional tags to add to the user claims.",
@@ -186,13 +191,13 @@ func (b *backend) pathUserCredsRead(ctx context.Context, req *logical.Request, d
 	}
 
 	resp := b.Secret(userCredsType).Response(map[string]any{
-		"operator":  id.op,
-		"account":   id.acc,
-		"user":      id.user,
-		"creds":     result.creds,
-		"jwt":       result.jwt,
-		"seed":      string(userIdKey.Seed),
-		"expiresAt": result.expiresAt,
+		"operator":   id.op,
+		"account":    id.acc,
+		"user":       id.user,
+		"creds":      result.creds,
+		"jwt":        result.jwt,
+		"seed":       string(userIdKey.Seed),
+		"expires_at": result.expiresAt.Unix(),
 	}, map[string]any{
 		"op":  id.op,
 		"acc": id.acc,

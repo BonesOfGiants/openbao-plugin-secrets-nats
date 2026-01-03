@@ -189,6 +189,18 @@ func (b *backend) pathUserCreateUpdate(ctx context.Context, req *logical.Request
 		user = NewUser(id)
 	}
 
+	if defaultSigningKey, ok := d.GetOk("default_signing_key"); ok {
+		user.DefaultSigningKey = defaultSigningKey.(string)
+	}
+
+	if credsDefaultTtlRaw, ok := d.GetOk("creds_default_ttl"); ok {
+		user.CredsDefaultTtl = time.Duration(credsDefaultTtlRaw.(int)) * time.Second
+	}
+
+	if credsMaxTtlRaw, ok := d.GetOk("creds_max_ttl"); ok {
+		user.CredsMaxTtl = time.Duration(credsMaxTtlRaw.(int)) * time.Second
+	}
+
 	if claims, ok := d.GetOk("claims"); ok {
 		c, ok := claims.(map[string]any)
 		if !ok {

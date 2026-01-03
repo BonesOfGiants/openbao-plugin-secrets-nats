@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestBackend_User_Creds(ts *testing.T) {
+func TestBackend_Creds_Read(ts *testing.T) {
 	b := testBackend(ts)
 
 	// run in a synctest bubble to accurately assess ttl/expires
@@ -160,5 +160,112 @@ func TestBackend_User_Creds(ts *testing.T) {
 		resp, err = ReadCreds(b, id, nil)
 		RequireNoRespError(b, resp, err)
 		assert.Nil(b, resp)
+	})
+}
+
+func TestBackend_Creds_Ttl(t *testing.T) {
+	t.Run("default creds ttl", func(t *testing.T) {
+		synctest.Test(t, func(_t *testing.T) {
+			t := testBackend(_t)
+
+			id := UserId("op1", "acc1", "user1")
+			SetupTestUser(t, id, map[string]any{
+				"creds_default_ttl": "10m",
+			})
+
+			resp, err := ReadCreds(t, id, nil)
+			RequireNoRespError(t, resp, err)
+
+			userJwt := resp.Data["jwt"]
+			expiresAt := resp.Data["expires_at"]
+
+			expectedExpiry := time.Now().Add(10 * time.Minute)
+
+			claims, err := jwt.DecodeUserClaims(userJwt.(string))
+			require.NoError(t, err)
+
+			assert.Equal(t, expectedExpiry.Unix(), claims.Expires)
+			assert.Equal(t, expectedExpiry.Unix(), expiresAt)
+		})
+	})
+
+	t.Run("max creds ttl", func(t *testing.T) {
+		synctest.Test(t, func(_t *testing.T) {
+			t := testBackend(_t)
+
+			id := UserId("op1", "acc1", "user1")
+			SetupTestUser(t, id, map[string]any{
+				"creds_default_ttl": "60m",
+				"creds_max_ttl":     "10m",
+			})
+
+			resp, err := ReadCreds(t, id, nil)
+			RequireNoRespError(t, resp, err)
+
+			userJwt := resp.Data["jwt"]
+			expiresAt := resp.Data["expires_at"]
+
+			expectedExpiry := time.Now().Add(10 * time.Minute)
+
+			claims, err := jwt.DecodeUserClaims(userJwt.(string))
+			require.NoError(t, err)
+
+			assert.Equal(t, expectedExpiry.Unix(), claims.Expires)
+			assert.Equal(t, expectedExpiry.Unix(), expiresAt)
+		})
+	})
+
+	t.Run("ttl parameter overrides default", func(t *testing.T) {
+		synctest.Test(t, func(_t *testing.T) {
+			t := testBackend(_t)
+
+			id := UserId("op1", "acc1", "user1")
+			SetupTestUser(t, id, map[string]any{
+				"creds_default_ttl": "60m",
+			})
+
+			resp, err := ReadCreds(t, id, map[string]any{
+				"ttl": "10m",
+			})
+			RequireNoRespError(t, resp, err)
+
+			userJwt := resp.Data["jwt"]
+			expiresAt := resp.Data["expires_at"]
+
+			expectedExpiry := time.Now().Add(10 * time.Minute)
+
+			claims, err := jwt.DecodeUserClaims(userJwt.(string))
+			require.NoError(t, err)
+
+			assert.Equal(t, expectedExpiry.Unix(), claims.Expires)
+			assert.Equal(t, expectedExpiry.Unix(), expiresAt)
+		})
+	})
+
+	t.Run("max ttl overrides ttl parameter", func(t *testing.T) {
+		synctest.Test(t, func(_t *testing.T) {
+			t := testBackend(_t)
+
+			id := UserId("op1", "acc1", "user1")
+			SetupTestUser(t, id, map[string]any{
+				"creds_max_ttl": "10m",
+			})
+
+			resp, err := ReadCreds(t, id, map[string]any{
+				"ttl": "60m",
+			})
+			RequireNoRespError(t, resp, err)
+
+			userJwt := resp.Data["jwt"]
+			expiresAt := resp.Data["expires_at"]
+
+			expectedExpiry := time.Now().Add(10 * time.Minute)
+
+			claims, err := jwt.DecodeUserClaims(userJwt.(string))
+			require.NoError(t, err)
+
+			assert.Equal(t, expectedExpiry.Unix(), claims.Expires)
+			assert.Equal(t, expectedExpiry.Unix(), expiresAt)
+		})
 	})
 }

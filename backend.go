@@ -321,88 +321,6 @@ func (b *backend) periodicPruneAccountRevocations(ctx context.Context, storage l
 	return dirty, nil
 }
 
-func (b *backend) createSyncAuthCallback(ctx context.Context, storage logical.Storage, opId operatorId) nats.Option {
-	// todo im not sure what the implications of caching the storage instance
-	// here is. An alternative would be to calculate this in getAccountSync and
-	// then let the disconnect upon credential expiry invalidate the accountSync cache
-	idKey, err := nkeys.CreateUser()
-	if err != nil {
-		b.Logger().Error("failed to create user identity key", "error", err)
-		return nil
-	}
-	sub, err := idKey.PublicKey()
-	if err != nil {
-		b.Logger().Error("failed to decode identity key", "error", err)
-		return nil
-	}
-	return nats.UserJWT(
-		func() (string, error) {
-			operator, err := b.Operator(ctx, storage, opId)
-			if err != nil {
-				return "", fmt.Errorf("failed to read operator: %w", err)
-			}
-			if operator == nil {
-				return "", fmt.Errorf("operator does not exist: %w", err)
-			}
-
-			syncConfig, err := b.OperatorSync(ctx, storage, opId)
-			if err != nil {
-				return "", fmt.Errorf("failed to read sync config: %w", err)
-			}
-			if syncConfig == nil {
-				return "", fmt.Errorf("sync config does not exist: %w", err)
-			}
-
-			claims, err := copyClaims(&DefaultSyncUserClaims)
-			if err != nil {
-				return "", fmt.Errorf("failed to copy system user claims: %w", err)
-			}
-
-			claims.Subject = sub
-
-			signingKey, enrichWarnings, err := b.enrichUserClaims(ctx, storage, enrichUserParams{
-				op:     opId.op,
-				acc:    operator.SysAccountName,
-				user:   syncConfig.SyncUserName,
-				claims: claims,
-			})
-			if err != nil {
-				return "", err
-			}
-
-			if len(enrichWarnings) > 0 {
-				b.Logger().Debug("got warnings enriching user claims", "warnings", enrichWarnings)
-			}
-
-			result := encodeUserJWT(signingKey, claims, 1*time.Hour)
-			if len(result.errors) > 0 {
-				return "", fmt.Errorf("failed to encode user jwt: %w", result)
-			}
-
-			return result.jwt, nil
-		},
-		func(nonce []byte) ([]byte, error) {
-			operator, err := b.Operator(ctx, storage, opId)
-			if err != nil {
-				return nil, fmt.Errorf("failed to read operator: %w", err)
-			}
-			if operator == nil {
-				return nil, fmt.Errorf("operator does not exist: %w", err)
-			}
-
-			syncConfig, err := b.OperatorSync(ctx, storage, opId)
-			if err != nil {
-				return nil, fmt.Errorf("failed to read sync config: %w", err)
-			}
-			if syncConfig == nil {
-				return nil, fmt.Errorf("sync config does not exist: %w", err)
-			}
-
-			return idKey.Sign(nonce)
-		},
-	)
-}
-
 func (b *backend) getAccountSync(ctx context.Context, storage logical.Storage, id operatorId) (*accountsync.AccountSync, error) {
 	syncConfig, err := b.OperatorSync(ctx, storage, id)
 	if err != nil {
@@ -418,9 +336,57 @@ func (b *backend) getAccountSync(ctx context.Context, storage logical.Storage, i
 	sync := b.getOperatorSync(id.op)
 
 	if sync == nil {
+		idKey, err := nkeys.CreateUser()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create user identity key: %w", err)
+		}
+		sub, err := idKey.PublicKey()
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode identity key: %w", err)
+		}
+		seed, err := idKey.Seed()
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode identity key: %w", err)
+		}
+
+		operator, err := b.Operator(ctx, storage, id)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read operator: %w", err)
+		}
+		if operator == nil {
+			return nil, fmt.Errorf("operator does not exist: %w", err)
+		}
+
+		claims, err := copyClaims(&DefaultSyncUserClaims)
+		if err != nil {
+			return nil, fmt.Errorf("failed to copy system user claims: %w", err)
+		}
+
+		claims.Subject = sub
+
+		signingKey, enrichWarnings, err := b.enrichUserClaims(ctx, storage, enrichUserParams{
+			op:     id.op,
+			acc:    operator.SysAccountName,
+			user:   syncConfig.SyncUserName,
+			claims: claims,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		if len(enrichWarnings) > 0 {
+			b.Logger().Debug("got warnings enriching user claims", "warnings", enrichWarnings)
+		}
+
+		result := encodeUserJWT(signingKey, claims, 1*time.Hour)
+		if len(result.errors) > 0 {
+			return nil, fmt.Errorf("failed to encode user jwt: %w", result)
+		}
+
 		nc, err := b.NewSyncConnection(
 			syncConfig.Servers,
 			nats.Name("openbao_account_sync"),
+			nats.UserJWTAndSeed(result.jwt, string(seed)),
 			nats.Timeout(syncConfig.ConnectTimeout),
 			nats.ReconnectWait(syncConfig.ReconnectWait),
 			nats.MaxReconnects(syncConfig.MaxReconnects),
@@ -438,7 +404,6 @@ func (b *backend) getAccountSync(ctx context.Context, storage logical.Storage, i
 					sync.CloseConnection()
 				}
 			}),
-			b.createSyncAuthCallback(ctx, storage, id),
 		)
 		if err != nil {
 			return nil, err

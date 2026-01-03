@@ -26,7 +26,7 @@ feature of OpenBao. This requires OpenBao to be on version `2.5.0` or higher.
 
 Create a configuration registering the plugin:
 
-<!-- todo: post real image tag & use semantic-release to auto-update the README -->
+<!-- BEGIN DECLARATIVE SAMPLE -->
 ```sh
 cat << EOF > openbao-config.hcl 
 plugin "secret" "nats" {
@@ -42,6 +42,7 @@ plugin_auto_download = true
 plugin_auto_register = true
 EOF
 ```
+<!-- END DECLARATIVE SAMPLE -->
 
 Start OpenBao with the configuration: 
 
@@ -71,15 +72,16 @@ Place the downloaded `openbao-plugin-secrets-nats` binary in the selected plugin
 
 In a separate terminal, register the plugin with the following command:
 
-<!-- todo: post real version and sha256 & use semantic-release to auto-update the README -->
+<!-- BEGIN CLI SAMPLE -->
 ```sh
 $ bao plugin register \
     -version=v1.0.3 \
     -sha256=8a02d607d61450b2e23a919129486eb83856534f5aadb1ba829f1f357ad67ea8 \
     -command=openbao-plugin-secrets-nats \
     nats
-Success! TODO
+Success! Registered plugin: nats
 ```
+<!-- END CLI SAMPLE -->
 
 #### Creating your first user
 

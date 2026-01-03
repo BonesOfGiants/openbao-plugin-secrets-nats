@@ -180,7 +180,7 @@ func (b *backend) pathEphemeralUserCredsRead(ctx context.Context, req *logical.R
 		"creds":      result.creds,
 		"jwt":        result.jwt,
 		"seed":       result.seed,
-		"expires_at": result.expiresAt,
+		"expires_at": result.expiresAt.Unix(),
 	}, map[string]any{
 		"op":  user.op,
 		"acc": user.acc,

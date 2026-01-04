@@ -34,7 +34,6 @@ todo: list of things that still need tests:
 - operator signing key delete resulting in accounts being resigned using the id key
 - key list tests + change the alias lists to use the proper fn call
 - walrollback behavior with deleted accounts
-- ttl of eph/creds, including default, max, and ttl passed into creds endpoint directly
 */
 
 func testFactory(ctx context.Context, conf *logical.BackendConfig, n abstractnats.MockNatsConnection) (logical.Backend, error) {

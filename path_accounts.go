@@ -24,8 +24,9 @@ const (
 type accountEntry struct {
 	accountId
 
-	RawClaims      json.RawMessage `json:"claims,omitempty"`
-	SigningKeyName string          `json:"signing_key_name"`
+	RawClaims         json.RawMessage `json:"claims,omitempty"`
+	SigningKey        string          `json:"signing_key"`
+	DefaultSigningKey string          `json:"default_signing_key"`
 
 	Status accountStatus `json:"status"`
 }
@@ -147,9 +148,13 @@ func pathConfigAccount(b *backend) []*framework.Path {
 					Description: "Override default claims in the issued JWT for this account. See https://pkg.go.dev/github.com/nats-io/jwt/v2#AccountClaims for available fields.",
 					Required:    false,
 				},
-				"signing_key_name": {
+				"signing_key": {
 					Type:        framework.TypeString,
-					Description: "Specify which signing key to use when generating this account's JWT. If not set, will use the operator's default signing key.",
+					Description: "Specify which operator signing key to use when generating this account's JWT. If not set, will use the operator's default signing key.",
+				},
+				"default_signing_key": {
+					Type:        framework.TypeString,
+					Description: "Specify which account signing key to use when signing user JWTs. If not set, will default to the account's identity key.",
 				},
 			},
 			ExistenceCheck: b.pathAccountExistenceCheck,
@@ -273,9 +278,14 @@ func (b *backend) pathAccountCreateUpdate(ctx context.Context, req *logical.Requ
 		account.RawClaims = rawClaims
 	}
 
-	if signingKeyName, ok := d.GetOk("signing_key_name"); ok {
-		jwtDirty = jwtDirty || (account.SigningKeyName != signingKeyName)
-		account.SigningKeyName = signingKeyName.(string)
+	if signingKeyName, ok := d.GetOk("signing_key"); ok {
+		jwtDirty = jwtDirty || (account.SigningKey != signingKeyName)
+		account.SigningKey = signingKeyName.(string)
+	}
+
+	if defaultSigningKey, ok := d.GetOk("default_signing_key"); ok {
+		jwtDirty = jwtDirty || (account.DefaultSigningKey != defaultSigningKey)
+		account.DefaultSigningKey = defaultSigningKey.(string)
 	}
 
 	resp := &logical.Response{}
@@ -373,6 +383,14 @@ func (b *backend) pathAccountRead(ctx context.Context, req *logical.Request, d *
 
 	data := map[string]any{
 		"status": status,
+	}
+
+	if account.SigningKey != "" {
+		data["signing_key"] = account.SigningKey
+	}
+
+	if account.DefaultSigningKey != "" {
+		data["default_signing_key"] = account.DefaultSigningKey
 	}
 
 	if account.RawClaims != nil {

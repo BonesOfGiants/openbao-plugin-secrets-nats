@@ -370,8 +370,15 @@ func (b *backend) issueAndSaveAccountJWT(ctx context.Context, storage logical.St
 		return nil, nil
 	}
 
-	if account.SigningKeyName != "" {
-		nkey, err := b.Nkey(ctx, storage, account.operatorId().signingKeyId(account.SigningKeyName))
+	opId := id.operatorId()
+
+	desiredKey := ""
+	selectedKey := ""
+
+	// first try account signing key
+	if account.SigningKey != "" {
+		desiredKey = fmt.Sprintf("%q (from account definition)", account.SigningKey)
+		nkey, err := b.Nkey(ctx, storage, opId.signingKeyId(account.SigningKey))
 		if err != nil {
 			return warnings, err
 		}
@@ -381,18 +388,41 @@ func (b *backend) issueAndSaveAccountJWT(ctx context.Context, storage logical.St
 				return warnings, err
 			}
 			signingKey = sk
-		} else {
-			warnings = append(warnings, fmt.Sprintf("signing key %q does not exist; using operator identity key", account.SigningKeyName))
+			selectedKey = desiredKey
 		}
 	}
 
+	// then try the operator default signing key
+	if signingKey == nil {
+		operator, err := b.Operator(ctx, storage, id.operatorId())
+		if err != nil {
+			return warnings, err
+		}
+		if operator != nil && operator.DefaultSigningKey != "" {
+			desiredKey = fmt.Sprintf("%q (from operator default)", operator.DefaultSigningKey)
+			nkey, err := b.Nkey(ctx, storage, opId.signingKeyId(operator.DefaultSigningKey))
+			if err != nil {
+				return warnings, err
+			}
+			if nkey != nil {
+				sk, err := nkey.keyPair()
+				if err != nil {
+					return warnings, err
+				}
+				signingKey = sk
+				selectedKey = desiredKey
+			}
+		}
+	}
+
+	// finally try the operator identity key
 	if signingKey == nil {
 		operatorNKey, err := b.Nkey(ctx, storage, account.operatorId())
 		if err != nil {
 			return warnings, err
 		}
 		if operatorNKey == nil {
-			return warnings, fmt.Errorf("issuer nkey does not exist")
+			return warnings, fmt.Errorf("operator identity key does not exist")
 		}
 		sk, err := operatorNKey.keyPair()
 		if err != nil {
@@ -400,10 +430,15 @@ func (b *backend) issueAndSaveAccountJWT(ctx context.Context, storage logical.St
 		}
 
 		signingKey = sk
+		selectedKey = "operator identity key"
 	}
 
 	if signingKey == nil {
 		return warnings, fmt.Errorf("failed to resolve a signing key")
+	}
+
+	if desiredKey != "" && desiredKey != selectedKey {
+		warnings = append(warnings, fmt.Sprintf("could not use signing key %s as it does not exist; defaulting to %s", desiredKey, selectedKey))
 	}
 
 	idNKey, err := b.Nkey(ctx, storage, account)

@@ -92,7 +92,18 @@ func TestBackend_Operator_Config(_t *testing.T) {
 			},
 		},
 		{
-			name: "enerate system account with custom name",
+			name: "default signing key",
+			data: map[string]any{
+				"default_signing_key": "sk1",
+			},
+			expected: map[string]any{
+				"default_signing_key":   "sk1",
+				"create_system_account": true,
+				"system_account_name":   "SYS",
+			},
+		},
+		{
+			name: "generate system account with custom name",
 			data: map[string]any{
 				"create_system_account": true,
 				"system_account_name":   "custom_account",

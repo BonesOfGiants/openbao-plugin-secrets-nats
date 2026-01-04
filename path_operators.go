@@ -89,10 +89,6 @@ func (id operatorId) accountId(acc string) accountId {
 	return AccountId(id.op, acc)
 }
 
-func (id operatorId) userId(acc, user string) userId {
-	return UserId(id.op, acc, user)
-}
-
 func (id operatorId) signingKeyId(name string) operatorSigningKeyId {
 	return OperatorSigningKeyId(id.op, name)
 }
@@ -141,6 +137,10 @@ func pathConfigOperator(b *backend) []*framework.Path {
 				"system_account_name": {
 					Type:        framework.TypeString,
 					Description: `If set, overrides the default system account name of "SYS" for this operator.`,
+				},
+				"default_signing_key": {
+					Type:        framework.TypeString,
+					Description: `If set, use the specified signing key to sign accounts instead of the identity key. Does not apply to existing accounts.`,
 				},
 				"claims": {
 					Type:        framework.TypeMap,
@@ -229,6 +229,11 @@ func (b *backend) pathOperatorCreateUpdate(ctx context.Context, req *logical.Req
 	if createSystemAccount, ok := d.GetOk("create_system_account"); ok {
 		jwtDirty = jwtDirty || (operator.CreateSystemAccount != createSystemAccount)
 		operator.CreateSystemAccount = createSystemAccount.(bool)
+	}
+
+	if defaultSigningKey, ok := d.GetOk("default_signing_key"); ok {
+		jwtDirty = jwtDirty || (operator.DefaultSigningKey != defaultSigningKey)
+		operator.DefaultSigningKey = defaultSigningKey.(string)
 	}
 
 	newCreateSystemAccount := operator.CreateSystemAccount
@@ -383,6 +388,10 @@ func (b *backend) pathOperatorRead(ctx context.Context, req *logical.Request, d 
 	data := map[string]any{
 		"create_system_account": operator.CreateSystemAccount,
 		"system_account_name":   operator.SysAccountName,
+	}
+
+	if operator.DefaultSigningKey != "" {
+		data["default_signing_key"] = operator.DefaultSigningKey
 	}
 
 	if operator.RawClaims != nil {

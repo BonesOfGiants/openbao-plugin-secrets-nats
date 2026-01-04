@@ -111,6 +111,16 @@ func (b *backend) pathEphemeralUserCredsRead(ctx context.Context, req *logical.R
 		signingKeyName = user.DefaultSigningKey
 	}
 
+	if signingKeyName == "" {
+		account, err := b.Account(ctx, req.Storage, id.accountId())
+		if err != nil {
+			return nil, err
+		}
+		if account != nil {
+			signingKeyName = account.DefaultSigningKey
+		}
+	}
+
 	idKey, err := nkeys.CreateUser()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create user identity key: %w", err)

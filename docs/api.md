@@ -713,7 +713,8 @@ This endpoint create an account configuration under the specified operator.
 
 - `operator` `(string: <required>)` - The name of the operator. Included in the path.
 - `account` `(string: <required>)` - The name of the account. Included in the path.
-- `signing_key_name` `(string: "")` - Optionally specify the name of an operator signing key to use when signing this account's JWT.
+- `signing_key` `(string: "")` - Optionally specify the name of an operator signing key to use when signing this account's JWT.
+- `default_signing_key` `(string: "")` - Specify which account signing key to use by default when signing user JWTs. If empty or not set, users will be signed using the account's identity key. This may be overridden by the user's default signing key or the creds `signing_key` parameter.
   If not set or set to `""`, the operator's identity key will be used to sign the account JWT.
 - `claims` `(map: {})` - Override default claims in the JWT issued for this operator. See [nats-io/jwt](https://pkg.go.dev/github.com/nats-io/jwt/v2#AccountClaims) 
   for available fields. See [the guide](./index.md#account-claims) for caveats and an example of all available fields.
@@ -1170,8 +1171,7 @@ This endpoint create a user configuration under the specified operator and accou
 - `operator` `(string: <required>)` - The name of the operator. Included in the path.
 - `account` `(string: <required>)` - The name of the account. Included in the path.
 - `user` `(string: <required>)` - The name of the user. Included in the path.
-- `default_signing_key` `(string: "")` - Specify the name of an account signing key to use by default when generating credentials. 
-  If empty or not set, the account will be signed with the operator identity key.
+- `default_signing_key` `(string: "")` - Specify the name of an account signing key to use by default when generating credentials. If empty or not set, the user will be signed using the account's default signing key. This may be overridden by the creds `signing_key` parameter.
 - `creds_max_ttl` `(string: "")` - The maximum TTL for generated credentials, specified in seconds or as a Go duration format string, e.g. `"1h"`.
   If not set or 0, the [system default](https://openbao.org/docs/configuration/#max_lease_ttl) will be used.
 - `creds_default_ttl` `(string: "")` - The default TTL for generated credentials, specified in seconds or as a Go duration format string, e.g. `"1h"`.
@@ -1376,8 +1376,7 @@ by ensuring that user identity keys are never reused.
 - `operator` `(string: <required>)` - The name of the operator. Included in the path.
 - `account` `(string: <required>)` - The name of the account. Included in the path.
 - `user` `(string: <required>)` - The name of the ephemeral user. Included in the path.
-- `default_signing_key` `(string: "")` - Specify the name of an account signing key to use by default when generating credentials. 
-  If empty or not set, the account will be signed with the operator identity key.
+- `default_signing_key` `(string: "")` - Specify the name of an account signing key to use by default when generating credentials. If empty or not set, the user will be signed using the account's default signing key. This may be overridden by the creds `signing_key` parameter.
 - `creds_max_ttl` `(string: "")` - The maximum TTL for generated credentials, specified in seconds or as a Go duration format string, e.g. `"1h"`.
   If not set or 0, the [system default](https://openbao.org/docs/configuration/#max_lease_ttl) will be used.
 - `creds_default_ttl` `(string: "")` - The default TTL for generated credentials, specified in seconds or as a Go duration format string, e.g. `"1h"`.

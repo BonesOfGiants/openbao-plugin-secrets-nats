@@ -116,7 +116,7 @@ func TestBackend_Operator_SigningKey_Rotation(t *testing.T) {
 
 		accId := opId.accountId("acc1")
 		SetupTestAccount(b, accId, map[string]any{
-			"signing_key_name": skId.name,
+			"signing_key": skId.name,
 		})
 
 		nkey := ReadPublicKey(b, skId)

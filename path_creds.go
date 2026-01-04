@@ -126,6 +126,16 @@ func (b *backend) pathUserCredsRead(ctx context.Context, req *logical.Request, d
 		signingKeyName = user.DefaultSigningKey
 	}
 
+	if signingKeyName == "" {
+		account, err := b.Account(ctx, req.Storage, id.accountId())
+		if err != nil {
+			return nil, err
+		}
+		if account != nil {
+			signingKeyName = account.DefaultSigningKey
+		}
+	}
+
 	userIdKey, err := b.Nkey(ctx, req.Storage, user)
 	if err != nil {
 		return nil, err

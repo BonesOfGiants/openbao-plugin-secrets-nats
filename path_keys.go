@@ -485,7 +485,7 @@ func (b *backend) pathOperatorSigningNkeyDelete(ctx context.Context, req *logica
 			return nil, err
 		}
 
-		if account.SigningKeyName == id.name {
+		if account.SigningKey == id.name {
 			warnings, err := b.issueAndSaveAccountJWT(ctx, req.Storage, account.accountId)
 			if err != nil {
 				return nil, err

@@ -13,12 +13,15 @@ permissions:
 
 env:
   OUTPUT_DIR: bin
+  RELEASE_DIR: release
   PLUGIN_NAME: openbao-plugin-secrets-nats
+  IMAGE_NAME: ghcr.io/bonesofgiants/openbao-plugin-secrets-nats
 
 jobs:
   version:
     name: Determine version
     runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, '(no ci)') && !contains(github.event.head_commit.message, 'chore:')"
     outputs:
       tag: ${{ steps.version.outputs.new_tag }}
       version: ${{ steps.version.outputs.new_version }}
@@ -37,7 +40,6 @@ jobs:
     name: Build
     needs: version
     runs-on: ubuntu-latest
-    if: ${{ needs.version.outputs.type != 'chore' }}
     strategy:
       matrix:
         os: ['linux', 'windows', 'darwin']
@@ -82,23 +84,42 @@ jobs:
           pattern: plugin-*
           merge-multiple: true
 
-      - name: Tag release
-        id: version
-        uses: mathieudutour/github-tag-action@v6.2
+      - name: Package & Update README.md
+        id: package
+        run: |
+          make "OUTPUT_DIR=${{ env.OUTPUT_DIR }}" "RELEASE_DIR=${{ env.RELEASE_DIR }}" package
+          make "IMAGE_NAME=${{ env.IMAGE_NAME }}" "VERSION=${{ needs.version.outputs.tag }}" "SHA256SUM=$(cat "$RELEASE_DIR/$PLUGIN_NAME-linux-amd64.sha256" | cut -d' ' -f1)" update-readme
+          echo "changelog<<__EOF__" >> "$GITHUB_OUTPUT"
+          echo "${{ needs.version.outputs.changelog }}" >> "$GITHUB_OUTPUT"
+          echo "### sha256" >> "$GITHUB_OUTPUT"
+          echo "\`\`\`" >> "$GITHUB_OUTPUT"
+          echo "$(make "RELEASE_DIR=${{ env.RELEASE_DIR }}" print-sha256)" >> "$GITHUB_OUTPUT"
+          echo "\`\`\`" >> "$GITHUB_OUTPUT"
+          echo "__EOF__" >> "$GITHUB_OUTPUT"
+
+      - name: Commit & Push
+        uses: EndBug/add-and-commit@v9.1.4
         with:
-          tag_prefix: ""
-          custom_tag: ${{ needs.version.outputs.tag }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          add: README.md
+          author_name: BonesOfGiantsCurator
+          author_email: 121028010+BonesOfGiantsCurator@users.noreply.github.com
+          message: |
+            chore: update README.md
+
+            - Workflow: ${{ github.workflow }} (#${{ github.run_number }})
+            - Actor: ${{ github.actor }}
+            - Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          tag: ${{ needs.version.outputs.tag }}
 
       - name: Create release
         uses: ncipollo/release-action@v1
         with:
           tag: ${{ needs.version.outputs.tag }}
           name: Release ${{ needs.version.outputs.tag }}
-          body: ${{ needs.version.outputs.changelog }}
+          body: ${{ steps.package.outputs.changelog }}
 
       - name: Upload artifacts
-        run: gh release upload "${{ needs.version.outputs.tag }}" "${{ env.OUTPUT_DIR }}/*"
+        run: gh release upload "${{ needs.version.outputs.tag }}" "${{ env.RELEASE_DIR }}/*"
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -138,12 +159,12 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          push: true
+          push: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
           file: Containerfile
           context: .
-          tags: ghcr.io/bonesofgiants/openbao-plugin-secrets-nats:${{ needs.version.outputs.tag }}
+          tags: ${{ env.IMAGE_NAME }}:${{ needs.version.outputs.tag }}
           platforms: ${{ steps.export-targets.outputs.targets }}
           annotations: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}

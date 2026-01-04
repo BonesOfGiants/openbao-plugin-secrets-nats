@@ -392,6 +392,11 @@ func (b *backend) getAccountSync(ctx context.Context, storage logical.Storage, i
 			nats.MaxReconnects(syncConfig.MaxReconnects),
 			nats.DisconnectErrHandler(func(c *nats.Conn, err error) {
 				b.Logger().Debug("sync: disconnected from nats", "url", c.ConnectedUrl(), "error", err)
+				// invalidate cached conn
+				sync := b.popOperatorSync(id.op)
+				if sync != nil {
+					sync.CloseConnection()
+				}
 			}),
 			nats.ReconnectHandler(func(c *nats.Conn) {
 				b.Logger().Debug("sync: reconnected to nats server", "url", c.ConnectedUrl())
@@ -426,10 +431,7 @@ func (b *backend) getAccountSync(ctx context.Context, storage logical.Storage, i
 }
 
 func (b *backend) periodicRefreshAccounts(ctx context.Context, s logical.Storage, opId operatorId) error {
-	accountSync, err := b.getAccountSync(ctx, s, opId)
-	if err != nil {
-		b.Logger().Debug("Error creating account sync", "operator", opId.op, "error", err)
-	}
+	var accountSync *accountsync.AccountSync
 
 	for name, err := range listPaged(ctx, s, opId.accountsConfigPrefix(), DefaultPagingSize) {
 		if err != nil {
@@ -442,21 +444,34 @@ func (b *backend) periodicRefreshAccounts(ctx context.Context, s logical.Storage
 
 		accDirty, err := b.periodicPruneAccountRevocations(ctx, s, accId)
 		if err != nil {
-			b.Logger().Debug("failed to prune account revocations", "operator", accId.op, "account", accId.acc, "error", err)
+			b.Logger().Warn("failed to prune account revocations", "operator", accId.op, "account", accId.acc, "error", err)
 		}
 
 		if accDirty {
 			_, err := b.issueAndSaveAccountJWT(ctx, s, accId)
 			if err != nil {
 				b.Logger().Warn("failed to reissue account jwt", "operator", accId.op, "account", accId.acc, "error", err)
-				// todo this should update the sync config status as well
+				err = b.updateAccountSyncStatus(ctx, s, accId, err)
+				if err != nil {
+					return err
+				}
 				continue
 			}
 
+			if accountSync == nil {
+				accountSync, err = b.getAccountSync(ctx, s, opId)
+				if err != nil {
+					b.Logger().Warn("failed to create account sync", "operator", opId.op, "error", err)
+				}
+			}
+
 			if accountSync != nil {
-				b.Logger().Debug("syncing account", "operator", opId.op, "account", name)
+				b.Logger().Debug("syncing account", "operator", accId.op, "account", accId.acc)
 				if err = b.syncAccountUpdate(ctx, s, accountSync, accId); err != nil {
-					return err
+					b.Logger().Warn("account sync error", "operator", accId.op, "account", accId.acc, "error", err)
+
+					// force the next account to refresh the accountSync
+					accountSync = nil
 				}
 			}
 		}
@@ -467,10 +482,10 @@ func (b *backend) periodicRefreshAccounts(ctx context.Context, s logical.Storage
 type syncErrors map[string]error
 
 func (b *backend) syncOperatorAccounts(ctx context.Context, s logical.Storage, id operatorId) (syncErrors, error) {
-	sync, err := b.getAccountSync(ctx, s, id)
+	accountSync, err := b.getAccountSync(ctx, s, id)
 	if err != nil {
 		return nil, err
-	} else if sync == nil {
+	} else if accountSync == nil {
 		b.Logger().Debug("sync not configured", "operator", id.op)
 		return nil, nil
 	}
@@ -483,9 +498,21 @@ func (b *backend) syncOperatorAccounts(ctx context.Context, s logical.Storage, i
 			return nil, err
 		}
 
-		err = b.syncAccountUpdate(ctx, s, sync, id.accountId(acc))
+		// todo improve cache invalidation handling
+		if accountSync == nil {
+			accountSync, err := b.getAccountSync(ctx, s, id)
+			if err != nil {
+				return nil, err
+			} else if accountSync == nil {
+				b.Logger().Debug("sync not configured", "operator", id.op)
+				return nil, nil
+			}
+		}
+
+		err = b.syncAccountUpdate(ctx, s, accountSync, id.accountId(acc))
 		if err != nil {
 			errors[acc] = err
+			accountSync = nil
 		}
 	}
 

@@ -636,33 +636,53 @@ func (b *backend) syncAccountUpdate(
 	ctx context.Context,
 	s logical.Storage,
 	accountSync *accountsrv.AccountSync,
-	accountId accountId,
+	id accountId,
 ) error {
 	// read account jwt
-	jwt, err := b.Jwt(ctx, s, accountId)
+	jwt, err := b.Jwt(ctx, s, id)
 	if err != nil {
 		return err
 	} else if jwt == nil {
 		return fmt.Errorf("unable to sync, account does not exist")
 	}
 
-	syncErr := ""
+	var syncErr error
 	err = accountSync.UpdateAccount(jwt.Token)
 	if err != nil {
-		syncErr = err.Error()
+		syncErr = err
+
+		// invalidate the cached sync
+		_ = b.popOperatorSync(id.op)
+		accountSync.CloseConnection()
 	}
 
+	err = b.updateAccountSyncStatus(ctx, s, id, syncErr)
+	if err != nil {
+		return err
+	}
+
+	// return syncErr because we want to invalidate the accountsync instance
+	return syncErr
+}
+
+func (b *backend) updateAccountSyncStatus(ctx context.Context, s logical.Storage, id accountId, syncErr error) error {
 	return logical.WithTransaction(ctx, s, func(s logical.Storage) error {
-		// update issue status
-		account, err := b.Account(ctx, s, accountId)
+		account, err := b.Account(ctx, s, id)
 		if err != nil {
 			return err
 		}
 		if account.Status.Sync == nil {
 			account.Status.Sync = &syncStatus{}
 		}
-		account.Status.Sync.Synced = syncErr == ""
-		account.Status.Sync.LastError = syncErr
+
+		if syncErr != nil {
+			account.Status.Sync.Synced = false
+			account.Status.Sync.LastError = syncErr.Error()
+		} else {
+			account.Status.Sync.Synced = true
+			account.Status.Sync.LastError = ""
+		}
+
 		account.Status.Sync.LastSyncTime = time.Now().UTC()
 
 		err = storeInStorage(ctx, s, account.configPath(), account)

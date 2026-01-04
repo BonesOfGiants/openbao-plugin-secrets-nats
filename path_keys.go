@@ -519,10 +519,24 @@ func (b *backend) pathOperatorSigningNkeyDelete(ctx context.Context, req *logica
 			resp.AddWarning(fmt.Sprintf("unable to sync account jwts: %s", err))
 		} else if accountSync != nil {
 			for _, accId := range updatedAccounts {
+				// handle case where cached instance is invalidated
+				if accountSync == nil {
+					accountSync, err = b.getAccountSync(ctx, req.Storage, id.operatorId())
+					if err != nil {
+						b.Logger().Warn("failed to retrieve account sync", "operator", id.op, "error", err)
+						resp.AddWarning(fmt.Sprintf("unable to sync account jwts: %s", err))
+						break
+					} else if accountSync == nil {
+						break
+					}
+				}
+
 				err := b.syncAccountUpdate(ctx, req.Storage, accountSync, accId)
 				if err != nil {
 					b.Logger().Warn("failed to sync account", "operator", accId.op, "account", accId.acc, "error", err)
 					resp.AddWarning(fmt.Sprintf("unable to sync jwt for account %q: %s", accId.acc, err))
+					// force refetch from cache
+					accountSync = nil
 				}
 			}
 		}

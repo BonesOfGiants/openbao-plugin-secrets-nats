@@ -104,7 +104,7 @@ jobs:
           author_name: BonesOfGiantsCurator
           author_email: 121028010+BonesOfGiantsCurator@users.noreply.github.com
           message: |
-            chore: update README.md
+            chore: Release ${{ needs.version.outputs.tag }}
 
             - Workflow: ${{ github.workflow }} (#${{ github.run_number }})
             - Actor: ${{ github.actor }}

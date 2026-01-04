@@ -31,15 +31,15 @@ Create a configuration registering the plugin:
 > The pre-filled sha256sum is for the linux-amd64 build.
 > The value should be updated with the appropriate hash for
 > your execution environment. You can find sums for all releases 
-> on the [release page](https://github.com/BonesOfGiants/openbao-plugin-secrets-nats/releases/tag/v1.1.0).
+> on the [release page](https://github.com/BonesOfGiants/openbao-plugin-secrets-nats/releases/tag/v1.1.1).
 
 ```sh
 cat << EOF > openbao-config.hcl 
 plugin "secret" "nats" {
     image = "ghcr.io/bonesofgiants/openbao-plugin-secrets-nats"
-    version = "v1.1.0"
+    version = "v1.1.1"
     binary_name = "openbao-plugin-secrets-nats"
-    sha256sum = "8a02d607d61450b2e23a919129486eb83856534f5aadb1ba829f1f357ad67ea8"
+    sha256sum = "6c6206dcc6e13a793f490a0d7e9f81a2faba0feb3d7e2d01dd734617827517bb"
 }
 
 plugin_directory = "$HOME/openbao_plugins" # or wherever it pleases
@@ -83,12 +83,12 @@ In a separate terminal, register the plugin with the following command:
 > The pre-filled sha256sum is for the linux-amd64 build.
 > The value should be updated with the appropriate hash for
 > your execution environment. You can find sums for all releases 
-> on the [release page](https://github.com/BonesOfGiants/openbao-plugin-secrets-nats/releases/tag/v0.0.0).
+> on the [release page](https://github.com/BonesOfGiants/openbao-plugin-secrets-nats/releases/tag/v1.1.1).
 
 ```sh
 $ bao plugin register \
-    -version="v0.0.0" \
-    -sha256="8a02d607d61450b2e23a919129486eb83856534f5aadb1ba829f1f357ad67ea8" \ 
+    -version="v1.1.1" \
+    -sha256="6c6206dcc6e13a793f490a0d7e9f81a2faba0feb3d7e2d01dd734617827517bb" \ 
     -command="openbao-plugin-secrets-nats" \
     nats
 Success! Registered plugin: nats

@@ -330,7 +330,7 @@ func (b *backend) generateUserCreds(idKey nkeys.KeyPair, signingKey nkeys.KeyPai
 func (b *backend) userCredsRevoke(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 	expRaw := req.Secret.InternalData["exp"]
 
-	exp := time.Unix(expRaw.(int64), 0)
+	exp := time.Unix(int64(expRaw.(float64)), 0)
 	now := time.Now()
 	ttl := exp.Sub(now)
 

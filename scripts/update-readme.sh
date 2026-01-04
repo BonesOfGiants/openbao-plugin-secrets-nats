@@ -32,7 +32,13 @@ plugin_auto_register = true
 EOF
 ${delim}"
 
-cli="$note
+cli="Download the appropriate binary for your platform from the 
+[release page](https://github.com/BonesOfGiants/openbao-plugin-secrets-nats/releases/tag/$TAG).
+Place the downloaded and decompressed \`openbao-plugin-secrets-nats\` binary in the configured plugin directory.
+
+In a separate terminal, register the plugin with the following command:
+
+$note
 
 ${delim}sh
 $ bao plugin register \\\\

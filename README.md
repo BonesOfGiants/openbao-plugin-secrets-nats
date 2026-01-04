@@ -31,15 +31,15 @@ Create a configuration registering the plugin:
 > The pre-filled sha256sum is for the linux-amd64 build.
 > The value should be updated with the appropriate hash for
 > your execution environment. You can find sums for all releases 
-> on the [release page](https://github.com/BonesOfGiants/openbao-plugin-secrets-nats/releases/tag/v1.1.1).
+> on the [release page](https://github.com/BonesOfGiants/openbao-plugin-secrets-nats/releases/tag/v1.1.0).
 
 ```sh
 cat << EOF > openbao-config.hcl 
 plugin "secret" "nats" {
     image = "ghcr.io/bonesofgiants/openbao-plugin-secrets-nats"
-    version = "v1.1.1"
+    version = "v1.1.0"
     binary_name = "openbao-plugin-secrets-nats"
-    sha256sum = "6c6206dcc6e13a793f490a0d7e9f81a2faba0feb3d7e2d01dd734617827517bb"
+    sha256sum = "25cb567a5ad92f0b7b3860e944e9813e02710ac4d6ce1cd96b8c3738a24b28c2"
 }
 
 plugin_directory = "$HOME/openbao_plugins" # or wherever it pleases
@@ -74,11 +74,13 @@ Start the OpenBao server:
 $ bao server -dev -config=openbao-config.hcl
 ```
 
-Place the downloaded `openbao-plugin-secrets-nats` binary in the selected plugin folder.
+<!-- BEGIN CLI SAMPLE -->
+Download the appropriate binary for your platform from the 
+[release page](https://github.com/BonesOfGiants/openbao-plugin-secrets-nats/releases/tag/v1.1.0).
+Place the downloaded and decompressed `openbao-plugin-secrets-nats` binary in the configured plugin directory.
 
 In a separate terminal, register the plugin with the following command:
 
-<!-- BEGIN CLI SAMPLE -->
 > [!NOTE]
 > The pre-filled sha256sum is for the linux-amd64 build.
 > The value should be updated with the appropriate hash for
@@ -87,8 +89,8 @@ In a separate terminal, register the plugin with the following command:
 
 ```sh
 $ bao plugin register \
-    -version="v1.1.1" \
-    -sha256="6c6206dcc6e13a793f490a0d7e9f81a2faba0feb3d7e2d01dd734617827517bb" \ 
+    -version="v1.1.0" \
+    -sha256="25cb567a5ad92f0b7b3860e944e9813e02710ac4d6ce1cd96b8c3738a24b28c2" \ 
     -command="openbao-plugin-secrets-nats" \
     nats
 Success! Registered plugin: nats

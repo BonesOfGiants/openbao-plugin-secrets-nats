@@ -25,6 +25,14 @@ type operatorEntry struct {
 	DefaultSigningKey   string          `json:"default_signing_key"`
 }
 
+func (o *operatorEntry) Operator(ctx context.Context, s logical.Storage) (*operatorEntry, error) {
+	return o, nil
+}
+
+func (o *operatorEntry) OperatorId() operatorId {
+	return o.operatorId
+}
+
 type operatorId struct {
 	op string
 }
@@ -39,6 +47,18 @@ func OperatorIdField(d *framework.FieldData) operatorId {
 	return operatorId{
 		op: d.Get("operator").(string),
 	}
+}
+
+func (id operatorId) Operator(ctx context.Context, s logical.Storage) (*operatorEntry, error) {
+	account, err := getFromStorage[operatorEntry](ctx, s, id.configPath())
+	if account != nil {
+		account.operatorId = id
+	}
+	return account, err
+}
+
+func (id operatorId) OperatorId() operatorId {
+	return id
 }
 
 func (id operatorId) nkeyName() string {
@@ -91,6 +111,11 @@ func (id operatorId) accountId(acc string) accountId {
 
 func (id operatorId) signingKeyId(name string) operatorSigningKeyId {
 	return OperatorSigningKeyId(id.op, name)
+}
+
+type OperatorReader interface {
+	OperatorId() operatorId
+	Operator(ctx context.Context, s logical.Storage) (*operatorEntry, error)
 }
 
 var (
@@ -182,11 +207,7 @@ func pathConfigOperator(b *backend) []*framework.Path {
 }
 
 func (b *backend) Operator(ctx context.Context, s logical.Storage, id operatorId) (*operatorEntry, error) {
-	operator, err := getFromStorage[operatorEntry](ctx, s, id.configPath())
-	if operator != nil {
-		operator.operatorId = id
-	}
-	return operator, err
+	return id.Operator(ctx, s)
 }
 
 func (b *backend) operatorExists(ctx context.Context, s logical.Storage, id operatorId) (bool, error) {
@@ -360,7 +381,7 @@ func (b *backend) pathOperatorCreateUpdate(ctx context.Context, req *logical.Req
 
 		warnings, err := b.issueAndSaveOperatorJWT(ctx, req.Storage, operator.operatorId)
 		if err != nil {
-			return nil, fmt.Errorf("failed to encode operator jwt: %w", err)
+			return logical.ErrorResponse("failed to encode operator jwt: %s", err.Error()), nil
 		}
 
 		for _, v := range warnings {

@@ -358,11 +358,11 @@ func encodeOperatorJwt(signingKey nkeys.KeyPair, claims *jwt.OperatorClaims) *jw
 	return res
 }
 
-func (b *backend) issueAndSaveAccountJWT(ctx context.Context, storage logical.Storage, id accountId) (jwtWarnings, error) {
+func (b *backend) issueAndSaveAccountJWT(ctx context.Context, storage logical.Storage, reader AccountReader) (jwtWarnings, error) {
 	warnings := jwtWarnings{}
 	var signingKey nkeys.KeyPair
 
-	account, err := b.Account(ctx, storage, id)
+	account, err := reader.Account(ctx, storage)
 	if err != nil {
 		return nil, err
 	}
@@ -370,14 +370,17 @@ func (b *backend) issueAndSaveAccountJWT(ctx context.Context, storage logical.St
 		return nil, nil
 	}
 
-	opId := id.operatorId()
+	opId := reader.AccountId().operatorId()
 
 	desiredKey := ""
 	selectedKey := ""
 
 	// first try account signing key
 	if account.SigningKey != "" {
-		desiredKey = fmt.Sprintf("%q (from account definition)", account.SigningKey)
+		currentKey := fmt.Sprintf("%q (from account definition)", account.SigningKey)
+		if desiredKey == "" {
+			desiredKey = currentKey
+		}
 		nkey, err := b.Nkey(ctx, storage, opId.signingKeyId(account.SigningKey))
 		if err != nil {
 			return warnings, err
@@ -388,18 +391,21 @@ func (b *backend) issueAndSaveAccountJWT(ctx context.Context, storage logical.St
 				return warnings, err
 			}
 			signingKey = sk
-			selectedKey = desiredKey
+			selectedKey = currentKey
 		}
 	}
 
 	// then try the operator default signing key
 	if signingKey == nil {
-		operator, err := b.Operator(ctx, storage, id.operatorId())
+		operator, err := b.Operator(ctx, storage, opId)
 		if err != nil {
 			return warnings, err
 		}
 		if operator != nil && operator.DefaultSigningKey != "" {
-			desiredKey = fmt.Sprintf("%q (from operator default)", operator.DefaultSigningKey)
+			currentKey := fmt.Sprintf("%q (from operator default)", operator.DefaultSigningKey)
+			if desiredKey == "" {
+				desiredKey = currentKey
+			}
 			nkey, err := b.Nkey(ctx, storage, opId.signingKeyId(operator.DefaultSigningKey))
 			if err != nil {
 				return warnings, err
@@ -410,7 +416,7 @@ func (b *backend) issueAndSaveAccountJWT(ctx context.Context, storage logical.St
 					return warnings, err
 				}
 				signingKey = sk
-				selectedKey = desiredKey
+				selectedKey = currentKey
 			}
 		}
 	}
@@ -683,11 +689,13 @@ func encodeAccountJwt(signingKey nkeys.KeyPair, claims *jwt.AccountClaims) *jwtR
 type LimitFlags uint8
 
 const (
-	LimitFlagsSubs      LimitFlags = 1 << iota // 1
-	LimitFlagsData                             // 2
-	LimitFlagsPayload                          // 4
-	LimitFlagsSrc                              // 8
-	LimitFlagsHasLimits                        // 16
+	LimitFlagsSubs    LimitFlags = 1 << iota // 1
+	LimitFlagsData                           // 2
+	LimitFlagsPayload                        // 4
+	LimitFlagsSrc                            // 8
+	LimitFlagsOther                          // 16
+
+	LimitFlagsHasLimits = LimitFlagsSubs | LimitFlagsData | LimitFlagsPayload | LimitFlagsSrc | LimitFlagsOther
 )
 
 type enrichUserParams struct {
@@ -699,6 +707,7 @@ type enrichUserParams struct {
 	signingKey string
 	tags       []string
 	limitFlags LimitFlags
+	nbf        int64
 }
 
 func (b *backend) enrichUserClaims(ctx context.Context, s logical.Storage, p enrichUserParams) (nkeys.KeyPair, jwtWarnings, error) {
@@ -718,6 +727,8 @@ func (b *backend) enrichUserClaims(ctx context.Context, s logical.Storage, p enr
 	claims := p.claims
 
 	warnings := jwtWarnings{}
+
+	useDefaultLimits := true
 
 	var signingKey nkeys.KeyPair
 	if p.signingKey != "" {
@@ -741,22 +752,7 @@ func (b *backend) enrichUserClaims(ctx context.Context, s logical.Storage, p enr
 				warnings = append(warnings, "ignoring limits in user claims due to scope")
 			}
 			claims.UserPermissionLimits = jwt.UserPermissionLimits{}
-		} else {
-			// mimic behavior of jwt.NewUserClaims
-			if p.limitFlags&LimitFlagsSrc != 0 {
-				if claims.Src == nil {
-					claims.Src = jwt.CIDRList{}
-				}
-			}
-			if p.limitFlags&LimitFlagsSubs != 0 {
-				claims.Limits.Subs = -1
-			}
-			if p.limitFlags&LimitFlagsData != 0 {
-				claims.Limits.Data = -1
-			}
-			if p.limitFlags&LimitFlagsPayload != 0 {
-				claims.Limits.Payload = -1
-			}
+			useDefaultLimits = false
 		}
 	}
 
@@ -771,12 +767,44 @@ func (b *backend) enrichUserClaims(ctx context.Context, s logical.Storage, p enr
 
 	claims.ClaimsData.Name = name
 
+	if p.nbf > 0 {
+		claims.NotBefore = p.nbf
+	}
+
+	if useDefaultLimits {
+		// mimic behavior of jwt.NewUserClaims
+		if p.limitFlags&LimitFlagsSrc == 0 {
+			if claims.Src == nil {
+				claims.Src = jwt.CIDRList{}
+			}
+		}
+		if p.limitFlags&LimitFlagsSubs == 0 {
+			claims.Limits.Subs = -1
+		}
+		if p.limitFlags&LimitFlagsData == 0 {
+			claims.Limits.Data = -1
+		}
+		if p.limitFlags&LimitFlagsPayload == 0 {
+			claims.Limits.Payload = -1
+		}
+	}
+
 	// if p.session != "" {
 	// 	claims.Tags = append(claims.Tags, "parent:"+p.user)
 	// }
 
-	if p.tags != nil {
-		claims.Tags = append(claims.Tags, p.tags...)
+	{
+		// merge + deduplicate tags
+		tags := jwt.TagList{}
+		if claims.Tags != nil {
+			tags.Add(claims.Tags...)
+		}
+
+		if p.tags != nil {
+			tags.Add(p.tags...)
+		}
+
+		claims.Tags = tags
 	}
 
 	if signingKey != issuerKey {
@@ -789,7 +817,7 @@ func (b *backend) enrichUserClaims(ctx context.Context, s logical.Storage, p enr
 		claims.User.IssuerAccount = ""
 	}
 
-	return signingKey, nil, nil
+	return signingKey, warnings, nil
 }
 
 func encodeUserJWT(signingKey nkeys.KeyPair, claims *jwt.UserClaims, ttl time.Duration) *jwtResult {

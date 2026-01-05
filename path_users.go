@@ -240,10 +240,22 @@ func (b *backend) pathUserRead(ctx context.Context, req *logical.Request, d *fra
 		return nil, err
 	}
 
-	data := map[string]any{
-		"revoke_on_delete":  user.RevokeOnDelete,
-		"creds_default_ttl": user.CredsDefaultTtl.Seconds(),
-		"creds_max_ttl":     user.CredsMaxTtl.Seconds(),
+	data := map[string]any{}
+
+	if user.RevokeOnDelete {
+		data["revoke_on_delete"] = user.RevokeOnDelete
+	}
+
+	if user.CredsDefaultTtl > 0 {
+		data["creds_default_ttl"] = user.CredsDefaultTtl.Seconds()
+	}
+
+	if user.CredsMaxTtl > 0 {
+		data["creds_max_ttl"] = user.CredsMaxTtl.Seconds()
+	}
+
+	if user.DefaultSigningKey != "" {
+		data["default_signing_key"] = user.DefaultSigningKey
 	}
 
 	if user.RawClaims != nil {

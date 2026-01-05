@@ -18,10 +18,19 @@ import (
 /*
 todo: list of things that still need tests:
 - operator jwt change resulting in sync being suspended
+- sync config status updates
 - managed name clashes with existing account
 - account config
+- account sync status updates
 - ephemeral user config
 - user config
+- test partial updates
+	- [ ] operator
+	- [ ] sync
+	- [ ] account
+	- [ ] account import
+	- [ ] user
+	- [ ] eph user
 - all the variations of things that cause account syncing
 	- [ ] operator rotate
 	- [ ] operator signing key rotate
@@ -31,7 +40,7 @@ todo: list of things that still need tests:
 	- [ ] account config
 	- [ ] account rotate
 	- [ ] account signing key rotate
-- operator signing key delete resulting in accounts being resigned using the id key
+- operator signing key create/delete resulting in relevant accounts being resigned
 - key list tests + change the alias lists to use the proper fn call
 - walrollback behavior with deleted accounts
 */

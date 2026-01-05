@@ -155,7 +155,6 @@ func Backend() *backend {
 		WALRollbackMinAge: minRollbackAge,
 		PeriodicFunc:      b.periodicFunc,
 		Clean:             b.clean,
-		Invalidate:        b.invalidate,
 		RunningVersion:    PluginVersion,
 	}
 	return &b
@@ -554,20 +553,6 @@ func (b *backend) clean(_ context.Context) {
 	}
 }
 
-func (b *backend) invalidate(ctx context.Context, key string) {
-	// todo this might be too late if we want to do an immediate sync
-	// with new parameters when the sync changes
-
-	// switch {
-	// case strings.HasPrefix(key, syncConfigPathPrefix):
-	// 	id := strings.TrimPrefix(key, syncConfigPathPrefix)
-	// 	sync := b.popOperatorSync(id)
-	// 	if sync != nil {
-	// 		sync.CloseConnection()
-	// 	}
-	// }
-}
-
 func (b *backend) walRollback(ctx context.Context, req *logical.Request, kind string, data any) error {
 	if kind != deleteAccountWALKey {
 		return fmt.Errorf("unknown type of rollback %q", kind)
@@ -607,7 +592,7 @@ func (b *backend) walRollback(ctx context.Context, req *logical.Request, kind st
 	return nil
 }
 
-// Converts operator claims into RawClaims.
+// Converts operator claims into json.RawMessage.
 // If the conversion fails, panic.
 func fromOperatorClaims(claims *jwt.OperatorClaims) json.RawMessage {
 	data, err := json.Marshal(claims)
@@ -618,9 +603,20 @@ func fromOperatorClaims(claims *jwt.OperatorClaims) json.RawMessage {
 	return data
 }
 
-// Converts account claims into RawClaims.
+// Converts account claims into json.RawMessage.
 // If the conversion fails, panic.
 func fromAccountClaims(claims *jwt.AccountClaims) json.RawMessage {
+	data, err := json.Marshal(claims)
+	if err != nil {
+		panic(err)
+	}
+
+	return data
+}
+
+// Converts user claims into json.RawMessage.
+// If the conversion fails, panic.
+func fromUserClaims(claims *jwt.UserClaims) json.RawMessage {
 	data, err := json.Marshal(claims)
 	if err != nil {
 		panic(err)

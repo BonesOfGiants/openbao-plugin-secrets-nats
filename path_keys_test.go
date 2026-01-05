@@ -1,39 +1,71 @@
 package natsbackend
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
 	"github.com/nats-io/jwt/v2"
+	"github.com/openbao/openbao/sdk/v2/logical"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestBackend_Operator_SigningKey(t *testing.T) {
-	b := testBackend(t)
+func TestBackend_OperatorSigningKey_Config(t *testing.T) {
+	t.Run("basic", func(_t *testing.T) {
+		t := testBackend(_t)
 
-	id := OperatorSigningKeyId("op1", "s1")
-	SetupTestOperator(b, id.operatorId(), nil)
+		id := OperatorSigningKeyId("op1", "s1")
+		SetupTestOperator(t, id.operatorId(), nil)
 
-	// create the signing key
-	resp, err := WriteConfig(b, id, nil)
-	RequireNoRespError(b, resp, err)
+		// create the signing key
+		resp, err := WriteConfig(t, id, nil)
+		RequireNoRespError(t, resp, err)
 
-	pubKey := ReadPublicKey(b, id)
+		pubKey := ReadPublicKey(t, id)
 
-	// operator jwt should contain the signing key
-	opJwt := ReadOperatorJwt(b, id.operatorId())
-	assert.Contains(b, opJwt.SigningKeys, pubKey)
+		// operator jwt should contain the signing key
+		opJwt := ReadOperatorJwt(t, id.operatorId())
+		assert.Contains(t, opJwt.SigningKeys, pubKey)
 
-	// delete signing key
-	DeleteConfig(b, id)
+		// delete signing key
+		DeleteConfig(t, id)
 
-	// operator jwt should not contain the signing key
-	opJwt = ReadOperatorJwt(b, id.operatorId())
-	assert.NotContains(b, opJwt.SigningKeys, pubKey)
+		// operator jwt should not contain the signing key
+		opJwt = ReadOperatorJwt(t, id.operatorId())
+		assert.NotContains(t, opJwt.SigningKeys, pubKey)
+	})
+	t.Run("reissue jwts when signing key is created", func(_t *testing.T) {
+		t := testBackend(_t)
+
+		id := OperatorSigningKeyId("op1", "s1")
+		SetupTestOperator(t, id.operatorId(), nil)
+
+		// create account with signing key
+		SetupTestAccount(t, id.operatorId().accountId("acc1"), map[string]any{
+			"signing_key": "sk1",
+		})
+
+		// create the signing key
+		resp, err := WriteConfig(t, id, nil)
+		RequireNoRespError(t, resp, err)
+
+		pubKey := ReadPublicKey(t, id)
+
+		// operator jwt should contain the signing key
+		opJwt := ReadOperatorJwt(t, id.operatorId())
+		assert.Contains(t, opJwt.SigningKeys, pubKey)
+
+		// delete signing key
+		DeleteConfig(t, id)
+
+		// operator jwt should not contain the signing key
+		opJwt = ReadOperatorJwt(t, id.operatorId())
+		assert.NotContains(t, opJwt.SigningKeys, pubKey)
+	})
 }
 
-func TestBackend_Account_SigningKey(t *testing.T) {
+func TestBackend_AccountSigningKey_Config(t *testing.T) {
 	b := testBackend(t)
 
 	testCases := []struct {
@@ -130,4 +162,64 @@ func TestBackend_Account_SigningKey(t *testing.T) {
 			assert.NotContains(b, accJwt.SigningKeys, pubKey)
 		})
 	}
+}
+
+func TestBackend_OperatorSigningKey_List(_t *testing.T) {
+	t := testBackend(_t)
+
+	opId := OperatorId("op1")
+	SetupTestOperator(t, opId, nil)
+
+	sk1Id := opId.signingKeyId("sk1")
+	resp, err := WriteConfig(t, sk1Id, nil)
+	RequireNoRespError(t, resp, err)
+
+	sk2Id := opId.signingKeyId("sk2")
+	resp, err = WriteConfig(t, sk2Id, nil)
+	RequireNoRespError(t, resp, err)
+
+	sk3Id := opId.signingKeyId("sk3")
+	resp, err = WriteConfig(t, sk3Id, nil)
+	RequireNoRespError(t, resp, err)
+
+	req := &logical.Request{
+		Operation: logical.ListOperation,
+		Path:      opId.signingKeyPrefix(),
+		Storage:   t,
+		Data:      map[string]any{},
+	}
+	resp, err = t.HandleRequest(context.Background(), req)
+	RequireNoRespError(t, resp, err)
+
+	assert.Equal(t, []string{"sk1", "sk2", "sk3"}, resp.Data["keys"])
+}
+
+func TestBackend_AccountSigningKey_List(_t *testing.T) {
+	t := testBackend(_t)
+
+	accId := AccountId("op1", "acc1")
+	SetupTestAccount(t, accId, nil)
+
+	sk1Id := accId.signingKeyId("sk1")
+	resp, err := WriteConfig(t, sk1Id, nil)
+	RequireNoRespError(t, resp, err)
+
+	sk2Id := accId.signingKeyId("sk2")
+	resp, err = WriteConfig(t, sk2Id, nil)
+	RequireNoRespError(t, resp, err)
+
+	sk3Id := accId.signingKeyId("sk3")
+	resp, err = WriteConfig(t, sk3Id, nil)
+	RequireNoRespError(t, resp, err)
+
+	req := &logical.Request{
+		Operation: logical.ListOperation,
+		Path:      accId.signingKeyPrefix(),
+		Storage:   t,
+		Data:      map[string]any{},
+	}
+	resp, err = t.HandleRequest(context.Background(), req)
+	RequireNoRespError(t, resp, err)
+
+	assert.Equal(t, []string{"sk1", "sk2", "sk3"}, resp.Data["keys"])
 }

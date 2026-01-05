@@ -13,7 +13,7 @@ import (
 // from nats jwt package
 const libVersion = 2
 
-func TestBackend_Operator_Jwt(_t *testing.T) {
+func TestBackend_OperatorJwt_Read(_t *testing.T) {
 	t := testBackend(_t)
 
 	testClaims := &jwt.OperatorClaims{
@@ -84,7 +84,7 @@ func TestBackend_Operator_Jwt(_t *testing.T) {
 	assert.Equal(t, testClaims.Operator.GenericFields.Tags, opClaims.Operator.GenericFields.Tags)
 }
 
-func TestBackend_Account_Jwt(t *testing.T) {
+func TestBackend_AccountJwt_Read(t *testing.T) {
 	b := testBackend(t)
 
 	claims := &jwt.AccountClaims{

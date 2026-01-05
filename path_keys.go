@@ -394,6 +394,7 @@ func (b *backend) pathOperatorSigningNkeyCreateUpdate(ctx context.Context, req *
 
 	id := OperatorSigningKeyIdField(d)
 
+	newNkey := false
 	opDirty := false
 	nkey, err := b.Nkey(ctx, req.Storage, id)
 	if err != nil {
@@ -406,6 +407,7 @@ func (b *backend) pathOperatorSigningNkeyCreateUpdate(ctx context.Context, req *
 		}
 
 		opDirty = true
+		newNkey = true
 	}
 
 	err = storeInStorage(ctx, req.Storage, nkey.nkeyPath(), nkey)
@@ -418,11 +420,41 @@ func (b *backend) pathOperatorSigningNkeyCreateUpdate(ctx context.Context, req *
 	if opDirty {
 		warnings, err := b.issueAndSaveOperatorJWT(ctx, req.Storage, id.operatorId())
 		if err != nil {
-			return nil, err
+			return logical.ErrorResponse("failed to encode operator jwt: %s", err.Error()), nil
 		}
 
 		for _, v := range warnings {
 			resp.AddWarning(v)
+		}
+	}
+
+	if newNkey {
+		operator, err := b.Operator(ctx, req.Storage, id.operatorId())
+		if err != nil {
+			return nil, err
+		}
+
+		for account, err := range b.listAccounts(ctx, req.Storage, id.operatorId()) {
+			if err != nil {
+				return nil, err
+			}
+
+			signingKey := operator.DefaultSigningKey
+			if account.SigningKey != "" {
+				signingKey = account.SigningKey
+			}
+
+			if signingKey == id.name {
+				// reissue account jwt
+				warnings, err := b.issueAndSaveAccountJWT(ctx, req.Storage, account)
+				if err != nil {
+					return logical.ErrorResponse("failed to reissue account %q jwt: %s", account.acc, err.Error()), nil
+				}
+
+				for _, v := range warnings {
+					resp.AddWarning(v)
+				}
+			}
 		}
 	}
 
@@ -478,6 +510,11 @@ func (b *backend) pathOperatorSigningNkeyDelete(ctx context.Context, req *logica
 
 	resp := &logical.Response{}
 
+	operator, err := b.Operator(ctx, req.Storage, id.operatorId())
+	if err != nil {
+		return nil, err
+	}
+
 	// reissue all accounts that used this nkey (they will reset to using the operator id key)
 	updatedAccounts := []accountId{}
 	for account, err := range b.listAccounts(ctx, req.Storage, id.operatorId()) {
@@ -485,7 +522,13 @@ func (b *backend) pathOperatorSigningNkeyDelete(ctx context.Context, req *logica
 			return nil, err
 		}
 
-		if account.SigningKey == id.name {
+		signingKey := operator.DefaultSigningKey
+		if account.SigningKey != "" {
+			signingKey = account.SigningKey
+		}
+
+		if signingKey == id.name {
+			resp.AddWarning(fmt.Sprintf("reissued jwt for account %q as it was signed with signing key %q", account.acc, id.name))
 			warnings, err := b.issueAndSaveAccountJWT(ctx, req.Storage, account.accountId)
 			if err != nil {
 				return nil, err
@@ -797,7 +840,7 @@ func (b *backend) pathAccountSigningNkeyList(ctx context.Context, req *logical.R
 		limit = -1
 	}
 
-	id := OperatorIdField(d)
+	id := AccountIdField(d)
 
 	entries, err := req.Storage.ListPage(ctx, id.signingKeyPrefix(), after, limit)
 	if err != nil {

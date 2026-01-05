@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/openbao/openbao/sdk/v2/framework"
@@ -38,6 +39,11 @@ func pathUserCreds(b *backend) []*framework.Path {
 				"ttl": {
 					Type:        framework.TypeDurationSecond,
 					Description: "The TTL of the generated credentials",
+					Required:    false,
+				},
+				"not_before": {
+					Type:        framework.TypeTime,
+					Description: "Specify a nbf timestamp for the generated jwt.",
 					Required:    false,
 				},
 				"tags": {
@@ -136,6 +142,16 @@ func (b *backend) pathUserCredsRead(ctx context.Context, req *logical.Request, d
 		}
 	}
 
+	nbf := int64(0)
+	if nbfRaw, ok := d.GetOk("not_before"); ok {
+		nbfTime, ok := nbfRaw.(time.Time)
+		if !ok {
+			return nil, fmt.Errorf("failed to parse not_before; got %T", nbfRaw)
+		}
+
+		nbf = nbfTime.Unix()
+	}
+
 	userIdKey, err := b.Nkey(ctx, req.Storage, user)
 	if err != nil {
 		return nil, err
@@ -182,14 +198,15 @@ func (b *backend) pathUserCredsRead(ctx context.Context, req *logical.Request, d
 		signingKey: signingKeyName,
 		tags:       tags,
 		limitFlags: limitFlags,
+		nbf:        nbf,
 	})
 	if err != nil {
-		return nil, err
+		return logical.ErrorResponse("failed to generate user creds: %s", err.Error()), nil
 	}
 
 	result := b.generateUserCreds(idKey, signingKey, claims, ttl)
 	if len(result.errors) > 0 {
-		errResp := logical.ErrorResponse("failed to generate user creds")
+		errResp := logical.ErrorResponse("failed to generate user creds: %s", result.Error())
 		for _, w := range result.warnings {
 			errResp.AddWarning(w)
 		}
@@ -266,15 +283,15 @@ func readLimitFlags(claims json.RawMessage) (LimitFlags, error) {
 		switch k {
 		case "pub", "sub", "resp", "times", "times_location",
 			"bearer_token", "proxy_required", "allowed_connection_types":
-			flags |= LimitFlagsHasLimits
+			flags |= LimitFlagsOther
 		case "src":
-			flags |= LimitFlagsHasLimits & LimitFlagsSrc
+			flags |= LimitFlagsSrc
 		case "subs":
-			flags |= LimitFlagsHasLimits & LimitFlagsSubs
+			flags |= LimitFlagsSubs
 		case "data":
-			flags |= LimitFlagsHasLimits & LimitFlagsData
+			flags |= LimitFlagsData
 		case "payload":
-			flags |= LimitFlagsHasLimits & LimitFlagsPayload
+			flags |= LimitFlagsPayload
 		}
 	}
 
@@ -288,6 +305,15 @@ type userCredsResult struct {
 	jwt       string
 	seed      string
 	expiresAt time.Time
+}
+
+func (r *userCredsResult) Error() string {
+	errs := []string{}
+	for _, v := range r.errors {
+		errs = append(errs, v.Error())
+	}
+
+	return strings.Join(errs, ", ")
 }
 
 func (r *userCredsResult) AddWarning(warning ...string) {

@@ -39,6 +39,11 @@ func pathEphemeralUserCreds(b *backend) []*framework.Path {
 					Description: "Additional tags to add to the user claims.",
 					Required:    false,
 				},
+				"not_before": {
+					Type:        framework.TypeTime,
+					Description: "Specify a nbf timestamp for the generated jwt.",
+					Required:    false,
+				},
 				"ttl": {
 					Type:        framework.TypeDurationSecond,
 					Description: "The TTL of the generated credentials",
@@ -121,6 +126,16 @@ func (b *backend) pathEphemeralUserCredsRead(ctx context.Context, req *logical.R
 		}
 	}
 
+	nbf := int64(0)
+	if nbfRaw, ok := d.GetOk("not_before"); ok {
+		nbfTime, ok := nbfRaw.(time.Time)
+		if !ok {
+			return nil, fmt.Errorf("failed to parse not_before; got %T", nbfRaw)
+		}
+
+		nbf = nbfTime.Unix()
+	}
+
 	idKey, err := nkeys.CreateUser()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create user identity key: %w", err)
@@ -160,6 +175,7 @@ func (b *backend) pathEphemeralUserCredsRead(ctx context.Context, req *logical.R
 		signingKey: signingKeyName,
 		tags:       tags,
 		limitFlags: limitFlags,
+		nbf:        nbf,
 	})
 	if err != nil {
 		return nil, err
@@ -167,7 +183,7 @@ func (b *backend) pathEphemeralUserCredsRead(ctx context.Context, req *logical.R
 
 	result := b.generateUserCreds(idKey, signingKey, claims, ttl)
 	if len(result.errors) > 0 {
-		errResp := logical.ErrorResponse("failed to generate user creds")
+		errResp := logical.ErrorResponse("failed to generate user creds: %s", result.Error())
 		for _, w := range result.warnings {
 			errResp.AddWarning(w)
 		}

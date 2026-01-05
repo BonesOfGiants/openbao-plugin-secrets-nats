@@ -31,6 +31,14 @@ type accountEntry struct {
 	Status accountStatus `json:"status"`
 }
 
+func (a *accountEntry) Account(ctx context.Context, s logical.Storage) (*accountEntry, error) {
+	return a, nil
+}
+
+func (a *accountEntry) AccountId() accountId {
+	return a.accountId
+}
+
 // WAL entry used for the rollback account deletions
 type deleteAccountWAL struct {
 	Operator string
@@ -54,6 +62,18 @@ func AccountIdField(d *framework.FieldData) accountId {
 		op:  d.Get("operator").(string),
 		acc: d.Get("account").(string),
 	}
+}
+
+func (id accountId) Account(ctx context.Context, s logical.Storage) (*accountEntry, error) {
+	account, err := getFromStorage[accountEntry](ctx, s, id.configPath())
+	if account != nil {
+		account.accountId = id
+	}
+	return account, err
+}
+
+func (id accountId) AccountId() accountId {
+	return id
 }
 
 func (id accountId) nkeyName() string {
@@ -127,13 +147,18 @@ func (id accountId) signingKeyPrefix() string {
 type accountStatus struct {
 	IsSystemAccount bool        `json:"is_system_account"`
 	IsManaged       bool        `json:"is_managed"`
-	Sync            *syncStatus `json:"account_server"`
+	Sync            *syncStatus `json:"sync_status"`
 }
 
 type syncStatus struct {
 	Synced       bool      `json:"synced"`
 	LastError    string    `json:"last_error,omitempty"`
 	LastSyncTime time.Time `json:"last_sync_time"`
+}
+
+type AccountReader interface {
+	AccountId() accountId
+	Account(ctx context.Context, s logical.Storage) (*accountEntry, error)
 }
 
 func pathConfigAccount(b *backend) []*framework.Path {
@@ -192,11 +217,7 @@ func pathConfigAccount(b *backend) []*framework.Path {
 }
 
 func (b *backend) Account(ctx context.Context, storage logical.Storage, id accountId) (*accountEntry, error) {
-	account, err := getFromStorage[accountEntry](ctx, storage, id.configPath())
-	if account != nil {
-		account.accountId = id
-	}
-	return account, err
+	return id.Account(ctx, storage)
 }
 
 func (b *backend) accountExists(ctx context.Context, s logical.Storage, id accountId) (bool, error) {
@@ -300,7 +321,7 @@ func (b *backend) pathAccountCreateUpdate(ctx context.Context, req *logical.Requ
 
 		// are there any situations where we need to update the operator on update,
 		// or only create?
-		operator, err := b.Operator(ctx, req.Storage, id.operatorId())
+		operator, err := id.operatorId().Operator(ctx, req.Storage)
 		if err != nil {
 			return nil, err
 		}
@@ -329,7 +350,7 @@ func (b *backend) pathAccountCreateUpdate(ctx context.Context, req *logical.Requ
 	if jwtDirty {
 		warnings, err := b.issueAndSaveAccountJWT(ctx, req.Storage, id)
 		if err != nil {
-			return nil, err
+			return logical.ErrorResponse("failed to encode account jwt: %s", err.Error()), nil
 		}
 
 		for _, v := range warnings {

@@ -274,7 +274,7 @@ a signing key in the `default_signing_key` field of the operator.
 
 ### Account syncing
 
-The plugin can be configured to automatically push account updates and deletes to a target NATS cluster.
+The plugin can be configured to automatically push account modifications to a target NATS cluster.
 
 <!-- todo flesh out -->
 

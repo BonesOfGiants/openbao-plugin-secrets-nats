@@ -23,6 +23,7 @@ update your API calls accordingly.
 - [Read operator](#read-operator)
   - [Request parameters](#request-parameters-1)
   - [Sample request](#sample-request-1)
+  - [Response parameters](#response-parameters)
   - [Sample response](#sample-response)
 - [List operators](#list-operators)
   - [Request parameters](#request-parameters-2)
@@ -31,13 +32,15 @@ update your API calls accordingly.
 - [Delete operator](#delete-operator)
   - [Request parameters](#request-parameters-3)
   - [Sample request](#sample-request-3)
-- [Create/Update sync config](#createupdate-sync-config)
+- [Create/Update sync configuration](#createupdate-sync-configuration)
   - [Request parameters](#request-parameters-4)
   - [Sample payload](#sample-payload-1)
   - [Sample request](#sample-request-4)
 - [Read sync configuration](#read-sync-configuration)
   - [Request parameters](#request-parameters-5)
   - [Sample request](#sample-request-5)
+  - [Response parameters](#response-parameters-1)
+    - [Status parameters](#status-parameters)
   - [Sample response](#sample-response-2)
 - [Delete sync configuration](#delete-sync-configuration)
   - [Request parameters](#request-parameters-6)
@@ -45,10 +48,12 @@ update your API calls accordingly.
 - [Read operator key](#read-operator-key)
   - [Request parameters](#request-parameters-7)
   - [Sample request](#sample-request-7)
+  - [Response parameters](#response-parameters-2)
   - [Sample response](#sample-response-3)
 - [Read operator JWT](#read-operator-jwt)
   - [Request parameters](#request-parameters-8)
   - [Sample request](#sample-request-8)
+  - [Response parameters](#response-parameters-3)
   - [Sample response](#sample-response-4)
 - [Create operator signing key](#create-operator-signing-key)
   - [Request parameters](#request-parameters-9)
@@ -56,6 +61,7 @@ update your API calls accordingly.
 - [Read operator signing key](#read-operator-signing-key)
   - [Request parameters](#request-parameters-10)
   - [Sample request](#sample-request-10)
+  - [Response parameters](#response-parameters-4)
   - [Sample response](#sample-response-5)
 - [List operator signing keys](#list-operator-signing-keys)
   - [Request parameters](#request-parameters-11)
@@ -64,122 +70,143 @@ update your API calls accordingly.
 - [Delete operator signing key](#delete-operator-signing-key)
   - [Request parameters](#request-parameters-12)
   - [Sample request](#sample-request-12)
-- [Create/Update account configuration](#createupdate-account-configuration)
+- [Create/Update account](#createupdate-account)
   - [Request parameters](#request-parameters-13)
   - [Sample payload](#sample-payload-2)
   - [Sample request](#sample-request-13)
-- [List accounts](#list-accounts)
+- [Read account](#read-account)
   - [Request parameters](#request-parameters-14)
   - [Sample request](#sample-request-14)
+  - [Response parameters](#response-parameters-5)
+    - [Status parameters](#status-parameters-1)
+    - [Sync status parameters](#sync-status-parameters)
   - [Sample response](#sample-response-7)
-- [Read account configuration](#read-account-configuration)
+- [List accounts](#list-accounts)
   - [Request parameters](#request-parameters-15)
   - [Sample request](#sample-request-15)
   - [Sample response](#sample-response-8)
-- [Delete account configuration](#delete-account-configuration)
+- [Delete account](#delete-account)
   - [Sample request](#sample-request-16)
   - [Request parameters](#request-parameters-16)
-- [Create/Update account import configuration](#createupdate-account-import-configuration)
+- [Create/Update account import](#createupdate-account-import)
   - [Request parameters](#request-parameters-17)
     - [Import parameters](#import-parameters)
   - [Sample payload](#sample-payload-3)
   - [Sample request](#sample-request-17)
-- [List account imports](#list-account-imports)
+- [Read account import](#read-account-import)
   - [Request parameters](#request-parameters-18)
   - [Sample request](#sample-request-18)
+  - [Response parameters](#response-parameters-6)
   - [Sample response](#sample-response-9)
-- [Read account key](#read-account-key)
+- [List account imports](#list-account-imports)
   - [Request parameters](#request-parameters-19)
   - [Sample request](#sample-request-19)
   - [Sample response](#sample-response-10)
-- [Read account JWT](#read-account-jwt)
+- [Read account key](#read-account-key)
   - [Request parameters](#request-parameters-20)
   - [Sample request](#sample-request-20)
+  - [Response parameters](#response-parameters-7)
   - [Sample response](#sample-response-11)
-- [Create/Update account signing key](#createupdate-account-signing-key)
+- [Read account JWT](#read-account-jwt)
   - [Request parameters](#request-parameters-21)
   - [Sample request](#sample-request-21)
-- [List account signing keys](#list-account-signing-keys)
+  - [Response parameters](#response-parameters-8)
+  - [Sample response](#sample-response-12)
+- [Create/Update account signing key](#createupdate-account-signing-key)
   - [Request parameters](#request-parameters-22)
   - [Sample request](#sample-request-22)
-  - [Sample response](#sample-response-12)
-- [Read account signing key](#read-account-signing-key)
+- [List account signing keys](#list-account-signing-keys)
   - [Request parameters](#request-parameters-23)
   - [Sample request](#sample-request-23)
   - [Sample response](#sample-response-13)
-- [Delete account signing key](#delete-account-signing-key)
+- [Read account signing key](#read-account-signing-key)
   - [Request parameters](#request-parameters-24)
   - [Sample request](#sample-request-24)
-- [Create/Update user configuration](#createupdate-user-configuration)
-  - [Request parameters](#request-parameters-25)
-  - [Sample payload](#sample-payload-4)
-  - [Sample request](#sample-request-25)
-- [List users](#list-users)
-  - [Request parameters](#request-parameters-26)
-  - [Sample request](#sample-request-26)
+  - [Response parameters](#response-parameters-9)
   - [Sample response](#sample-response-14)
-- [Read user configuration](#read-user-configuration)
+- [Delete account signing key](#delete-account-signing-key)
+  - [Request parameters](#request-parameters-25)
+  - [Sample request](#sample-request-25)
+- [Create/Update user](#createupdate-user)
+  - [Request parameters](#request-parameters-26)
+  - [Sample payload](#sample-payload-4)
+  - [Sample request](#sample-request-26)
+- [List users](#list-users)
   - [Request parameters](#request-parameters-27)
   - [Sample request](#sample-request-27)
   - [Sample response](#sample-response-15)
-- [Delete user configuration](#delete-user-configuration)
+- [Read user](#read-user)
   - [Request parameters](#request-parameters-28)
   - [Sample request](#sample-request-28)
-- [Read user key](#read-user-key)
+  - [Response parameters](#response-parameters-10)
+  - [Sample response](#sample-response-16)
+- [Delete user](#delete-user)
   - [Request parameters](#request-parameters-29)
   - [Sample request](#sample-request-29)
-  - [Sample response](#sample-response-16)
-- [Create/Update ephemeral user configuration](#createupdate-ephemeral-user-configuration)
+- [Read user key](#read-user-key)
   - [Request parameters](#request-parameters-30)
-  - [Sample payload](#sample-payload-5)
   - [Sample request](#sample-request-30)
-- [Read ephemeral user configuration](#read-ephemeral-user-configuration)
-  - [Request parameters](#request-parameters-31)
-  - [Sample request](#sample-request-31)
+  - [Response parameters](#response-parameters-11)
   - [Sample response](#sample-response-17)
-- [Delete ephemeral user configuration](#delete-ephemeral-user-configuration)
+- [Create/Update ephemeral user](#createupdate-ephemeral-user)
+  - [Request parameters](#request-parameters-31)
+  - [Sample payload](#sample-payload-5)
+  - [Sample request](#sample-request-31)
+- [Read ephemeral user](#read-ephemeral-user)
   - [Request parameters](#request-parameters-32)
   - [Sample request](#sample-request-32)
-- [Generate user credentials](#generate-user-credentials)
+  - [Response parameters](#response-parameters-12)
+  - [Sample response](#sample-response-18)
+- [Delete ephemeral user](#delete-ephemeral-user)
   - [Request parameters](#request-parameters-33)
   - [Sample request](#sample-request-33)
-  - [Sample response](#sample-response-18)
+- [Generate user credentials](#generate-user-credentials)
   - [Request parameters](#request-parameters-34)
-- [Get ephemeral user credentials](#get-ephemeral-user-credentials)
-  - [Request parameters](#request-parameters-35)
   - [Sample request](#sample-request-34)
+  - [Response parameters](#response-parameters-13)
   - [Sample response](#sample-response-19)
-- [Create a revocation](#create-a-revocation)
+  - [Request parameters](#request-parameters-35)
+- [Generate ephemeral user credentials](#generate-ephemeral-user-credentials)
   - [Request parameters](#request-parameters-36)
-  - [Sample payload](#sample-payload-6)
   - [Sample request](#sample-request-35)
-- [List revocations](#list-revocations)
-  - [Request parameters](#request-parameters-37)
-  - [Sample request](#sample-request-36)
+  - [Response parameters](#response-parameters-14)
   - [Sample response](#sample-response-20)
-- [Delete revocation](#delete-revocation)
+- [Create/Update a revocation](#createupdate-a-revocation)
+  - [Request parameters](#request-parameters-37)
+  - [Sample payload](#sample-payload-6)
+  - [Sample request](#sample-request-36)
+- [Read revocation](#read-revocation)
   - [Request parameters](#request-parameters-38)
   - [Sample request](#sample-request-37)
-- [Rotate an operator identity key](#rotate-an-operator-identity-key)
+  - [Response parameters](#response-parameters-15)
+  - [Sample response](#sample-response-21)
+- [List revocations](#list-revocations)
   - [Request parameters](#request-parameters-39)
   - [Sample request](#sample-request-38)
-- [Rotate an operator signing key](#rotate-an-operator-signing-key)
+  - [Sample response](#sample-response-22)
+- [Delete revocation](#delete-revocation)
   - [Request parameters](#request-parameters-40)
   - [Sample request](#sample-request-39)
-- [Rotate an account identity key](#rotate-an-account-identity-key)
+- [Rotate an operator identity key](#rotate-an-operator-identity-key)
   - [Request parameters](#request-parameters-41)
   - [Sample request](#sample-request-40)
-- [Rotate an account signing key](#rotate-an-account-signing-key)
+- [Rotate an operator signing key](#rotate-an-operator-signing-key)
   - [Request parameters](#request-parameters-42)
   - [Sample request](#sample-request-41)
-- [Rotate a user key](#rotate-a-user-key)
+- [Rotate an account identity key](#rotate-an-account-identity-key)
   - [Request parameters](#request-parameters-43)
-  - [Sample payload](#sample-payload-7)
   - [Sample request](#sample-request-42)
-- [Generate server config](#generate-server-config)
+- [Rotate an account signing key](#rotate-an-account-signing-key)
   - [Request parameters](#request-parameters-44)
   - [Sample request](#sample-request-43)
-  - [Sample response](#sample-response-21)
+- [Rotate a user key](#rotate-a-user-key)
+  - [Request parameters](#request-parameters-45)
+  - [Sample payload](#sample-payload-7)
+  - [Sample request](#sample-request-44)
+- [Generate server config](#generate-server-config)
+  - [Request parameters](#request-parameters-46)
+  - [Sample request](#sample-request-45)
+  - [Sample response](#sample-response-23)
 
 </details>
 
@@ -236,7 +263,7 @@ update your API calls accordingly.
 
 ## Create/Update operator
 
-This endpoint creates or updates an operator definition.
+This endpoint creates or updates an operator.
 
 > [!WARNING] 
 > Modifying an operator's claims will reissue the operator JWT.
@@ -257,9 +284,17 @@ This endpoint creates or updates an operator definition.
 
 - `operator` `(string: <required>)` - The name of the operator. Included in the path.
 - `create_system_account` `(bool: true)` - Whether to create a managed system account for this operator.
-- `system_account_name` `(string: "SYS")` - The name of the system account.
+- `system_account_name` `(string: "SYS")` - The name of the account to use with this operator.
+  If `create_system_account` is true, a managed account with this name will be created. 
+  If the named account already exists as a non-managed account, the request will fail.
+  If `create_system_account` is false and the named account does not exist, 
+  this field is ignored and the operator JWT will not specify a system account.
+- `default_signing_key` `(string: "")` - Specify which operator signing key to use by default when signing account JWTs. 
+  By setting this field, accounts under this operator will be unable to be signed using the operator identity key. 
+  If empty, not set, or if the specified signing key does not exist, accounts will be signed using the operator's identity key. 
+  This field may be overridden by the `accounts` `signing_key` parameter.
 - `claims` `(map: nil)` - Override default claims in the JWT issued for this operator. 
-  See [nats-io/jwt](https://pkg.go.dev/github.com/nats-io/jwt/v2#OperatorClaims) for available fields. See [the guide](/docs/index.md#operator-claims) for caveats and an example of all available fields.
+  See [nats-io/jwt](https://pkg.go.dev/github.com/nats-io/jwt/v2#OperatorClaims) for available fields. See [the guide](/docs/index.md#operator-claims) for details and an example of all available fields.
 
 ### Sample payload
 
@@ -304,6 +339,13 @@ $ curl \
     --header "X-Vault-Token: ..." \
     http://127.0.0.1:8200/v1/nats/operators/dev-cluster
 ```
+
+### Response parameters
+
+- `create_system_account` `(bool)` - Whether a managed system account has been created for this operator.
+- `system_account_name` `(string)` - The name of account designated as the system account for this operator.
+- `default_signing_key` `(string: <optional>)` - The default signing key used when signing account JWTs.
+- `claims` `(map: <optional>)` - Default claims used in the JWT issued for this operator.
 
 ### Sample response
 
@@ -391,7 +433,7 @@ $ curl \
     http://127.0.0.1:8200/v1/nats/operators/dev-cluster
 ```
 
-## Create/Update sync config
+## Create/Update sync configuration
 
 This endpoint configures sync behavior for an operator. 
 
@@ -412,7 +454,7 @@ This endpoint configures sync behavior for an operator.
 - `connect_timeout` `(string: "")` - Connection timeout for the NATS connection, 
   specified in seconds or as a Go duration format string, e.g. `"1h"`.
   If not set or set to 0, the default NATS value will be used.
-- `max_reconnects` `(string: "")` - Maximum reconnects for the NATS connection.
+- `max_reconnects` `(int: 0)` - Maximum reconnects for the NATS connection.
   If not set or set to 0, the default NATS value will be used.
 - `reconnect_wait` `(string: "")` - Reconnect wait for the NATS connection,
   specified in seconds or as a Go duration format string, e.g. `"1h"`.
@@ -464,6 +506,27 @@ $ curl \
     --request GET \
     http://127.0.0.1:8200/v1/nats/sync-config/dev-cluster
 ```
+
+### Response parameters
+
+- `servers` `(array[string])` - The list of NATS servers to connect to.
+- `suspend` `(bool: <optional>)` - Whether sync operations are paused for this operator.
+- `connect_timeout` `(int: <optional>)` - Connection timeout for the NATS connection in seconds.
+- `max_reconnects` `(int: <optional>)` - Maximum reconnects for the NATS connection.
+- `reconnect_wait` `(int: <optional>)` - Reconnect wait for the NATS connection in seconds.
+- `sync_user_name` `(string)` - The name given to the user credentials used for sync operations.
+- `ignore_sync_errors_on_delete` `(bool: <optional>)` - Whether sync errors are ignored when accounts are deleted.
+- `status` [`(status)`](#status-parameters) - Information about the current sync status.
+
+#### Status parameters
+
+- `status` `(string)` - The most recent status of the sync. This field may have the following values:
+  - `"created"` - An initial status before the first sync attempt.
+  - `"active"` - The sync is active and not erroring.
+  - `"suspended"` - The sync is suspended.
+  - `"error"` - The last sync attempt failed. Error details are available in the `errors` array. 
+- `last_sync_time` `(string: <optional>)` - The most recent successful sync time in RFC3339 format.
+- `errors` `(array[string]: <optional>)` - Any errors that occurred during the most recent sync.
 
 ### Sample response
 
@@ -525,6 +588,12 @@ $ curl \
     http://127.0.0.1:8200/v1/nats/operator-keys/dev-cluster
 ```
 
+### Response parameters
+
+- `public_key` `(string)` - The operator identity key public key.
+- `private_key` `(string)` - The operator identity key private key.
+- `seed` `(string)` - The operator identity key seed.
+
 ### Sample response
 
 ```json
@@ -558,6 +627,10 @@ $ curl \
     http://127.0.0.1:8200/v1/nats/operator-jwts/dev-cluster
 ```
 
+### Response parameters
+
+- `jwt` `(string)` - The operator jwt.
+
 ### Sample response
 
 ```json
@@ -573,13 +646,13 @@ $ curl \
 This endpoint create a signing key for an operator.
 Calling the same endpoint more than once is a noop.
 
-> [!WARNING] 
-> Modifying an operator's signing keys will reissue the operator JWT.
+> [!WARNING]
+> Creating an operator signing keys will reissue the operator JWT.
 > For the new claims to take effect, the operator JWT must be updated on 
 > all NATS server configs using this operator. 
 > Account and user JWTs are not affected by operator JWT reissues.
 >
-> Modifying an operator's signing keys will also [suspend the active sync configuration](./index.md#account-syncing).
+> Creating an operator signing key will also [suspend the active sync configuration](./index.md#account-syncing).
 
 | Method | Path                                          |
 | :----- | :-------------------------------------------- |
@@ -620,6 +693,12 @@ $ curl \
     --request GET \
     http://127.0.0.1:8200/v1/nats/operator-signing-keys/dev-cluster/my-signing-key
 ```
+
+### Response parameters
+
+- `public_key` `(string)` - The signing key public key.
+- `private_key` `(string)` - The signing key private key.
+- `seed` `(string)` - The signing key seed.
 
 ### Sample response
 
@@ -672,12 +751,12 @@ $ curl \
 This endpoint deletes an operator signing key.
 
 > [!WARNING] 
-> Modifying an operator's signing keys will reissue the operator JWT.
+> Deleting an operator signing key will reissue the operator JWT.
 > For the new claims to take effect, the operator JWT must be updated on 
 > all NATS server configs using this operator. 
 > Account and user JWTs are not affected by operator JWT reissues.
 >
-> Modifying an operator's signing keys will also [suspend the active sync configuration](./index.md#account-syncing).
+> Deleting an operator signing key will also [suspend the active sync configuration](./index.md#account-syncing).
 
 | Method   | Path                                          |
 | :------- | :-------------------------------------------- |
@@ -697,7 +776,7 @@ $ curl \
     http://127.0.0.1:8200/v1/nats/operator-signing-keys/dev-cluster/my-signing-key
 ```
 
-## Create/Update account configuration
+## Create/Update account
 
 This endpoint create an account configuration under the specified operator.
 
@@ -713,17 +792,21 @@ This endpoint create an account configuration under the specified operator.
 
 - `operator` `(string: <required>)` - The name of the operator. Included in the path.
 - `account` `(string: <required>)` - The name of the account. Included in the path.
-- `signing_key` `(string: "")` - Optionally specify the name of an operator signing key to use when signing this account's JWT.
-- `default_signing_key` `(string: "")` - Specify which account signing key to use by default when signing user JWTs. If empty or not set, users will be signed using the account's identity key. This may be overridden by the user's default signing key or the creds `signing_key` parameter.
-  If not set or set to `""`, the operator's identity key will be used to sign the account JWT.
+- `signing_key` `(string: "")` - Optionally specify the name of an operator signing key to use when signing this account's JWT. 
+  If not set, the `operators` `default_signing_key` or the operator identity key will be used.
+- `default_signing_key` `(string: "")` - Specify which account signing key to use by default when signing user and ephemeral user creds. 
+  By setting this field, users and ephemeral users of this account will be unable to be signed using the account identity key. 
+  If empty or not set, users and ephemeral users will be signed using the account's identity key. 
+  This field may be overridden by the `users`/`ephemeral-users` `default_signing_key` or the `creds` `signing_key` parameter.
+  If the specified signing key does not exist, an error will be raised when generating user or ephemeral user credentials.
 - `claims` `(map: {})` - Override default claims in the JWT issued for this operator. See [nats-io/jwt](https://pkg.go.dev/github.com/nats-io/jwt/v2#AccountClaims) 
-  for available fields. See [the guide](./index.md#account-claims) for caveats and an example of all available fields.
+  for available fields. See [the guide](./index.md#account-claims) for details and an example of all available fields.
 
 ### Sample payload
 
 ```json
 {
-    "signing_key_name": "op-signing-key",
+    "signing_key": "op-signing-key",
     "claims": {
         "nats": {
             "limits": {
@@ -744,6 +827,69 @@ $ curl \
     --request POST \
     --data @payload.json \
     http://127.0.0.1:8200/v1/nats/accounts/dev-cluster/my-account
+```
+
+## Read account
+
+This endpoint reads an account configuration.
+
+| Method | Path                                |
+| :----- | :---------------------------------- |
+| `GET`  | `/nats/accounts/:operator/:account` |
+
+### Request parameters
+
+- `operator` `(string: <required>)` - The name of the operator. Included in the path.
+- `account` `(string: <required>)` - The name of the account. Included in the path.
+
+### Sample request
+
+```sh
+$ curl \
+    --header "X-Vault-Token: ..." \
+    --request GET \
+    http://127.0.0.1:8200/v1/nats/accounts/dev-cluster/my-account
+```
+
+### Response parameters
+
+- `signing_key` `(string: <optional>)` - The operator signing key specified to sign this account's JWT.
+- `default_signing_key` `(string: <optional>)` - The default account signing key used when signing user or ephemeral user credentials.
+- `claims` `(map: <optional>)` - Default claims used in the JWT issued for this account.
+- `status` [`(status)`](#status-parameters-1) - Information about this account's status.
+
+#### Status parameters
+
+- `is_system_account` `(string)` - Whether this account is designated as the system account for its operator.
+- `is_managed` `(string)` - Whether this account is a managed account (ie. created by the plugin).
+- `sync_status`  [`(sync_status: <optional>)`](#sync-status-parameters) - Information about this account's latest sync.
+
+#### Sync status parameters
+
+- `synced` `(bool)` - Whether the last sync attempt for this account was successful. If `false`, details are available in the `last_error` field.
+- `last_error` `(string: <optional>)` - The last error that occurred during syncing, if applicable.
+- `last_sync_time`  `(string: <optional>)` - The last time this account was successfully synced, in RFC3339 format.
+
+### Sample response
+
+```json
+{
+    "signing_key": "op-signing-2",
+    "default_signing_key": "acc-signing-1",
+    "claims": {
+        "nats": {
+            "limits": {
+                "subs": -1,
+                "data": -1,
+                "payload": -1
+            }
+        }
+    },
+    "status": {
+        "is_system_account": false,
+        "is_managed": false
+    }
+}
 ```
 
 ## List accounts
@@ -787,46 +933,7 @@ $ curl \
 }
 ```
 
-## Read account configuration
-
-This endpoint reads an account configuration.
-
-| Method | Path                                |
-| :----- | :---------------------------------- |
-| `GET`  | `/nats/accounts/:operator/:account` |
-
-### Request parameters
-
-- `operator` `(string: <required>)` - The name of the operator. Included in the path.
-- `account` `(string: <required>)` - The name of the account. Included in the path.
-
-### Sample request
-
-```sh
-$ curl \
-    --header "X-Vault-Token: ..." \
-    --request GET \
-    http://127.0.0.1:8200/v1/nats/accounts/dev-cluster/my-account
-```
-
-### Sample response
-
-```json
-{
-    "signing_key_name": "op-signing-2",
-    "claims": {
-        "nats": {
-            "limits": {
-                "subs": -1,
-                "data": -1,
-                "payload": -1,
-            }
-        }
-    }
-}
-```
-
-## Delete account configuration
+## Delete account
 
 This endpoint deletes an account.
 
@@ -857,7 +964,7 @@ $ curl \
 - `operator` `(string: <required>)` - The name of the operator. Included in the path.
 - `account` `(string: <required>)` - The name of the account. Included in the path.
 
-## Create/Update account import configuration
+## Create/Update account import
 
 This endpoint create an account import configuration for the given account.
 
@@ -924,6 +1031,48 @@ $ curl \
     http://127.0.0.1:8200/v1/nats/account-imports/dev-cluster/my-account/some-import
 ```
 
+## Read account import
+
+This endpoint reads an account import configuration.
+
+| Method | Path                                             |
+| :----- | :----------------------------------------------- |
+| `GET`  | `/nats/account-imports/:operator/:account/:name` |
+
+### Request parameters
+
+- `operator` `(string: <required>)` - The name of the operator. Included in the path.
+- `account` `(string: <required>)` - The name of the account. Included in the path.
+- `name` `(string: <required>)` - A name for the import configuration. Included in the path.
+
+### Sample request
+
+```sh
+$ curl \
+    --header "X-Vault-Token: ..." \
+    --request GET \
+    http://127.0.0.1:8200/v1/nats/account-imports/dev-cluster/my-account/some-import
+```
+
+### Response parameters
+
+- `imports` `(array)` - The array of [import claims](#import-parameters).
+
+### Sample response
+
+```json
+{
+    "imports": [
+        {
+            "name": "my-special-import",
+            "account": "ADLQAYOH6XEMPI6PL4QTU4QH7KNPAEMGXY77XSMKXHVBKVXXYD23LYRU",
+            "subject": "foo.bar",
+            "type": "stream"
+        }
+    ]
+}
+```
+
 ## List account imports
 
 List all of the imports for the given account.
@@ -961,7 +1110,7 @@ $ curl \
 
 ## Read account key
 
-This endpoint reads the primary NKey for an account.
+This endpoint reads the identity key for an account.
 
 | Method | Path                                    |
 | :----- | :-------------------------------------- |
@@ -980,6 +1129,12 @@ $ curl \
     --request GET \
     http://127.0.0.1:8200/v1/nats/account-keys/dev-cluster/my-app
 ```
+
+### Response parameters
+
+- `public_key` `(string)` - The account identity key public key.
+- `private_key` `(string)` - The account identity key private key.
+- `seed` `(string)` - The account identity key seed.
 
 ### Sample response
 
@@ -1015,6 +1170,10 @@ $ curl \
     http://127.0.0.1:8200/v1/nats/account-jwts/dev-cluster/my-account
 ```
 
+### Response parameters
+
+- `jwt` `(string)` - The account jwt.
+
 ### Sample response
 
 ```json
@@ -1033,8 +1192,10 @@ See [the NATS docs](https://docs.nats.io/using-nats/nats-tools/nsc/signing_keys#
 When creating a `scoped` signing key, the signing key name will be used as the role name.
 
 > [!WARNING]
-> Modifying an accounts's signing keys will reissue the account JWT. If a [sync config](#createupdate-sync-config)
-> is configured, account JWT changes will be automatically synced to the NATS server.
+> Creating an account signing key will reissue the account JWT. 
+> 
+> If a [sync config](#createupdate-sync-config) is configured, 
+> account JWT changes will be automatically synced to the NATS server.
 
 | Method | Path                                                  |
 | :----- | :---------------------------------------------------- |
@@ -1046,8 +1207,10 @@ When creating a `scoped` signing key, the signing key name will be used as the r
 - `account` `(string: <required>)` - The name of the account. Included in the path.
 - `name` `(string: <required>)` - A name for the signing key. Included in the path.
 - `scoped` `(bool: false)` - Whether this signing key should be [scoped](https://docs.nats.io/using-nats/nats-tools/nsc/signing_keys#scoped-signing-keys).
-- `description` `(string: "")` - If `scoped` is `true`, the description for the signing key.
-- `permission_template` `(map: {})` - If `scoped` is `true`, default permissions that will apply to users issued under this key.
+- `description` `(string: "")` - A description for the signing key if `scoped` is `true`.
+- `permission_template` `(map: {})` - Default permissions that will apply to users issued under this key if `scoped` is `true`.
+  The permissions specified here may use [template functions](https://docs.nats.io/using-nats/nats-tools/nsc/signing_keys#template-functions) 
+  in subjects.
 
 ### Sample request
 
@@ -1116,6 +1279,14 @@ $ curl \
     http://127.0.0.1:8200/v1/nats/account-signing-keys/dev-cluster/my-account/my-signing-key
 ```
 
+### Response parameters
+
+- `scoped` `(bool: <optional>)` - Whether this signing key is [scoped](https://docs.nats.io/using-nats/nats-tools/nsc/signing_keys#scoped-signing-keys).
+- `description` `(string: <optional>)` - A description for the signing key if `scoped` is `true`.
+- `permission_template` `(map: <optional>)` - Default permissions that will apply to users issued under this key if `scoped` is `true`.
+  The permissions specified here may use [template functions](https://docs.nats.io/using-nats/nats-tools/nsc/signing_keys#template-functions) 
+  in subjects.
+
 ### Sample response
 
 ```json
@@ -1123,7 +1294,13 @@ $ curl \
     "data": {
         "public_key": "ACWIZ...",
         "private_key": "PS2AL...",
-        "seed": "SAAI2...."
+        "seed": "SAAI2....",
+        "scoped": true,
+        "permission_template": {
+          "subs": 10,
+          "data": -1,
+          "payload": -1
+        }
     }
 }
 ```
@@ -1133,7 +1310,7 @@ $ curl \
 This endpoint deletes an account signing key.
 
 > [!WARNING]
-> Modifying an accounts's signing keys will reissue the account JWT. 
+> Deleting an account signing keys will reissue the account JWT. 
 > 
 > If a [sync config](#createupdate-sync-config) is configured, 
 > account JWT changes will be automatically synced to the NATS server. 
@@ -1158,7 +1335,7 @@ $ curl \
     http://127.0.0.1:8200/v1/nats/account-signing-keys/dev-cluster/my-account/my-signing-key
 ```
 
-## Create/Update user configuration
+## Create/Update user
 
 This endpoint create a user configuration under the specified operator and account.
 
@@ -1178,7 +1355,7 @@ This endpoint create a user configuration under the specified operator and accou
   If not set or 0, the [system default](https://openbao.org/docs/configuration/#default_lease_ttl) will be used.
 - `revoke_on_delete` `(bool: false)` - Whether this user's identity key should be added to the account revocation list upon deletion.
 - `claims` `(map: nil)` - Provide claims to be used in the credentials generated for this user. 
-  See [nats-io/jwt](https://pkg.go.dev/github.com/nats-io/jwt/v2#UserClaims) for available fields. See [the guide](./index.md#user-claims) for caveats and an example of all available fields.
+  See [nats-io/jwt](https://pkg.go.dev/github.com/nats-io/jwt/v2#UserClaims) for available fields. See [the guide](./index.md#user-claims) for details and an example of all available fields.
 
 ### Sample payload
 
@@ -1254,7 +1431,7 @@ $ curl \
 }
 ```
 
-## Read user configuration
+## Read user
 
 This endpoint reads a user configuration.
 
@@ -1276,6 +1453,14 @@ $ curl \
     --request GET \
     http://127.0.0.1:8200/v1/nats/users/dev-cluster/my-account/my-user
 ```
+
+### Response parameters
+
+- `default_signing_key` `(string: <optional>)` - The name of the specified account signing key used by default when generating credentials.
+- `creds_max_ttl` `(int: <optional>)` - The maximum TTL for generated credentials in seconds.
+- `creds_default_ttl` `(int: <optional>)` - The default TTL for generated credentials in seconds.
+- `revoke_on_delete` `(bool: <optional>)` - Whether this user's identity key will be added to the account revocation list upon deletion.
+- `claims` `(map: <optional>)` - Default claims used in the credentials issued for this user.
 
 ### Sample response
 
@@ -1300,7 +1485,7 @@ $ curl \
 }
 ```
 
-## Delete user configuration
+## Delete user
 
 This endpoint deletes a user configuration.
 
@@ -1346,6 +1531,12 @@ $ curl \
     http://127.0.0.1:8200/v1/nats/operator-keys/dev-cluster/my-app/my-user
 ```
 
+### Response parameters
+
+- `public_key` `(string)` - The user identity key public key.
+- `private_key` `(string)` - The user identity key private key.
+- `seed` `(string)` - The user identity key seed.
+
 ### Sample response
 
 ```json
@@ -1358,7 +1549,7 @@ $ curl \
 }
 ```
 
-## Create/Update ephemeral user configuration
+## Create/Update ephemeral user
 
 This endpoint create an ephemeral user configuration under the specified operator and account.
 
@@ -1381,9 +1572,8 @@ by ensuring that user identity keys are never reused.
   If not set or 0, the [system default](https://openbao.org/docs/configuration/#max_lease_ttl) will be used.
 - `creds_default_ttl` `(string: "")` - The default TTL for generated credentials, specified in seconds or as a Go duration format string, e.g. `"1h"`.
   If not set or 0, the [system default](https://openbao.org/docs/configuration/#default_lease_ttl) will be used.
-- `revoke_on_delete` `(bool: false)` - Whether this user's identity key should be added to the account revocation list upon deletion.
 - `claims` `(map: nil)` - Provide claims to be used in the credentials generated for this user. 
-  See [nats-io/jwt](https://pkg.go.dev/github.com/nats-io/jwt/v2#UserClaims) for available fields. See [the guide](./index.md#user-claims) for caveats and an example of all available fields.
+  See [nats-io/jwt](https://pkg.go.dev/github.com/nats-io/jwt/v2#UserClaims) for available fields. See [the guide](./index.md#user-claims) for details and an example of all available fields.
 
 ### Sample payload
 
@@ -1391,13 +1581,9 @@ by ensuring that user identity keys are never reused.
 {
     "creds_max_ttl": "1h",
     "creds_default_ttl": "1h",
-    "revoke_on_delete": true,
     "claims": {
-        ""
         "nats": {
-            "subs": -1,
-            "data": -1,
-            "payload": -1,
+            "subs": 10,
             "pub": {
                 "allow": ["my-service.>"]
             },
@@ -1419,7 +1605,7 @@ $ curl \
     http://127.0.0.1:8200/v1/nats/ephemeral-users/dev-cluster/my-account/my-ephemeral-user
 ```
 
-## Read ephemeral user configuration
+## Read ephemeral user
 
 This endpoint reads an ephemeral user configuration.
 
@@ -1441,6 +1627,13 @@ $ curl \
     --request GET \
     http://127.0.0.1:8200/v1/nats/ephemeral-users/dev-cluster/my-account/my-ephemeral-user
 ```
+
+### Response parameters
+
+- `default_signing_key` `(string: <optional>)` - The name of the specified account signing key used by default when generating credentials.
+- `creds_max_ttl` `(int: <optional>)` - The maximum TTL for generated credentials in seconds.
+- `creds_default_ttl` `(int: <optional>)` - The default TTL for generated credentials in seconds.
+- `claims` `(map: <optional>)` - Default claims used in the credentials issued for this ephemeral user.
 
 ### Sample response
 
@@ -1465,7 +1658,7 @@ $ curl \
 }
 ```
 
-## Delete ephemeral user configuration
+## Delete ephemeral user
 
 This endpoint deletes an ephemeral user configuration.
 
@@ -1502,7 +1695,9 @@ This endpoint generates credentials for a user.
 - `account` `(string: <required>)` - The name of the account. Included in the path.
 - `user` `(string: <required>)` - The name of the user. Included in the path.
 - `signing_key` `(string: "")` - Specify the name of an account signing key to use when signing these credentials. 
-  If empty or not set, the account will be signed with the operator identity key.
+  If empty or not set, the credentials will be signed using the specified by the `accounts` `default_signing_key` parameter or the account's identity key.
+  If the signing key does not exist, an error will be raised.
+- `not_before` `(string|int: "")` - Optionally specify a unix timestamp or RFC3339-formatted string to use as the `nbf` time of the generated creds.
 - `tags` `(array: [])` - Additional tags to add to the user claims.
 
 ### Sample request
@@ -1514,10 +1709,22 @@ $ curl \
     http://127.0.0.1:8200/v1/nats/creds/dev-cluster/my-account/my-user
 ```
 
+### Response parameters
+
+- `operator` `(string)` - The name of the operator.
+- `account` `(string)` - The name of the account.
+- `user` `(string)` - The name of the user.
+- `creds` `(string)` - The decorated credentials including the JWT and seed string. 
+- `jwt` `(string)` - The undecorated JWT. 
+- `seed` `(string)` - The undecorated seed string. 
+- `expires_at` `(int)` - The expiration time for these creds, specified as a unix timestamp.
+
 ### Sample response
 
 ```json
 {
+    "lease_id": "nats/creds/dev-cluster/my-account/my-user/PCa6O3oDQDKIzvyAFpxult9s",
+    "lease_duration": 3600,
     "data": {
         "operator": "dev-cluster",
         "account": "my-account",
@@ -1536,7 +1743,7 @@ $ curl \
 - `account` `(string: <required>)` - The name of the account. Included in the path.
 - `user` `(string: <required>)` - The name of the user. Included in the path.
 
-## Get ephemeral user credentials
+## Generate ephemeral user credentials
 
 This endpoint generates credentials for an ephemeral user with the provided session name.
 
@@ -1550,6 +1757,7 @@ This endpoint generates credentials for an ephemeral user with the provided sess
 - `account` `(string: <required>)` - The name of the account. Included in the path.
 - `user` `(string: <required>)` - The name of the ephemeral user. Included in the path.
 - `session` `(string: <required>)` - A name for this session. Included in the path.
+- `not_before` `(string|int: "")` - Optionally specify a unix timestamp or RFC3339-formatted string to use as the `nbf` time of the generated creds.
 - `tags` `(array: [])` - Additional tags to add to the user claims.
 
 ### Sample request
@@ -1560,6 +1768,17 @@ $ curl \
     --request GET \
     http://127.0.0.1:8200/v1/nats/ephemeral-creds/dev-cluster/my-account/my-ephemeral-user/my-session
 ```
+
+### Response parameters
+
+- `operator` `(string)` - The name of the operator.
+- `account` `(string)` - The name of the account.
+- `user` `(string)` - The name of the ephemeral user.
+- `session` `(string)` - The name of the session.
+- `creds` `(string)` - The decorated credentials including the JWT and seed string. 
+- `jwt` `(string)` - The undecorated JWT. 
+- `seed` `(string)` - The undecorated seed string. 
+- `expires_at` `(int)` - The expiration time for these creds, specified as a unix timestamp.
 
 ### Sample response
 
@@ -1578,9 +1797,11 @@ $ curl \
 }
 ```
 
-## Create a revocation
+## Create/Update a revocation
 
 This endpoint creates a revocation entry on the account JWT for the provided user public key.
+If the revocation already exists, the `ttl` will be overwritten and the `creation_time` reset
+to the current time.
 
 > [!WARNING]
 > Revoking a user reissues the account JWT. If the JWT is synced to the NATS server, 
@@ -1615,6 +1836,43 @@ $ curl \
     --request POST \
     --data @payload.json \
     http://127.0.0.1:8200/v1/nats/revocations/dev-cluster/my-account/UCCMLTR5QQNO4M25RXCBPII5MEXRZMXHSV746EYA3CUPGQ2A424CVJ6H
+```
+
+## Read revocation
+
+This endpoint reads a revocation.
+
+| Method | Path                                        |
+| :----- | :------------------------------------------ |
+| `GET`  | `/nats/revocations/:operator/:account/:sub` |
+
+### Request parameters
+
+- `operator` `(string: <required>)` - The name of the operator. Included in the path.
+- `account` `(string: <required>)` - The name of the account. Included in the path.
+- `sub` `(string: <required>)` - The public key (subject) of the revoked user. This endpoint does not accept user names, only public keys.
+
+### Sample request
+
+```sh
+$ curl \
+    --header "X-Vault-Token: ..." \
+    --request GET \
+    http://127.0.0.1:8200/v1/nats/revocations/dev-cluster/my-account/UCCMLTR5QQNO4M25RXCBPII5MEXRZMXHSV746EYA3CUPGQ2A424CVJ6H
+```
+
+### Response parameters
+
+- `ttl` `(int)` - The ttl of the revocation in seconds. A ttl of 0 means the revocation will not expire.
+- `creation_time` `(string)` - The creation time of the revocation in RFC3339 format.
+
+### Sample response
+
+```json
+{
+    "ttl": 3600,
+    "creation_time": "2025-12-26T18:36:13.7238536-08:00"
+}
 ```
 
 ## List revocations

@@ -21,7 +21,7 @@ jobs:
   version:
     name: Determine version
     runs-on: ubuntu-latest
-    if: "!contains(github.event.head_commit.message, '(no ci)') && !contains(github.event.head_commit.message, 'chore:')"
+    if: "!contains(github.event.head_commit.message, '(no ci)') && !startsWith(github.event.head_commit.message, 'chore')"
     outputs:
       tag: ${{ steps.version.outputs.new_tag }}
       version: ${{ steps.version.outputs.new_version }}

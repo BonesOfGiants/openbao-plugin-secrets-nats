@@ -2,7 +2,7 @@
 
 This is the API documentation for the OpenBao NATS
 secrets engine. For general information about the usage and operation of
-the NATS JWT secrets engine, please see the main [NATS JWT secrets documentation](./index.md).
+the NATS JWT secrets engine, please see the main [NATS JWT secrets documentation](./Home.md).
 
 This documentation assumes the NATS JWT secrets engine is enabled at the `/nats` path
 in OpenBao. Since it is possible to mount secrets engines at any path, please
@@ -294,7 +294,7 @@ This endpoint creates or updates an operator.
   If empty, not set, or if the specified signing key does not exist, accounts will be signed using the operator's identity key. 
   This field may be overridden by the `accounts` `signing_key` parameter.
 - `claims` `(map: nil)` - Override default claims in the JWT issued for this operator. 
-  See [nats-io/jwt](https://pkg.go.dev/github.com/nats-io/jwt/v2#OperatorClaims) for available fields. See [the guide](/docs/index.md#operator-claims) for details and an example of all available fields.
+  See [nats-io/jwt](https://pkg.go.dev/github.com/nats-io/jwt/v2#OperatorClaims) for available fields. See [the guide](/docs/Home.md#operator-claims) for details and an example of all available fields.
 
 ### Sample payload
 
@@ -652,7 +652,7 @@ Calling the same endpoint more than once is a noop.
 > all NATS server configs using this operator. 
 > Account and user JWTs are not affected by operator JWT reissues.
 >
-> Creating an operator signing key will also [suspend the active sync configuration](./index.md#account-syncing).
+> Creating an operator signing key will also [suspend the active sync configuration](./Home.md#account-syncing).
 
 | Method | Path                                          |
 | :----- | :-------------------------------------------- |
@@ -756,7 +756,7 @@ This endpoint deletes an operator signing key.
 > all NATS server configs using this operator. 
 > Account and user JWTs are not affected by operator JWT reissues.
 >
-> Deleting an operator signing key will also [suspend the active sync configuration](./index.md#account-syncing).
+> Deleting an operator signing key will also [suspend the active sync configuration](./Home.md#account-syncing).
 
 | Method   | Path                                          |
 | :------- | :-------------------------------------------- |
@@ -800,7 +800,7 @@ This endpoint create an account configuration under the specified operator.
   This field may be overridden by the `users`/`ephemeral-users` `default_signing_key` or the `creds` `signing_key` parameter.
   If the specified signing key does not exist, an error will be raised when generating user or ephemeral user credentials.
 - `claims` `(map: {})` - Override default claims in the JWT issued for this operator. See [nats-io/jwt](https://pkg.go.dev/github.com/nats-io/jwt/v2#AccountClaims) 
-  for available fields. See [the guide](./index.md#account-claims) for details and an example of all available fields.
+  for available fields. See [the guide](./Home.md#account-claims) for details and an example of all available fields.
 
 ### Sample payload
 
@@ -995,7 +995,7 @@ entirely.
 #### Import parameters
 
 Imports must follow the [nats-io/jwt](https://pkg.go.dev/github.com/nats-io/jwt/v2#Import) spec. 
-See [the guide](./index.md#account-claims) for a sample import including all possible fields.
+See [the guide](./Home.md#account-claims) for a sample import including all possible fields.
 
 - `name` `(string)` - The name of the import.
 - `subject` `(string: <required>)` - The subject being imported.
@@ -1355,7 +1355,7 @@ This endpoint create a user configuration under the specified operator and accou
   If not set or 0, the [system default](https://openbao.org/docs/configuration/#default_lease_ttl) will be used.
 - `revoke_on_delete` `(bool: false)` - Whether this user's identity key should be added to the account revocation list upon deletion.
 - `claims` `(map: nil)` - Provide claims to be used in the credentials generated for this user. 
-  See [nats-io/jwt](https://pkg.go.dev/github.com/nats-io/jwt/v2#UserClaims) for available fields. See [the guide](./index.md#user-claims) for details and an example of all available fields.
+  See [nats-io/jwt](https://pkg.go.dev/github.com/nats-io/jwt/v2#UserClaims) for available fields. See [the guide](./Home.md#user-claims) for details and an example of all available fields.
 
 ### Sample payload
 
@@ -1573,7 +1573,7 @@ by ensuring that user identity keys are never reused.
 - `creds_default_ttl` `(string: "")` - The default TTL for generated credentials, specified in seconds or as a Go duration format string, e.g. `"1h"`.
   If not set or 0, the [system default](https://openbao.org/docs/configuration/#default_lease_ttl) will be used.
 - `claims` `(map: nil)` - Provide claims to be used in the credentials generated for this user. 
-  See [nats-io/jwt](https://pkg.go.dev/github.com/nats-io/jwt/v2#UserClaims) for available fields. See [the guide](./index.md#user-claims) for details and an example of all available fields.
+  See [nats-io/jwt](https://pkg.go.dev/github.com/nats-io/jwt/v2#UserClaims) for available fields. See [the guide](./Home.md#user-claims) for details and an example of all available fields.
 
 ### Sample payload
 

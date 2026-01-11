@@ -31,7 +31,6 @@ build/openbao/plugins
 .vscode
 openbao-plugin-secrets-nats
 result
-.wiki
 
 
 # Ignore DevSpace cache and log folder

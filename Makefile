@@ -6,6 +6,7 @@ GOARCH := amd64
 REGISTRY := ghcr.io/bonesofgiants
 OUTPUT_DIR := bin
 RELEASE_DIR := release
+GITHUB_REPOSITORY := BonesOfGiants/openbao-plugin-secrets-nats
 
 .PHONY: build
 build:
@@ -26,7 +27,8 @@ package:
 wiki:
 	@rm -rf .wiki
 	@mkdir -p .wiki
-	@git clone https://github.com/BonesOfGiants/openbao-plugin-secrets-nats.wiki.git .wiki
+	@git clone https://github.com/$(GITHUB_REPOSITORY).wiki.git .wiki
+	@(cd wiki && git remote set-url origin https://x-access-token:$(GITHUB_TOKEN)@github.com/$(GITHUB_REPOSITORY).wiki.git)
 
 	@sed \
 	  -Ee 's#\(\./index\.md(\#[^)]+)?\)#(wiki\1)#g' \

@@ -1,6 +1,16 @@
 name: Release
 
 on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: always run
+        type: boolean
+        default: false
+      wiki-only:
+        description: only update the wiki
+        type: boolean
+        default: false
   push:
     branches:
       - master
@@ -21,7 +31,7 @@ jobs:
   version:
     name: Determine version
     runs-on: ubuntu-latest
-    if: "!contains(github.event.head_commit.message, '(no ci)') && !startsWith(github.event.head_commit.message, 'chore')"
+    if: "inputs.force || (!contains(github.event.head_commit.message, '(no ci)') && !startsWith(github.event.head_commit.message, 'chore'))"
     outputs:
       tag: ${{ steps.version.outputs.new_tag }}
       version: ${{ steps.version.outputs.new_version }}
@@ -97,7 +107,7 @@ jobs:
           echo "\`\`\`" >> "$GITHUB_OUTPUT"
           echo "__EOF__" >> "$GITHUB_OUTPUT"
 
-          make wiki || true
+          make "GITHUB_REPOSITORY=${{ github.repository }}" "GITHUB_TOKEN=${{ github.token }}" wiki || true
 
       - name: Commit & Push wiki
         uses: EndBug/add-and-commit@v9.1.4
@@ -115,6 +125,7 @@ jobs:
             - Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
       - name: Commit & Push
+        if: "!inputs.wiki-only"
         uses: EndBug/add-and-commit@v9.1.4
         with:
           add: README.md
@@ -129,6 +140,7 @@ jobs:
           tag: ${{ needs.version.outputs.tag }}
 
       - name: Create release
+        if: "!inputs.wiki-only"
         uses: ncipollo/release-action@v1
         with:
           tag: ${{ needs.version.outputs.tag }}
@@ -136,6 +148,7 @@ jobs:
           body: ${{ steps.package.outputs.changelog }}
 
       - name: Upload artifacts
+        if: "!inputs.wiki-only"
         run: gh release upload "${{ needs.version.outputs.tag }}" "${{ env.RELEASE_DIR }}/*"
         env:
           GH_TOKEN: ${{ github.token }}
@@ -144,6 +157,7 @@ jobs:
     name: Push OCI
     needs: [version, build]
     runs-on: ubuntu-latest
+    if: "!inputs.wiki-only"
     env:
       BUILDX_NO_DEFAULT_ATTESTATIONS: 1
     steps:

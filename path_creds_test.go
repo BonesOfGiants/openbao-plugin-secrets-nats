@@ -162,30 +162,6 @@ func TestBackend_Creds_Read(t *testing.T) {
 		})
 	})
 
-	t.Run("invalid claims", func(_t *testing.T) {
-		t := testBackend(_t)
-
-		claims := `
-		{
-			"nats": {
-				"pub": {
-					"allow": [
-						""
-					]
-				}
-			}
-		}`
-
-		id := UserId("op1", "acc1", "user1")
-		SetupTestUser(t, id, map[string]any{
-			"claims": unmarshalToMap(json.RawMessage(claims)),
-		})
-
-		resp, err := ReadCreds(t, id, nil)
-		require.NoError(t, err)
-		assert.ErrorContains(t, resp.Error(), "failed to generate user creds: subject cannot be empty")
-	})
-
 	t.Run("custom nbf", func(_t *testing.T) {
 		t := testBackend(_t)
 

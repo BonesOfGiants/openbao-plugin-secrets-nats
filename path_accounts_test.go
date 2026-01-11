@@ -162,6 +162,15 @@ func TestBackend_Account_Config(t *testing.T) {
 	}
 }
 
+func TestBackend_Account_NonExistentOperator(_t *testing.T) {
+	t := testBackend(_t)
+
+	id := AccountId("op1", "acc1")
+	resp, err := WriteConfig(t, id, nil)
+	assert.NoError(t, err)
+	assert.ErrorContains(t, resp.Error(), "operator \"op1\" does not exist")
+}
+
 func TestBackend_Account_List(_t *testing.T) {
 	t := testBackend(_t)
 

@@ -592,6 +592,15 @@ func (b *backend) walRollback(ctx context.Context, req *logical.Request, kind st
 	return nil
 }
 
+func sprintErrors(errors []error) string {
+	errs := []string{}
+	for _, v := range errors {
+		errs = append(errs, v.Error())
+	}
+
+	return strings.Join(errs, "; ")
+}
+
 // Converts operator claims into json.RawMessage.
 // If the conversion fails, panic.
 func fromOperatorClaims(claims *jwt.OperatorClaims) json.RawMessage {

@@ -178,7 +178,7 @@ func (b *backend) pathOperatorSyncCreateUpdate(ctx context.Context, req *logical
 		return nil, err
 	}
 	if operator == nil {
-		return logical.ErrorResponse("operator does not exist"), nil
+		return logical.ErrorResponse("operator %q does not exist", id.op), nil
 	}
 
 	sysAccount, err := b.Account(ctx, req.Storage, id.accountId(operator.SysAccountName))
@@ -186,7 +186,7 @@ func (b *backend) pathOperatorSyncCreateUpdate(ctx context.Context, req *logical
 		return nil, err
 	}
 	if sysAccount == nil {
-		return logical.ErrorResponse("operator %q must have a system account to configure sync", id.op), nil
+		return logical.ErrorResponse("a system account is required for sync: operator %q system account %q does not exist", id.op, operator.SysAccountName), nil
 	}
 
 	syncDirty := false

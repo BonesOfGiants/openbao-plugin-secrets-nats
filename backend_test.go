@@ -17,13 +17,10 @@ import (
 
 /*
 todo: list of things that still need tests:
-- operator jwt change resulting in sync being suspended
+- operator jwt change resulting in sync being suspended + warning
 - sync config status updates
 - managed name clashes with existing account
-- account config
 - account sync status updates
-- ephemeral user config
-- user config
 - test partial updates
 	- [ ] operator
 	- [ ] sync

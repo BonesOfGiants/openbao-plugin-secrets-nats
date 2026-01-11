@@ -103,6 +103,15 @@ func TestBackend_Operator_SyncConfig(t *testing.T) {
 	}
 }
 
+func TestBackend_Operator_SyncConfig_NonExistentOperator(_t *testing.T) {
+	t := testBackend(_t)
+
+	id := OperatorId("op1")
+	resp, err := WriteSyncConfig(t, id, nil)
+	assert.NoError(t, err)
+	assert.ErrorContains(t, resp.Error(), "operator \"op1\" does not exist")
+}
+
 func TestBackend_Operator_SyncConfig_Update(t *testing.T) {
 	t.Run("sync account creation", func(_t *testing.T) {
 		nats := abstractnats.NewMock(_t)

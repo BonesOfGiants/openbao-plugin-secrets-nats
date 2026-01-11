@@ -41,6 +41,15 @@ func TestBackend_Revocation_Config(t *testing.T) {
 	})
 }
 
+func TestBackend_Revocation_NonExistentAccount(_t *testing.T) {
+	t := testBackend(_t)
+
+	id := AccountRevocationId("op1", "acc1", "U123")
+	resp, err := WriteConfig(t, id, nil)
+	assert.NoError(t, err)
+	assert.ErrorContains(t, resp.Error(), "account \"acc1\" does not exist")
+}
+
 func TestBackend_Revocation_List(_t *testing.T) {
 	t := testBackend(_t)
 

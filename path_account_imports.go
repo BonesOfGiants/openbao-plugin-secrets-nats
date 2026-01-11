@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"iter"
-	"maps"
 	"slices"
 
 	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/shimtx"
@@ -183,6 +182,16 @@ func (b *backend) pathAccountImportCreateUpdate(ctx context.Context, req *logica
 
 	id := AccountImportIdField(d)
 
+	// use the nkey as the existence check since we
+	// need to use the public key for validation
+	nkey, err := b.Nkey(ctx, req.Storage, id.accountId())
+	if err != nil {
+		return nil, err
+	}
+	if nkey == nil {
+		return logical.ErrorResponse("account %q does not exist", id.acc), nil
+	}
+
 	jwtDirty := false
 	accImport, err := b.AccountImport(ctx, req.Storage, id)
 	if err != nil {
@@ -199,7 +208,7 @@ func (b *backend) pathAccountImportCreateUpdate(ctx context.Context, req *logica
 			return logical.ErrorResponse("imports must be an array, got %T", importsRaw), nil
 		}
 
-		for v := range maps.Keys(d.Raw) {
+		for v := range d.Raw {
 			if slices.Contains(rootParamsKeys, v) {
 				return logical.ErrorResponse("may not specify imports array along with root-level import parameters"), nil
 			}
@@ -265,12 +274,29 @@ func (b *backend) pathAccountImportCreateUpdate(ctx context.Context, req *logica
 		return logical.ErrorResponse("must define at least one import"), nil
 	}
 
+	publicKey, err := nkey.publicKey()
+	if err != nil {
+		return nil, err
+	}
+
+	var vr jwt.ValidationResults
+	accImport.Imports.Validate(publicKey, &vr)
+
+	errors := vr.Errors()
+	if len(errors) > 0 {
+		errResp := logical.ErrorResponse("validation error: %s", sprintErrors(errors))
+		errResp.Warnings = append(errResp.Warnings, vr.Warnings()...)
+
+		return errResp, nil
+	}
+
 	err = storeInStorage(ctx, req.Storage, accImport.configPath(), accImport)
 	if err != nil {
 		return nil, err
 	}
 
 	resp := &logical.Response{}
+	resp.Warnings = append(resp.Warnings, vr.Warnings()...)
 
 	if jwtDirty {
 		warnings, err := b.issueAndSaveAccountJWT(ctx, req.Storage, id.accountId())

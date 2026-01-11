@@ -33,7 +33,7 @@ func TestBackend_AccountImport_Config(t *testing.T) {
 					},
 				},
 			},
-			err: errors.New(`failed to encode account jwt: invalid import type: "unknown", account to import from is not specified, subject cannot be empty`),
+			err: errors.New(`validation error: invalid import type: "unknown"; account to import from is not specified; subject cannot be empty`),
 		},
 		{
 			name: "basic",
@@ -158,6 +158,15 @@ func TestBackend_AccountImport_Config(t *testing.T) {
 			assert.Nil(t, resp)
 		})
 	}
+}
+
+func TestBackend_AccountImport_NonExistentAccount(_t *testing.T) {
+	t := testBackend(_t)
+
+	id := AccountImportId("op1", "acc1", "imp1")
+	resp, err := WriteConfig(t, id, nil)
+	assert.NoError(t, err)
+	assert.ErrorContains(t, resp.Error(), "account \"acc1\" does not exist")
 }
 
 func TestBackend_AccountImport_RootParameters(t *testing.T) {

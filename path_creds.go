@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/openbao/openbao/sdk/v2/framework"
@@ -206,14 +205,11 @@ func (b *backend) pathUserCredsRead(ctx context.Context, req *logical.Request, d
 
 	result := b.generateUserCreds(idKey, signingKey, claims, ttl)
 	if len(result.errors) > 0 {
-		errResp := logical.ErrorResponse("failed to generate user creds: %s", result.Error())
+		errResp := logical.ErrorResponse("failed to generate user creds: %s", sprintErrors(result.errors))
 		for _, w := range result.warnings {
 			errResp.AddWarning(w)
 		}
 
-		errResp.Data["data"] = map[string]any{
-			"additional_errors": result.errors,
-		}
 		return errResp, nil
 	}
 
@@ -232,12 +228,13 @@ func (b *backend) pathUserCredsRead(ctx context.Context, req *logical.Request, d
 		"exp": result.expiresAt.Unix(),
 	})
 
-	for _, w := range enrichWarnings {
-		resp.AddWarning(w)
+	if signingKeyName != "" {
+		resp.Data["signing_key"] = signingKeyName
 	}
-	for _, w := range result.warnings {
-		resp.AddWarning(w)
-	}
+
+	resp.Warnings = append(resp.Warnings, enrichWarnings...)
+	resp.Warnings = append(resp.Warnings, result.warnings...)
+
 	resp.Secret.LeaseOptions.TTL = ttl
 	resp.Secret.LeaseOptions.MaxTTL = resp.Secret.TTL
 
@@ -305,15 +302,6 @@ type userCredsResult struct {
 	jwt       string
 	seed      string
 	expiresAt time.Time
-}
-
-func (r *userCredsResult) Error() string {
-	errs := []string{}
-	for _, v := range r.errors {
-		errs = append(errs, v.Error())
-	}
-
-	return strings.Join(errs, ", ")
 }
 
 func (r *userCredsResult) AddWarning(warning ...string) {

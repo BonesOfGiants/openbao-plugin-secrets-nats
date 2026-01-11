@@ -183,18 +183,11 @@ func (b *backend) pathEphemeralUserCredsRead(ctx context.Context, req *logical.R
 
 	result := b.generateUserCreds(idKey, signingKey, claims, ttl)
 	if len(result.errors) > 0 {
-		errResp := logical.ErrorResponse("failed to generate user creds: %s", result.Error())
+		errResp := logical.ErrorResponse("failed to generate user creds: %s", sprintErrors(result.errors))
 		for _, w := range result.warnings {
 			errResp.AddWarning(w)
 		}
 
-		errStrings := make([]string, 0, len(result.errors))
-		for _, v := range result.errors {
-			errStrings = append(errStrings, v.Error())
-		}
-		errResp.Data["data"] = map[string]any{
-			"details": errStrings,
-		}
 		return errResp, nil
 	}
 
@@ -214,14 +207,12 @@ func (b *backend) pathEphemeralUserCredsRead(ctx context.Context, req *logical.R
 		"exp": result.expiresAt.Unix(),
 	})
 
-	for _, w := range enrichWarnings {
-		resp.AddWarning(w)
+	if signingKeyName != "" {
+		resp.Data["signing_key"] = signingKeyName
 	}
 
-	for _, w := range result.warnings {
-		resp.AddWarning(w)
-	}
-
+	resp.Warnings = append(resp.Warnings, enrichWarnings...)
+	resp.Warnings = append(resp.Warnings, result.warnings...)
 	resp.Secret.Renewable = false
 	resp.Secret.LeaseOptions.TTL = ttl
 	resp.Secret.LeaseOptions.MaxTTL = ttl

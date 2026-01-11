@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/shimtx"
+	"github.com/nats-io/jwt/v2"
 	"github.com/openbao/openbao/sdk/v2/framework"
 	"github.com/openbao/openbao/sdk/v2/logical"
 )
@@ -213,6 +214,33 @@ func (b *backend) pathUserCreateUpdate(ctx context.Context, req *logical.Request
 		user.RawClaims = rawClaims
 	}
 
+	resp := &logical.Response{}
+
+	if user.RawClaims != nil {
+		var claims jwt.UserClaims
+		err = json.Unmarshal(user.RawClaims, &claims)
+		if err != nil {
+			return nil, err
+		}
+
+		// clear irrelevant fields
+		claims.IssuerAccount = "" // issuer account is overridden during cred generation
+		claims.NotBefore = 0      // the claim not being valid yet isn't a warning we care about
+
+		var vr jwt.ValidationResults
+		claims.Validate(&vr)
+
+		errors := vr.Errors()
+		if len(errors) > 0 {
+			errResp := logical.ErrorResponse("validation error: %s", sprintErrors(errors))
+			errResp.Warnings = append(errResp.Warnings, vr.Warnings()...)
+
+			return errResp, nil
+		} else {
+			resp.Warnings = append(resp.Warnings, vr.Warnings()...)
+		}
+	}
+
 	err = storeInStorage(ctx, req.Storage, id.configPath(), user)
 	if err != nil {
 		return nil, err
@@ -231,7 +259,7 @@ func (b *backend) pathUserCreateUpdate(ctx context.Context, req *logical.Request
 		return nil, err
 	}
 
-	return nil, nil
+	return resp, nil
 }
 
 func (b *backend) pathUserRead(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {

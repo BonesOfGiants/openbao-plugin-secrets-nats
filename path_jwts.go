@@ -278,14 +278,16 @@ func (b *backend) issueAndSaveOperatorJWT(ctx context.Context, storage logical.S
 	return warnings, nil
 }
 
-func (b *backend) enrichOperatorClaims(ctx context.Context, s logical.Storage, id operatorId, sysAccountName string, outClaims *jwt.OperatorClaims) (jwtWarnings, error) {
+func (b *backend) enrichOperatorClaims(ctx context.Context, s logical.Storage, id operatorId, sysAccountName string, claims *jwt.OperatorClaims) (jwtWarnings, error) {
 	warnings := jwtWarnings{}
 
 	// set op name
-	outClaims.ClaimsData.Name = id.op
+	claims.ClaimsData.Name = id.op
 
 	// force operator jwt not to expire
-	outClaims.ClaimsData.Expires = 0
+	claims.ClaimsData.Expires = 0
+	// force operator jwt to always be valid
+	claims.ClaimsData.NotBefore = 0
 
 	// add system account
 	if sysAccountName != "" {
@@ -298,7 +300,7 @@ func (b *backend) enrichOperatorClaims(ctx context.Context, s logical.Storage, i
 			if err != nil {
 				return warnings, err
 			}
-			outClaims.SystemAccount = sysSubject
+			claims.SystemAccount = sysSubject
 		} else {
 			warnings = append(warnings, fmt.Sprintf("system account %q does not exist, so it was not added to the claims", sysAccountName))
 		}
@@ -306,9 +308,9 @@ func (b *backend) enrichOperatorClaims(ctx context.Context, s logical.Storage, i
 
 	// add signing keys
 	var signingKeys jwt.StringList
-	if outClaims.Operator.SigningKeys != nil {
-		signingKeys = make(jwt.StringList, 0, len(outClaims.Operator.SigningKeys))
-		copy(signingKeys, outClaims.Operator.SigningKeys)
+	if claims.Operator.SigningKeys != nil {
+		signingKeys = make(jwt.StringList, 0, len(claims.Operator.SigningKeys))
+		copy(signingKeys, claims.Operator.SigningKeys)
 	} else {
 		signingKeys = jwt.StringList{}
 	}
@@ -327,7 +329,7 @@ func (b *backend) enrichOperatorClaims(ctx context.Context, s logical.Storage, i
 	}
 
 	if len(signingKeys) > 0 {
-		outClaims.Operator.SigningKeys = signingKeys
+		claims.Operator.SigningKeys = signingKeys
 	}
 
 	return warnings, nil
@@ -567,6 +569,9 @@ func (b *backend) enrichAccountClaims(ctx context.Context, s logical.Storage, id
 
 	// force account jwt not to expire
 	claims.ClaimsData.Expires = 0
+
+	// force account jwt to always be valid
+	claims.ClaimsData.NotBefore = 0
 
 	// add account public key to the claim
 	accountNKey, err := b.Nkey(ctx, s, id)
@@ -827,6 +832,8 @@ func encodeUserJWT(signingKey nkeys.KeyPair, claims *jwt.UserClaims, ttl time.Du
 	if ttl > 0 {
 		expiresAt = time.Now().Add(ttl)
 		claims.ClaimsData.Expires = expiresAt.Unix()
+	} else {
+		claims.ClaimsData.Expires = 0
 	}
 
 	var vr jwt.ValidationResults

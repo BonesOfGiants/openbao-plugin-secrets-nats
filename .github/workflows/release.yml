@@ -84,7 +84,7 @@ jobs:
           pattern: plugin-*
           merge-multiple: true
 
-      - name: Package & Update README.md
+      - name: Package / Update README.md / Update Wiki
         id: package
         run: |
           make "OUTPUT_DIR=${{ env.OUTPUT_DIR }}" "RELEASE_DIR=${{ env.RELEASE_DIR }}" package
@@ -96,6 +96,23 @@ jobs:
           echo "$(make "RELEASE_DIR=${{ env.RELEASE_DIR }}" print-sha256)" >> "$GITHUB_OUTPUT"
           echo "\`\`\`" >> "$GITHUB_OUTPUT"
           echo "__EOF__" >> "$GITHUB_OUTPUT"
+
+          make wiki || true
+
+      - name: Commit & Push wiki
+        uses: EndBug/add-and-commit@v9.1.4
+        continue-on-error: true
+        with:
+          cwd: .wiki
+          add: .
+          author_name: BonesOfGiantsCurator
+          author_email: 121028010+BonesOfGiantsCurator@users.noreply.github.com
+          message: |
+            chore: Release ${{ needs.version.outputs.tag }}
+
+            - Workflow: ${{ github.workflow }} (#${{ github.run_number }})
+            - Actor: ${{ github.actor }}
+            - Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
       - name: Commit & Push
         uses: EndBug/add-and-commit@v9.1.4

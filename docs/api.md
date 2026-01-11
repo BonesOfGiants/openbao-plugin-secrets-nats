@@ -2,7 +2,7 @@
 
 This is the API documentation for the OpenBao NATS
 secrets engine. For general information about the usage and operation of
-the NATS JWT secrets engine, please see the main [NATS JWT secrets documentation](../docs/index.md).
+the NATS JWT secrets engine, please see the main [NATS JWT secrets documentation](./index.md).
 
 This documentation assumes the NATS JWT secrets engine is enabled at the `/nats` path
 in OpenBao. Since it is possible to mount secrets engines at any path, please
@@ -241,14 +241,14 @@ update your API calls accordingly.
 
 ### User management
 
-| Path                                                                                 | Purpose                       |
-| :----------------------------------------------------------------------------------- | ----------------------------- |
-| [`/nats/users/:op/:acc`](#list-users)                                                | List users                    |
-| [`/nats/users/:op/:acc/:user`](#createupdate-user-configuration)                     | Manage users                  |
-| [`/nats/ephemeral-users/:op/:acc/:user`](#createupdate-ephemeral-user-configuration) | Manage ephemeral users        |
-| [`/nats/user-keys/:op/:acc/:user`](#read-user-key)                                   | Read user id keys             |
-| [`/nats/creds/:op/:acc/:user`](#get-user-credentials)                                | Generate user creds           |
-| [`/nats/ephemeral-creds/:op/:acc/:user/:session`](#get-ephemeral-user-credentials)   | Generate ephemeral user creds |
+| Path                                                                                    | Purpose                       |
+| :-------------------------------------------------------------------------------------- | ----------------------------- |
+| [`/nats/users/:op/:acc`](#list-users)                                                   | List users                    |
+| [`/nats/users/:op/:acc/:user`](#createupdate-user-configuration)                        | Manage users                  |
+| [`/nats/ephemeral-users/:op/:acc/:user`](#createupdate-ephemeral-user-configuration)    | Manage ephemeral users        |
+| [`/nats/user-keys/:op/:acc/:user`](#read-user-key)                                      | Read user id keys             |
+| [`/nats/creds/:op/:acc/:user`](#generate-user-credentials)                              | Generate user creds           |
+| [`/nats/ephemeral-creds/:op/:acc/:user/:session`](#generate-ephemeral-user-credentials) | Generate ephemeral user creds |
 
 ### Utilities
 
@@ -1717,6 +1717,7 @@ $ curl \
 - `creds` `(string)` - The decorated credentials including the JWT and seed string. 
 - `jwt` `(string)` - The undecorated JWT. 
 - `seed` `(string)` - The undecorated seed string. 
+- `signing_key` `(string)` - The name of the signing key used to sign these creds, if applicable. 
 - `expires_at` `(int)` - The expiration time for these creds, specified as a unix timestamp.
 
 ### Sample response
@@ -1778,6 +1779,7 @@ $ curl \
 - `creds` `(string)` - The decorated credentials including the JWT and seed string. 
 - `jwt` `(string)` - The undecorated JWT. 
 - `seed` `(string)` - The undecorated seed string. 
+- `signing_key` `(string)` - The name of the signing key used to sign these creds, if applicable. 
 - `expires_at` `(int)` - The expiration time for these creds, specified as a unix timestamp.
 
 ### Sample response

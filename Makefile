@@ -22,6 +22,22 @@ package:
 		tar -czf $(RELEASE_DIR)/$$(basename $$f).tar.gz -C $(OUTPUT_DIR) $$(basename $$f); \
 	done
 
+.PHONY: wiki
+wiki:
+	@rm -rf .wiki
+	@mkdir -p .wiki
+	@git clone https://github.com/BonesOfGiants/openbao-plugin-secrets-nats.wiki.git .wiki
+
+	@sed \
+	  -Ee 's#\(\./index\.md(\#[^)]+)?\)#(wiki\1)#g' \
+	  -Ee 's#\(\./api\.md(\#[^)]+)?\)#(wiki/API\1)#g' \
+	  docs/index.md > .wiki/Home.md
+
+	@sed \
+	  -Ee 's#\(\./index\.md(\#[^)]+)?\)#(wiki\1)#g' \
+	  -Ee 's#\(\./api\.md(\#[^)]+)?\)#(wiki/API\1)#g' \
+	  docs/api.md > .wiki/API.md
+
 .PHONY: update-readme
 update-readme:
 	@IMAGE_NAME="$(IMAGE_NAME)" TAG="$(VERSION)" BINARY_NAME="$(NAME)" bash ./scripts/update-readme.sh

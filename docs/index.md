@@ -71,6 +71,11 @@ $ bao secrets enable nats
 Success! Enabled the nats secrets engine at: nats/
 ```
 
+## HashiCorp Vault compatibility
+
+This plugin is presently untested with Vault. However, as long as the OpenBao SDK remains cross-compatible with Vault's
+plugin API, this plugin should be usable as a Vault plugin with no modifications.
+
 ## Operators
 <!-- 
 - operator
@@ -267,7 +272,10 @@ $ bao write -force=true nats/operator-signing-keys/my-operator/sk-1
 ```
 
 Creating a signing key will automatically add its public key to the operator's claims and reissue the operator JWT.
-<!-- todo add blurb about syncing -->
+
+> [!WARNING]
+> Modifying an operator's signing keys will **suspend** the active sync config for that operator.
+> Syncing may be re-enabled once the reissued operator JWT has been updated in the target NATS server config.
 
 By default, the operator will sign account JWTs using its identity key. This can be overridden by supplying the name of
 a signing key in the `default_signing_key` field of the operator.
@@ -275,8 +283,55 @@ a signing key in the `default_signing_key` field of the operator.
 ### Account syncing
 
 The plugin can be configured to automatically push account modifications to a target NATS cluster.
+Account syncing behavior is controlled via the `sync-config` resource.
 
-<!-- todo flesh out -->
+The simplest account sync config specifies a target NATS server url:
+
+```sh
+$ bao write nats/sync-configs/my-operator servers="nats://localhost:4222"
+```
+
+> [!IMPORTANT]
+> Enabling sync requires the operator to have a system account configured.
+
+Once created, all accounts under the operator will be periodically pushed to the target server.
+
+Additionally, modifications that result in account JWTs being reissued, including changes to account signing keys,
+adding and removing revocations, and changes to account claims will result in the affected JWT being immediately
+pushed to the target NATS server.
+
+#### Suspending account syncing
+
+If desired, sync behavior may be paused at any time by setting `suspend=true`:
+
+```sh
+$ bao write nats/sync-configs/my-operator suspend=true
+```
+
+However, changes to the operator JWT will also result in the syncing being suspended. This is because
+changes to the operator JWT must be manually updated in the target NATS server config. For example,
+if the operator's signing keys were to be rotated, and all accounts were therefore resigned 
+with those new keys, pushing the resigned accounts to a NATS server with an out of date operator JWT
+would result in the accounts becoming unable to be validated.
+
+If a change results in syncing becoming suspended, a warning will be emitted in the response. Once the NATS
+server has been brought up to date with the new operator, syncing may be resumed at any time by
+disabling the suspension:
+
+```sh
+$ bao write nats/sync-configs/my-operator suspend=false
+```
+
+#### Pre-seeding accounts into NATS servers
+
+NATS servers cannot currently _pull_ account information from the plugin. The plugin may only _push_ account information to NATS servers.
+This isn't typically issue while account sync is active, as any changes to accounts are immediately synced. Additionally,
+the [NATS based resolver](https://docs.nats.io/running-a-nats-service/configuration/securing_nats/auth_intro/jwt/resolver#nats-based-resolver)
+will share known accounts between servers in the same cluster.
+
+However, there is a period of time between first initializing a cluster and account syncing being enabled in the plugin for that cluster where
+the NATS server has no way of validating user JWTs against accounts. This can be mitigated by generating a NATS config file via
+the [`/generate-server-config`](./api.md#generate-server-config) path and preloading the resolver using the `include_resolver_preload` parameter. 
 
 ### Managed and pre-existing operators
 
@@ -316,11 +371,12 @@ Additionally, while all claims of the account JWT may be overridden by
 providing custom claims in the `claims` field, there are some important caveats:
 
 1. `exp` is always zeroed out, as account JWTs do not expire.
-2. `iss` is always overwritten with the operator or signing public key.
-3. `sub` is always overwritten with the account public key.
-4. `iat` is always overwritten with the time the JWT was generated.
-5. `jti` is always overwritten with a hash of the contents.
-6. If you've created any [account signing keys](#account-signing-keys), 
+2. `nbf` is always zeroed out so that account JWTs are immediately valid.
+3. `iss` is always overwritten with the operator or signing public key.
+4. `sub` is always overwritten with the account public key.
+5. `iat` is always overwritten with the time the JWT was generated.
+6. `jti` is always overwritten with a hash of the contents.
+7. If you've created any [account signing keys](#account-signing-keys), 
    those keys will be merged with the existing list of signing keys.
 
 <details>
@@ -451,31 +507,55 @@ and will result in a validation error when attempting a write.
 
 </details>
 
-## Account imports
+### Account signing keys
+
+This plugin supports declarative signing keys (both scoped and non-scoped) for accounts.
+
+
+### Account imports
 
 This plugin supports declarative imports for accounts. 
 A named import represents logically grouped lists of import claims. These imports are merged into the 
 list of imports on the account claim whenever the account JWT is reissued.
 
+When creating an account import, you must specify at least one import claim or the request will be rejected.
 
+For convenience when using the CLI, the details for a single import may be passed as parameters.
+For example:
+
+```sh
+$ bao write nats/account-imports/my-operator/my-account/inline-import account=A1234 subject=foo.bar type=service
+``` 
 
 - imports presently require the account public key
   - this can be retrieved from the `nats/account-keys/:op/:acc` path
 - at least one import must be specified or the request is rejected.
 - import shape example
 
-## Account revocations
+### Account revocations
 
 This plugin supports declarative revocations for accounts.
 Revocations may have TTLs and their lifecycle will automatically be
 managed by OpenBao.
 
-- revocations require the user public key
-  - this can be retrieved from the `nats/user-keys/:op/:acc/:user` path 
-- revocation shape example
-  - ttl -- if not specified the revocation will not expire
+Revocations are created by writing a user id (ie. the user's public key) to the [`nats/revocations`](./api.md#createupdate-a-revocation) path.
+User ids may be retrieved via the [`nats/user-nkeys`](./api.md#read-user-key) path. 
 
-### Revocations
+To create a revocation with a TTL, use the `ttl` parameter:
+
+```sh
+$ bao write nats/revocations/my-operator/my-account/U1234 ttl=60s
+```
+
+The `ttl` of a revocation represents a **minimum** TTL. Expired revocations will be deleted during the next
+periodic sweep. If no `ttl` is specified, the revocation will never expire.
+
+Writing to a revocation that already exists will refresh its creation time to the present time,
+effectively refreshing its TTL.
+
+Since every revocated user id is listed in the account JWT, it's recommended to keep revocations to a minimum.
+If you foresee the need to revoke many user or ephemeral user credentials at once, it is best to use an [account signing key](#account-signing-keys)
+that can be [rotated](#account-signing-key-rotation), effectively revoking all users simultaneously without requiring individual revocation entries.
 
 ## Users and ephemeral users
 <!-- 

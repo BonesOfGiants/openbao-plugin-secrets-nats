@@ -1,10 +1,10 @@
 # openbao-plugin-secrets-nats
 
-This plugin provides OpenBao with a fully-managed interface for NATS JWT authentication/authorization.
+This plugin provides OpenBao with a declarative interface for NATS JWT authentication/authorization.
 
 ## Getting Started
 
-This is an [OpenBao plugin](https://openbao.org/docs/plugins/) and is meant to work with OpenBao. 
+This is an [OpenBao plugin](https://openbao.org/docs/plugins/) and is meant to work with OpenBao.
 This guide assumes you have already installed Openbao and have a basic understanding of how OpenBao works.
 
 Otherwise, first read this guide on how to [get started with OpenBao](https://openbao.org/docs/get-started/developer-qs/).

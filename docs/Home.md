@@ -10,7 +10,7 @@
     - automatically fetch accounts using the companion `openbao-nats-account-server`
 -->
 
-The NATS JWT secrets engine dynamically generates NATS operator, account, and user JWTs. 
+The NATS JWT secrets engine provides a declarative interface for managing NATS operators, accounts, and users. 
 For more information about how NATS JWT authentication works, view the [official NATS documentation](https://docs.nats.io/running-a-nats-service/nats_admin/security/jwt).
 
 This guide assumes a basic understanding of how to operate OpenBao, as well as a working knowledge of the NATS JWT system.
@@ -159,47 +159,33 @@ See the following section for details on the `claims` object.
 
 ### Operator claims
 
-The claims object may contain any valid field for a NATS operator JWT.
+The claims object may contain any valid operator JWT claims. To be specific, you may provide any of the
+values under the `nats` section of an issued JWT. The `iss`, `jti`, `name`, and other root fields of the
+JWT are fixed and cannot be customized. However, some additional field values are calculated when the 
+JWT is signed and will always be overwritten/modified:
 
-Additionally, while all claims of the operator JWT may be overridden by 
-providing custom claims in the `claims` field, there are some important caveats:
-
-1. `nats.system_account` will be overwritten with the account public key if 
-   the system account specified by `system_account_name` exists.
-2. `exp` is always zeroed out, as operator JWTs do not expire.
-3. `issuer` and `sub` are is always overwritten with the operator's public key.
-4. `issuedat` is always overwritten with the time the JWT was generated.
-5. `jti` is always overwritten with a hash of the contents.
-6. If you've created any [operator signing keys](#operator-signing-keys), 
-   those keys will be merged with the existing list of signing keys.
+1. `system_account` will be overwritten with the account public key if 
+   the system account specified by `system_account_name` exists, or otherwise
+   cleared.
+2. If you've declared any [operator signing keys](#operator-signing-keys), 
+   those keys will be merged with the list of signing keys in the template
+   claims.
+3. `type` and `version` are set by the NATS jwt library and can't be modified.
 
 <details>
-<summary>Example claims with all fields</summary>
-
-Note that some fields may be mutually incompatible in a real JWT,
-and will result in a validation error when attempting a write.
+<summary><b>Example claims with all possible fields</b></summary>
 
 ```json
 {
-    "aud": "NATS",
-    "exp": 1766876393,
-    "jti": "abc123",
-    "iat": 1620242553,
-    "iss": "OABC123",
-    "name": "my-operator",
-    "nbf": 1620242553,
-    "sub": "OABC123",
-    "nats": {
-        "signing_keys": ["OGHI456", "OMNO789"],
-        "account_server_url": "http://example.com",
-        "operator_service_urls": ["nats://s1.example.com"],
-        "system_account": "A1234",
-        "assert_server_version": "1.2.3",
-        "strict_signing_key_usage": false,
-        "tags": ["tag1:value", "tag2:value"],
-        "type": "operator",
-        "version": 2
-    }
+    "signing_keys": ["OGHI456", "OMNO789"],
+    "account_server_url": "http://example.com",
+    "operator_service_urls": ["nats://s1.example.com"],
+    "system_account": "A1234",
+    "assert_server_version": "1.2.3",
+    "strict_signing_key_usage": false,
+    "tags": ["tag1:value", "tag2:value"],
+    "type": "operator",
+    "version": 2
 }
 ```
 
@@ -365,143 +351,129 @@ Additionally, the plugin does not currently support importing of pre-existing op
 
 ### Account claims
 
-The claims object may contain any valid field for a NATS account JWT.
+The claims object may contain any valid account JWT claims. To be specific, you may provide any of the
+values under the `nats` section of an issued JWT. The `iss`, `jti`, `name`, and other root fields of the
+JWT are fixed and cannot be customized. However, some additional field values are calculated when the 
+JWT is signed and will always be overwritten/modified:
 
-Additionally, while all claims of the account JWT may be overridden by 
-providing custom claims in the `claims` field, there are some important caveats:
-
-1. `exp` is always zeroed out, as account JWTs do not expire.
-2. `nbf` is always zeroed out so that account JWTs are immediately valid.
-3. `iss` is always overwritten with the operator or signing public key.
-4. `sub` is always overwritten with the account public key.
-5. `iat` is always overwritten with the time the JWT was generated.
-6. `jti` is always overwritten with a hash of the contents.
-7. If you've created any [account signing keys](#account-signing-keys), 
+1. If you've created any [account signing keys](#account-signing-keys), 
    those keys will be merged with the existing list of signing keys.
+2. `type` and `version` are set by the NATS jwt library and can't be modified.
 
 <details>
 <summary>Example claims with all fields</summary>
 
-Note that some fields may be mutually incompatible in a real JWT,
-and will result in a validation error when attempting a write.
+> [!NOTE]
+> Some fields may be mutually incompatible in a real JWT,
+> and will result in a validation error.
 
 ```json
 {
-    "aud": "NATS",
-    "exp": 1766876393,
-    "jti": "abc123",
-    "iat": 1620242553,
-    "iss": "AABC123",
-    "name": "my-account",
-    "nbf": 1620242553,
-    "sub": "AABC123",
-    "nats": {
-        "imports": [
-            {
-                "name": "import-name",
-                "subject": "some.subject",
-                "account": "AA123",
-                "token": "eyJ0eXAiOiJKV1QiLCJ...",
-                "local_subject": "to.local.subject",
-                "type": "stream",
-                "share": false,
-                "allow_trace": false
-            }
-        ],
-        "exports": [
-            {
-                "name": "export-name",
-                "subject": "some.subject",
-                "type": "service",
-                "token_req": false,
-                "revocations": {
-                    "U1234": 1620242553,
-                },
-                "response_type": "Singleton",
-                "response_threshold": 10,
-                "service_latency": {
-                    "sampling": 100,
-                    "results": "latency.subject"
-                },
-                "account_token_position": 0,
-                "advertise": false,
-                "allow_trace": false
-            }
-        ],
-        "limits": {
-            "subs": -1,
-            "data": -1,
-            "payload": -1,
-            "imports": -1,
-            "exports": -1,
-            "wildcards": false,
-            "disallow_bearer": false,
-            "conn": -1,
-            "leaf": -1,
-            "mem_storage": -1,
-            "disk_storage": -1,
-            "streams": -1,
-            "consumer": -1,
-            "max_ack_pending": -1,
-            "mem_max_stream_bytes": -1,
-            "disk_max_stream_bytes": -1,
-            "max_bytes_required": false,
-            "tiered_limits": {
-                "tier1": {
-                    "mem_storage": -1,
-                    "disk_storage": -1,
-                    "streams": -1,
-                    "consumer": -1,
-                    "max_ack_pending": -1,
-                    "mem_max_stream_bytes": -1,
-                    "disk_max_stream_bytes": -1,
-                    "max_bytes_required": false
-                }
-            }
-        },
-        "signing_keys": ["AGHI456", "AMNO789"],
-        "revocations": {
-            "U1234": 1620242553,
-        },
-        "default_permissions": {
-            "pub": {
-                "allow": ["sub1"],
-                "deny": ["sub2"]
+    "imports": [
+        {
+            "name": "import-name",
+            "subject": "some.subject",
+            "account": "AA123",
+            "token": "eyJ0eXAiOiJKV1QiLCJ...",
+            "local_subject": "to.local.subject",
+            "type": "stream",
+            "share": false,
+            "allow_trace": false
+        }
+    ],
+    "exports": [
+        {
+            "name": "export-name",
+            "subject": "some.subject",
+            "type": "service",
+            "token_req": false,
+            "revocations": {
+                "U1234": 1620242553,
             },
-            "sub": {
-                "allow": ["sub3"],
-                "deny": ["sub4"]
+            "response_type": "Singleton",
+            "response_threshold": 10,
+            "service_latency": {
+                "sampling": 100,
+                "results": "latency.subject"
             },
-            "resp": {
-                "max": 1,
-                "ttl": 10
+            "account_token_position": 0,
+            "advertise": false,
+            "allow_trace": false
+        }
+    ],
+    "limits": {
+        "subs": -1,
+        "data": -1,
+        "payload": -1,
+        "imports": -1,
+        "exports": -1,
+        "wildcards": false,
+        "disallow_bearer": false,
+        "conn": -1,
+        "leaf": -1,
+        "mem_storage": -1,
+        "disk_storage": -1,
+        "streams": -1,
+        "consumer": -1,
+        "max_ack_pending": -1,
+        "mem_max_stream_bytes": -1,
+        "disk_max_stream_bytes": -1,
+        "max_bytes_required": false,
+        "tiered_limits": {
+            "tier1": {
+                "mem_storage": -1,
+                "disk_storage": -1,
+                "streams": -1,
+                "consumer": -1,
+                "max_ack_pending": -1,
+                "mem_max_stream_bytes": -1,
+                "disk_max_stream_bytes": -1,
+                "max_bytes_required": false
             }
+        }
+    },
+    "signing_keys": ["AGHI456", "AMNO789"],
+    "revocations": {
+        "U1234": 1620242553,
+    },
+    "default_permissions": {
+        "pub": {
+            "allow": ["sub1"],
+            "deny": ["sub2"]
         },
-        "mappings": {
-            "sub1": [
-                {
-                    "subject": "sub2",
-                    "weight": 100,
-                    "cluster": "cluster1"
-                }
-            ]
+        "sub": {
+            "allow": ["sub3"],
+            "deny": ["sub4"]
         },
-        "authorization": {
-            "auth_users": ["UABC123"],
-            "allowed_accounts": ["AABC123"],
-            "xkey": "12341234"
-        },
-        "trace": {
-            "dest": "trace.subject",
-            "sampling": 100,
-        },
-        "cluster_traffic": "owner",
-        "tags": ["tag1:value", "tag2:value"],
-        "type": "account",
-        "description": "This is an account.",
-        "info_url": "http://example.com"
-        "version": 2
-    }
+        "resp": {
+            "max": 1,
+            "ttl": 10
+        }
+    },
+    "mappings": {
+        "sub1": [
+            {
+                "subject": "sub2",
+                "weight": 100,
+                "cluster": "cluster1"
+            }
+        ]
+    },
+    "authorization": {
+        "auth_users": ["UABC123"],
+        "allowed_accounts": ["AABC123"],
+        "xkey": "12341234"
+    },
+    "trace": {
+        "dest": "trace.subject",
+        "sampling": 100,
+    },
+    "cluster_traffic": "owner",
+    "tags": ["tag1:value", "tag2:value"],
+    "type": "account",
+    "description": "This is an account.",
+    "info_url": "http://example.com"
+    "version": 2
 }
 ```
 
@@ -510,7 +482,6 @@ and will result in a validation error when attempting a write.
 ### Account signing keys
 
 This plugin supports declarative signing keys (both scoped and non-scoped) for accounts.
-
 
 ### Account imports
 
@@ -557,7 +528,36 @@ Since every revocated user id is listed in the account JWT, it's recommended to 
 If you foresee the need to revoke many user or ephemeral user credentials at once, it is best to use an [account signing key](#account-signing-keys)
 that can be [rotated](#account-signing-key-rotation), effectively revoking all users simultaneously without requiring individual revocation entries.
 
+### Exports and activation tokens
+
+This plugin does not presently support declarative exports or declarative activation tokens.
+You may still pull accounts from your cluster using [nsc](https://docs.nats.io/using-nats/nats-tools/nsc) and generate activation tokens manually,
+then pass the tokens via the target account imports (or directly in the account's claims).
+
 ## Users and ephemeral users
+
+This plugin supports two flavors of user: standard and ephemeral.
+Unlike operators and accounts, user JWTs/credentials are not created when the user is created.
+Rather, a fresh JWT is generated and signed whenever credentials are requested.
+
+### Standard users
+
+Standard users consist of a claims template and an identity key. The claims template is used when generating
+credentials, and the identity key is passed along with the credentials to prove identity when connecting to NATS.
+
+### Ephemeral users
+
+Ephemeral users also define a claims template. Unlike standard users, however, ephemeral users don't store 
+a persistent identity key. Instead, a unique identity key is generated for each credentials request. Ephemeral users 
+are especially useful when issuing credentials in untrusted contexts, as the secret identity key is never reused.
+
+Ephemeral users can also be used to template permissions and limits for a large number of unique entities
+while keeping the footprint within OpenBao small. Ephemeral user credentials are given a session name as part of the path.
+This name can be used to correlate credentials together. For instance, a single ephemeral user called 'all-users'
+can be used to generate credentials for any registered user in a system by passing the application-specific username
+as the session name. If standard users were used for this purpose, a user entry would need to be created within OpenBao 
+for every registered user.
+
 <!-- 
 - users and ephemeral users
     - claims
@@ -634,22 +634,57 @@ and will result in a validation error when attempting a write.
 ```
 </details>
 
-### Ephemeral users
+### Revoking user credentials
 
-- ephemeral users have a "session" name that can be templated into the generated creds
+Requesting user credentials also issues a lease that is valid for the ttl of the generated credentials.
+Credential leases are non-renewable and the lease time can't be shortened.
+
+If left untouched, a lease that expires will result in a noop, as the JWT will naturally expire at that time.
+
+However, credential leases may also be revoked prematurely. Revoking a credential prematurely results in a 
+revocation entry being created for the user identity key. The revocation will have a TTL of the remaining TTL
+of the JWT. For standard users, it is not possible to revoke a *specific* set of credentials. Since revocations
+are keyed to the identity key, revoking one lease will revoke *all* credentials for that user for the period.
+
+Due to this behavior, it may make more sense to revoke all active leases for a user at once by using the `sys/leases/revoke-prefix`
+endpoint. When revoking all leases for a user, the created revocation will adopt the longest remaining TTL of all
+outstanding credentials.
+
+> [!NOTE]
+> The account revocations created by lease revocations are the same as those created using the `nats/revocations/` endpoint.
+> If revoking a lease for a user that is already revoked, the revocation will be overwritten if the new expiration time is later.
+
+Account revocations created by lease revocations will be cleaned up automatically at the end of their TTL, meaning
+that the user will no longer be revoked. After that point, if it is desired that the user remains 'disabled', don't issue
+new credentials for that user.
+
+Upon deleting a user, if the user has `revoke_on_delete` enabled, a revocation will be created for that user with a
+TTL equal to the maximum possible TTL of the user.
 
 ### Revoking ephemeral user credentials
 
-As ephemeral users don't have a fixed identity, it's not possible to revoke ephemeral users
-using the account revocation feature directly. Instead, the ephemeral user can be revoked using the
+As ephemeral users don't have a fixed identity, it's not possible to fetch identity keys for an ephemeral user
+to revoke them using the account revocation feature directly. Instead, the ephemeral user can be revoked using the
 OpenBao `sys/leases/revoke-prefix` endpoint or the `bao lease revoke -prefix` command.
+
+> [!IMPORTANT]
+> For ephemeral users, each non-expired credential issued results in an entry within the owning account's JWT.
+> If you need to revoke a large amount of credentials at once, it may be more efficient to sign the ephemeral users
+> with an account signing key, and rotate the signing key instead.
+> It is best practice to sign user credentials with dedicated signing keys instead of account identity keys.
+>
+> The number of revocations necessary can be minimized by keeping credential TTLs short and refreshing more often.
 
 For example, if your ephemeral user is configured on the path `nats/ephemeral-users/my-operator/my-account/my-user`,
 you can revoke all active sessions for that user:
 
+**CLI:**
+
 ```sh
-$ bao lease revoke -prefix nats/ephemeral-creds/my-operator/my-account/my-user
+$ bao lease revoke -prefix nats/ephemeral-creds/my-operator/my-account/all-users
 ```
+
+**API:**
 
 ```sh
 $ curl \
@@ -660,9 +695,13 @@ $ curl \
 
 Or revoke a specific session name:
 
+**CLI:**
+
 ```sh
-$ bao lease revoke -prefix nats/ephemeral-creds/my-operator/my-account/my-user/my-session
+$ bao lease revoke -prefix nats/ephemeral-creds/my-operator/my-account/all-users/my-session
 ```
+
+**API:**
 
 ```sh
 $ curl \
@@ -675,17 +714,10 @@ Since the `sys/leases/revoke-prefix` requires the `sudo` capability, policies gr
 credentials.
 
 ```hcl
-path "sys/leases/revoke-prefix/nats/ephemeral-creds/my-operator/my-account/my-user/*" {
+path "sys/leases/revoke-prefix/nats/ephemeral-creds/my-operator/my-account/all-users/*" {
     capabilities = ["sudo"]
 }
 ```
-
-> [!IMPORTANT]
-> If you need to revoke a large number of users at once, it may be more efficient to sign the ephemeral users
-> with a dedicated account signing key, and rotate the signing key instead.
-
-<!-- todo add blurbs about modifying account jwts and keeping ttls short to minimize the number of 
-revocations/account updates necessary -->
 
 ## Key rotation
 
@@ -727,10 +759,11 @@ $ bao write -force=true nats/rotate-account-signing-key/my-operator/my-account/m
 $ bao write -force=true nats/rotate-user/my-operator/my-account/my-user
 ```
 
-By default, rotating a user key will automatically revoke the previous one. The revocation will
+By default, rotating a user identity key will automatically revoke the old identity key. The revocation will
 have a TTL of the maximum TTL of the user's credentials. This behavior can be disabled by passing
 `revoke=false`.
 
 <!-- todo add blurbs about modifying user jwts & revoking modifying account jwts -->
 
-Ephemeral users do not have fixed keys and so cannot be rotated.
+Ephemeral users do not have fixed identity keys and so cannot be rotated. Instead, ephemeral user sessions 
+can be revoked using [the OpenBao lease system](#revoking-ephemeral-user-credentials).

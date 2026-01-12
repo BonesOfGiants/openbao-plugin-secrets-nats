@@ -204,8 +204,8 @@ $ nats --server=0.0.0.0:4222 --creds=./user.creds pub events.hello 'Hello!'
 
 ## Acknowledgements
 
-Though it has been rewritten from the ground up, this plugin owes its existence 
+Though it shares no code with its progenitor, this plugin owes its existence 
 to the [vault-plugin-secrets-nats plugin](https://github.com/edgefarm/vault-plugin-secrets-nats)
 created by the original [edgefarm](https://github.com/edgefarm) team.
-Furthermore, [nunu-ai](https://github.com/nunu-ai)'s modifications in their [enhanced fork](https://github.com/nunu-ai/vault-plugin-secrets-nats) 
-provided the impetus for the development of this plugin.
+Furthermore, [nunu-ai](https://github.com/nunu-ai)'s [enhanced fork](https://github.com/nunu-ai/vault-plugin-secrets-nats) 
+added the 'dynamic credentials' feature that inspired the development of this plugin.

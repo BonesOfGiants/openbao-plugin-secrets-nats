@@ -232,6 +232,9 @@ func (b *backend) pathOperatorSyncCreateUpdate(ctx context.Context, req *logical
 		}
 	}
 
+	// todo investigate sync having issues when servers are changed
+	// especially changing from a broken to a working server url
+	// it feels like the sync is getting stuck
 	if syncNow && syncDirty && !sync.Suspend {
 		// attempt an immediate sync
 		syncErrs, syncErr := b.syncOperatorAccounts(ctx, req.Storage, operator.operatorId)

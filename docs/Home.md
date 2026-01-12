@@ -199,36 +199,34 @@ Managed system accounts are preconfigured with following claims:
 
 ```json
 {
-    "nats": {
-        "exports": [
-            {
-                "name": "account-monitoring-services",
-                "subject": "$SYS.REQ.ACCOUNT.*.*",
-                "type": "service",
-                "response_type": "Stream",
-                "account_token_position": 4,
-                "description": "Request account specific monitoring services for: SUBSZ, CONNZ, LEAFZ, JSZ and INFO",
-                "info_url": "https://docs.nats.io/nats-server/configuration/sys_accounts"
-            },
-            {
-                "name": "account-monitoring-streams",
-                "subject": "$SYS.ACCOUNT.*.>",
-                "type": "stream",
-                "account_token_position": 3,
-                "description": "Account specific monitoring stream",
-                "info_url": "https://docs.nats.io/nats-server/configuration/sys_accounts"
-            }
-        ],
-        "limits": {
-            "subs": -1,
-            "data": -1,
-            "payload": -1,
-            "imports": -1,
-            "exports": -1,
-            "wildcards": true,
-            "conn": -1,
-            "leaf": -1
+    "exports": [
+        {
+            "name": "account-monitoring-services",
+            "subject": "$SYS.REQ.ACCOUNT.*.*",
+            "type": "service",
+            "response_type": "Stream",
+            "account_token_position": 4,
+            "description": "Request account specific monitoring services for: SUBSZ, CONNZ, LEAFZ, JSZ and INFO",
+            "info_url": "https://docs.nats.io/nats-server/configuration/sys_accounts"
+        },
+        {
+            "name": "account-monitoring-streams",
+            "subject": "$SYS.ACCOUNT.*.>",
+            "type": "stream",
+            "account_token_position": 3,
+            "description": "Account specific monitoring stream",
+            "info_url": "https://docs.nats.io/nats-server/configuration/sys_accounts"
         }
+    ],
+    "limits": {
+        "subs": -1,
+        "data": -1,
+        "payload": -1,
+        "imports": -1,
+        "exports": -1,
+        "wildcards": true,
+        "conn": -1,
+        "leaf": -1
     }
 }
 ```
@@ -576,11 +574,8 @@ The claims object may contain any valid field for a NATS user JWT.
 Additionally, while all claims of the user JWT may be overridden by 
 providing custom claims in the `claims` field, there are some important caveats:
 
-1. `iss` is always overwritten with the account or signing public key.
-2. `sub` is always overwritten with the user public key.
-3. `iat` is always overwritten with the time the JWT was generated.
-4. `jti` is always overwritten with a hash of the contents.
-5. `nats.issuer_account` is always overwritten with the account public key if using a signing key, or cleared otherwise.
+1. `issuer_account` is always overwritten with the account public key if using a signing key, or cleared otherwise.
+2. `type` and `version` are defined by the library and may not be modified.
 
 Most fields need not be specified under normal circumstances. It is important to
 specify the pub/sub permissions and limits under the 
@@ -590,46 +585,33 @@ fields, or the generated user won't have permissions to do anything.
 <details>
 <summary>Example claims with all fields</summary>
 
-Note that some fields may be mutually incompatible in a real JWT,
-and will result in a validation error when attempting a write.
-
 ```json
 {
-    "aud": "NATS",
-    "exp": 1766876393,
-    "jti": "abc123",
-    "iat": 1620242553,
-    "iss": "AABC123",
-    "name": "my-user",
-    "nbf": 1620242553,
-    "sub": "UABC123",
-    "nats": {
-        "pub": {
-            "allow": ["sub1"],
-            "deny": ["sub2"]
-        },
-        "sub": {
-            "allow": ["sub3"],
-            "deny": ["sub4"]
-        },
-        "resp": {
-            "max": 1,
-            "ttl": 10
-        },
-        "subs": -1,
-        "data": -1,
-        "payload": -1,
-        "src": ["192.0.2.0/24"],
-        "times": [{"start": "00:00:00", "end": "23:59:59"}],
-        "times_location": "UTC",
-        "bearer_token": false,
-        "proxy_required": false,
-        "allowed_connection_types": ["STANDARD"],
-        "issuer_account": "A123ABC",
-        "tags": ["tag1:value", "tag2:value"],
-        "type": "user",
-        "version": 2
-    }
+    "pub": {
+        "allow": ["sub1"],
+        "deny": ["sub2"]
+    },
+    "sub": {
+        "allow": ["sub3"],
+        "deny": ["sub4"]
+    },
+    "resp": {
+        "max": 1,
+        "ttl": 10
+    },
+    "subs": -1,
+    "data": -1,
+    "payload": -1,
+    "src": ["192.0.2.0/24"],
+    "times": [{"start": "00:00:00", "end": "23:59:59"}],
+    "times_location": "UTC",
+    "bearer_token": false,
+    "proxy_required": false,
+    "allowed_connection_types": ["STANDARD"],
+    "issuer_account": "A123ABC",
+    "tags": ["tag1:value", "tag2:value"],
+    "type": "user",
+    "version": 2
 }
 ```
 </details>

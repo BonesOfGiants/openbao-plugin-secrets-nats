@@ -34,7 +34,7 @@ Create a configuration registering the plugin:
 > on the [release page](https://github.com/BonesOfGiants/openbao-plugin-secrets-nats/releases/tag/v1.2.5).
 
 ```sh
-cat << EOF > openbao-config.hcl 
+$ cat << EOF > openbao-config.hcl 
 plugin "secret" "nats" {
     image = "ghcr.io/bonesofgiants/openbao-plugin-secrets-nats"
     version = "v1.2.5"
@@ -68,7 +68,7 @@ plugin_directory = "$HOME/openbao_plugins" # or wherever it pleases
 EOF
 ```
 
-Start the OpenBao server:
+In a new terminal, start the OpenBao server:
 
 ```sh
 $ bao server -dev -config=openbao-config.hcl
@@ -111,47 +111,94 @@ Create an operator, account, and user:
 
 ```sh
 $ bao write -force=true nats/operators/dev
-Success! Data written to: nats/operators/dev
-$ bao write -force=true nats/operators/dev/hello-app
-Success! Data written to: nats/operators/dev/hello-app
-$ cat << EOF | bao write nats/operators/dev/hello-app/app-user -
+$ bao write -force=true nats/accounts/dev/hello-app
+$ cat << EOF | bao write nats/users/dev/hello-app/app-user -
 {
   "claims": {
-    "nats": {
-      "pub": {
-        "allow": ["events.hello"]
-      },
-      "subs": -1,
-      "payload": -1
+    "pub": {
+      "allow": ["events.hello"]
     }
   }
 }
 EOF
-Success! Data written to: nats/operators/dev/hello-app/app-user
 ```
 
 Generate a server config:
 
 ```sh
-$ bao read -format=json nats/generate-server-config/dev | jq '.data.config' > operator-conf.json
+$ bao read -format=json nats/generate-server-config/dev include_resolver_preload=true | jq -r '.data.config' > operator.conf
 ```
 
-Start a nats server using the generated config:
+Include the generated config into your main nats config:
 
 ```sh
-$ nats-server -c operator-conf.json
+$ cat << EOF > nats-server.conf
+include ./operator.conf
+
+resolver: {
+  type: "full"
+  dir: "./jwt"
+}
+EOF
+```
+
+In a new terminal, start a nats server using the generated config:
+
+```sh
+$ nats-server -c nats-server.conf
 ```
 
 Generate creds:
 
 ```sh
-$ bao read nats/creds/dev/hello-app/app-user | jq -r '.data.creds' > user.creds
+$ bao read -format=json nats/creds/dev/hello-app/app-user | jq -r '.data.creds' > user.creds
 ```
 
 Publish to the NATS server using the credentials:
 ```sh
-$ nats --creds=./user.creds pub events.hello "Hello world!"
+$ nats --server=0.0.0.0:4222 --creds=./user.creds pub events.hello 'Hello world!'
 15:03:16 Published 12 bytes to "events.hello"
+$ nats --server=0.0.0.0:4222 --creds=./user.creds pub events.goodbye 'Goodbye world!'
+nats: error: nats: permissions violation: Permissions Violation for Publish to "events.goodbye"
+```
+
+#### Automatically syncing account changes
+
+Set up the operator to sync account changes to the nats server:
+
+```sh
+$ bao write nats/sync-config/dev servers="0.0.0.0:4222"
+$ bao write nats/sync-config/dev servers="example.com:4222"
+# Validate that the sync was successfully initialized
+$ bao read -format=json nats/sync-config/dev | jq '.data.status'
+{
+  "last_sync_time": "2025-12-16T15:03:16.673884455-08:00",
+  "status": "active"
+}
+```
+
+Modify the account to limit payload size to 6 bytes:
+
+```sh
+$ cat << EOF | bao write nats/accounts/dev/hello-app -
+{
+  "claims": {
+    "limits": {
+      "payload": 6
+    }
+  }
+}
+EOF
+```
+
+Now attempt to write using the same user creds as before. The NATS server has automatically
+been updated to use the new payload limit:
+
+```sh
+$ nats --server=0.0.0.0:4222 --creds=./user.creds pub events.hello 'Hello world!'
+nats: error: nats: Maximum Payload Violation
+$ nats --server=0.0.0.0:4222 --creds=./user.creds pub events.hello 'Hello!'
+15:03:16 Published 6 bytes to "events.hello"
 ```
 
 <!-- todo: create developer guide -->

@@ -292,6 +292,7 @@ This endpoint creates or updates an operator.
   This field may be overridden by the `accounts` `signing_key` parameter.
 - `claims` `(map: nil)` - Override default claims in the JWT issued for this operator. 
   See [nats-io/jwt](https://pkg.go.dev/github.com/nats-io/jwt/v2#Operator) for available fields. See [the guide](/docs/Home.md#operator-claims) for details and an example of all available fields.
+  Claims are **not** merged. If the claims parameter is present it will overwrite any previous claims.
 
 ### Sample payload
 
@@ -350,9 +351,7 @@ $ curl \
         "create_system_account": true,
         "system_account_name": "SYS",
         "claims": {
-            "nats": {
-                "tags": ["openbao"]
-            }
+            "tags": ["openbao"]
         }
     }
 }
@@ -410,6 +409,8 @@ This endpoint deletes an operator definition.
 > - account imports
 > - account revocations
 > - users and ephemeral users
+>
+> No sync operations are performed when deleting the operator.
 
 | Method   | Path                        |
 | :------- | :-------------------------- |
@@ -795,6 +796,7 @@ This endpoint create an account configuration under the specified operator.
   If the specified signing key does not exist, an error will be raised when generating user or ephemeral user credentials.
 - `claims` `(map: {})` - Override default claims in the JWT issued for this operator. See [nats-io/jwt](https://pkg.go.dev/github.com/nats-io/jwt/v2#Account) 
   for available fields. See [the guide](./Home.md#account-claims) for details and an example of all available fields.
+  Claims are **not** merged. If the claims parameter is present it will overwrite any previous claims.
 
 ### Sample payload
 
@@ -869,12 +871,10 @@ $ curl \
     "signing_key": "op-signing-2",
     "default_signing_key": "acc-signing-1",
     "claims": {
-        "nats": {
-            "limits": {
-                "subs": -1,
-                "data": -1,
-                "payload": -1
-            }
+        "limits": {
+            "subs": -1,
+            "data": -1,
+            "payload": -1
         }
     },
     "status": {
@@ -966,8 +966,8 @@ If creating an account import with more than one import claim using the CLI,
 JSON input must be used as the CLI cannot pass nested values using parameter arguments.
 
 Root-level parameters cannot be used to modify an existing account import with more than one
-import claim. When modifying an existing account import, the list of imports will be overwritten
-entirely. 
+import claim. When modifying an existing account import, the list of imports are not merged and
+will be overwritten entirely. 
 
 > [!WARNING]
 > Modifying an accounts's claims will reissue the account JWT. If a [sync config](#createupdate-sync-config)
@@ -983,6 +983,8 @@ entirely.
 - `account` `(string: <required>)` - The name of the account. Included in the path.
 - `name` `(string: <required>)` - A name for the import configuration. Included in the path.
 - `imports` `(array: [])` - The list of import objects (see [possible fields below](#import-parameters)). At least one import must be defined.
+  Imports are **not** merged. If the imports parameter is present it will overwrite any previous imports. The only exception to this are if
+  defining a root-level import, where individual parameters may be tweaked.
 
 #### Import parameters
 
@@ -1348,6 +1350,7 @@ This endpoint create a user configuration under the specified operator and accou
 - `revoke_on_delete` `(bool: false)` - Whether this user's identity key should be added to the account revocation list upon deletion.
 - `claims` `(map: nil)` - Provide claims to be used in the credentials generated for this user. 
   See [nats-io/jwt](https://pkg.go.dev/github.com/nats-io/jwt/v2#User) for available fields. See [the guide](./Home.md#user-claims) for details and an example of all available fields.
+  Claims are **not** merged. If the claims parameter is present it will overwrite any previous claims.
 
 ### Sample payload
 
@@ -1357,16 +1360,14 @@ This endpoint create a user configuration under the specified operator and accou
     "creds_default_ttl": "1h",
     "revoke_on_delete": true,
     "claims": {
-        "nats": {
-            "subs": -1,
-            "data": -1,
-            "payload": -1,
-            "pub": {
-                "allow": ["my-service.>"]
-            },
-            "sub": {
-                "allow": ["_INBOX.*"]
-            }
+        "subs": -1,
+        "data": -1,
+        "payload": -1,
+        "pub": {
+            "allow": ["my-service.>"]
+        },
+        "sub": {
+            "allow": ["_INBOX.*"]
         }
     }
 }
@@ -1564,6 +1565,7 @@ by ensuring that user identity keys are never reused.
   If not set or 0, the [system default](https://openbao.org/docs/configuration/#default_lease_ttl) will be used.
 - `claims` `(map: nil)` - Provide claims to be used in the credentials generated for this user. 
   See [nats-io/jwt](https://pkg.go.dev/github.com/nats-io/jwt/v2#User) for available fields. See [the guide](./Home.md#user-claims) for details and an example of all available fields.
+  Claims are **not** merged. If the claims parameter is present it will overwrite any previous claims.
 
 ### Sample payload
 
@@ -1631,16 +1633,14 @@ $ curl \
     "creds_default_ttl": "1h",
     "revoke_on_delete": true,
     "claims": {
-        "nats": {
-            "subs": -1,
-            "data": -1,
-            "payload": -1,
-            "pub": {
-                "allow": ["my-service.>"]
-            },
-            "sub": {
-                "allow": ["_INBOX.*"]
-            }
+        "subs": -1,
+        "data": -1,
+        "payload": -1,
+        "pub": {
+            "allow": ["my-service.>"]
+        },
+        "sub": {
+            "allow": ["_INBOX.*"]
         }
     }
 }

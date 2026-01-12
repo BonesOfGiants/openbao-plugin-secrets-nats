@@ -295,4 +295,28 @@ func TestBackend_AccountJwt_Read(t *testing.T) {
 		assert.Equal(b, claims.Info.InfoURL, accClaims.Account.Info.InfoURL)
 		assert.Equal(b, claims.GenericFields.Tags, accClaims.Account.GenericFields.Tags)
 	})
+
+	t.Run("partial claims", func(_t *testing.T) {
+		b := testBackend(t)
+
+		claims := json.RawMessage(`
+		{
+		  "limits": {
+		    "payload": 5 
+		  }
+		}`)
+
+		id := AccountId("op1", "acc1")
+		SetupTestAccount(b, id, map[string]any{
+			"claims": unmarshalToMap(claims),
+		})
+
+		accClaims := ReadJwt[*jwt.AccountClaims](b, id)
+
+		// account config
+		defaultClaims := jwt.NewAccountClaims("sub")
+		defaultClaims.Limits.JetStreamTieredLimits = nil
+		defaultClaims.Account.Limits.Payload = 5
+		assert.EqualValues(b, defaultClaims.Limits, accClaims.Account.Limits)
+	})
 }

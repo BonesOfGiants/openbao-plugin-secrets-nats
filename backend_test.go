@@ -19,6 +19,8 @@ import (
 todo: list of things that still need tests:
 - operator jwt change resulting in sync being suspended + warning
 - sync config status updates
+	- [ ] sync config object itself
+	- [ ] account status
 - managed name clashes with existing account
 - account sync status updates
 - test partial updates

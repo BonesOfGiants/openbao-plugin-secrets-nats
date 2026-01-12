@@ -168,7 +168,6 @@ Set up the operator to sync account changes to the nats server:
 
 ```sh
 $ bao write nats/sync-config/dev servers="0.0.0.0:4222"
-$ bao write nats/sync-config/dev servers="example.com:4222"
 # Validate that the sync was successfully initialized
 $ bao read -format=json nats/sync-config/dev | jq '.data.status'
 {

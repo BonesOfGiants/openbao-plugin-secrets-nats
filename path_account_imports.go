@@ -216,24 +216,28 @@ func (b *backend) pathAccountImportCreateUpdate(ctx context.Context, req *logica
 
 		jwtDirty = jwtDirty || (len(importsRaw) != len(accImport.Imports))
 
-		imports := accImport.Imports
-		if imports == nil {
-			imports = make(jwt.Imports, 0, len(importsRaw))
-		}
+		imports := make(jwt.Imports, 0, len(importsRaw))
 		for i, v := range importsRaw {
 			if importRaw, ok := v.(map[string]any); ok {
-				var imp *jwt.Import
-				if i < imports.Len() {
-					imp = imports[i]
-				} else {
-					imp = &jwt.Import{}
-					imports = append(imports, imp)
-					jwtDirty = true
+				var existing *jwt.Import
+				if i < len(accImport.Imports) {
+					existing = accImport.Imports[i]
 				}
 
-				_, importDirty, err := updateImportParams(importRaw, imp)
+				imp := &jwt.Import{}
+				imports = append(imports, imp)
+				jwtDirty = true
+
+				_, _, err := updateImportParams(importRaw, imp)
 				if err != nil {
 					return logical.ErrorResponse("import[%d]: %w", i, err), nil
+				}
+
+				var importDirty bool
+				if existing != nil {
+					importDirty = *imp != *existing
+				} else {
+					importDirty = true
 				}
 
 				jwtDirty = jwtDirty || importDirty

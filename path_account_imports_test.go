@@ -65,16 +65,7 @@ func TestBackend_AccountImport_Config(t *testing.T) {
 			t := testBackend(_t)
 
 			accId := AccountId("op1", "acc1")
-			resp := SetupTestAccount(t, accId, map[string]any{
-				"claims": map[string]any{
-					"nats": map[string]any{
-						"limits": map[string]any{
-							"imports": -1,
-							"exports": -1,
-						},
-					},
-				},
-			})
+			SetupTestAccount(t, accId, nil)
 
 			// create imports
 			impId := accId.importId("imp1")
@@ -158,6 +149,41 @@ func TestBackend_AccountImport_Config(t *testing.T) {
 			assert.Nil(t, resp)
 		})
 	}
+
+	t.Run("overwrite imports", func(_t *testing.T) {
+		t := testBackend(_t)
+
+		accId := AccountId("op1", "acc1")
+		SetupTestAccount(t, accId, nil)
+
+		// create import with some claims
+		impId := accId.importId("imp1")
+		resp, err := WriteConfig(t, impId, map[string]any{
+			"imports": []any{
+				map[string]any{
+					"name":    "test-import",
+					"account": "ABDEAD7OENMDZ6NF6NYQX4RUWE77YAM7DDEYSHTCWDLR3MWAJWKGHJC3",
+					"type":    "stream",
+					"subject": "foo.bar",
+				},
+			},
+		})
+		RequireNoRespError(t, resp, err)
+
+		// attempt to make a "partial" update
+		resp, err = WriteConfig(t, impId, map[string]any{
+			"imports": []any{
+				map[string]any{
+					"type": "service",
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		// validation error because the import was overwritten
+		// and the required fields were lost
+		assert.ErrorContains(t, resp.Error(), "validation error")
+	})
 }
 
 func TestBackend_AccountImport_NonExistentAccount(_t *testing.T) {
@@ -174,16 +200,8 @@ func TestBackend_AccountImport_RootParameters(t *testing.T) {
 		t := testBackend(_t)
 
 		accId := AccountId("op1", "acc1")
-		SetupTestAccount(t, accId, map[string]any{
-			"claims": map[string]any{
-				"nats": map[string]any{
-					"limits": map[string]any{
-						"imports": -1,
-						"exports": -1,
-					},
-				},
-			},
-		})
+		SetupTestAccount(t, accId, nil)
+
 		expected := map[string]any{
 			"name":    "test-import",
 			"subject": "foo.bar",
@@ -203,20 +221,45 @@ func TestBackend_AccountImport_RootParameters(t *testing.T) {
 
 		assert.Equal(t, expected, imports[0])
 	})
+	t.Run("partial update", func(_t *testing.T) {
+		t := testBackend(_t)
+
+		accId := AccountId("op1", "acc1")
+		SetupTestAccount(t, accId, nil)
+		impId := accId.importId("imp1")
+		resp, err := WriteConfig(t, impId, map[string]any{
+			"name":    "test-import",
+			"subject": "foo.bar",
+			"account": "ABDEAD7OENMDZ6NF6NYQX4RUWE77YAM7DDEYSHTCWDLR3MWAJWKGHJC3",
+			"type":    "stream",
+		})
+		RequireNoRespError(t, resp, err)
+
+		// attempt partial update
+		resp, err = WriteConfig(t, impId, map[string]any{
+			"type": "service",
+		})
+		RequireNoRespError(t, resp, err)
+
+		resp, err = ReadConfigRaw(t, impId)
+		RequireNoRespError(t, resp, err)
+
+		assert.Contains(t, resp.Data, "imports")
+		imports := resp.Data["imports"].([]map[string]any)
+		assert.Len(t, imports, 1)
+
+		assert.Equal(t, map[string]any{
+			"name":    "test-import",
+			"subject": "foo.bar",
+			"account": "ABDEAD7OENMDZ6NF6NYQX4RUWE77YAM7DDEYSHTCWDLR3MWAJWKGHJC3",
+			"type":    "service",
+		}, imports[0])
+	})
 	t.Run("may not specify both root and imports", func(_t *testing.T) {
 		t := testBackend(_t)
 
 		accId := AccountId("op1", "acc1")
-		SetupTestAccount(t, accId, map[string]any{
-			"claims": map[string]any{
-				"nats": map[string]any{
-					"limits": map[string]any{
-						"imports": -1,
-						"exports": -1,
-					},
-				},
-			},
-		})
+		SetupTestAccount(t, accId, nil)
 		impId := accId.importId("imp1")
 		resp, err := WriteConfig(t, impId, map[string]any{
 			"name":    "test-import",
@@ -239,16 +282,7 @@ func TestBackend_AccountImport_RootParameters(t *testing.T) {
 		t := testBackend(_t)
 
 		accId := AccountId("op1", "acc1")
-		SetupTestAccount(t, accId, map[string]any{
-			"claims": map[string]any{
-				"nats": map[string]any{
-					"limits": map[string]any{
-						"imports": -1,
-						"exports": -1,
-					},
-				},
-			},
-		})
+		SetupTestAccount(t, accId, nil)
 
 		impId := accId.importId("imp1")
 		resp, err := WriteConfig(t, impId, map[string]any{

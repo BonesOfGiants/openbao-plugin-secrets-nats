@@ -22,7 +22,7 @@ First, make sure you have OpenBao, nats & nats-server, and jq installed and avai
 #### OCI Image
 
 The best way to quickly try out this plugin is to utilize the [declarative plugin](https://openbao.org/docs/configuration/plugins/)
-feature of OpenBao. This requires OpenBao to be on version `2.5.0` or higher.
+feature of OpenBao. This requires OpenBao to be on version `2.5.0` or higher. If on a lower version, or if you want to register the plugin manually, follow the [manual registration instructions](#manual-registration) instead.
 
 Create a configuration registering the plugin:
 
@@ -79,7 +79,7 @@ Download the appropriate binary for your platform from the
 [release page](https://github.com/BonesOfGiants/openbao-plugin-secrets-nats/releases/tag/v1.2.6).
 Place the downloaded and decompressed `openbao-plugin-secrets-nats` binary in the configured plugin directory.
 
-In a separate terminal, register the plugin with the following command:
+Register the plugin with the following command:
 
 > [!NOTE]
 > The pre-filled sha256sum is for the linux-amd64 build.

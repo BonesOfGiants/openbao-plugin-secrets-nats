@@ -62,58 +62,49 @@ func TestBackend_Creds_Read(t *testing.T) {
 
 			claims := `
 			{
-				"aud": "test-audience",
-				"exp": 1766703476,
-				"iat": 1766703476,
-				"iss": "test-subject",
-				"nbf": 1766703476,
-				"name": "test-name",
-				"nats": {
-					"allowed_connection_types": [
-						"LEAFNODE"
+				"allowed_connection_types": [
+					"LEAFNODE"
+				],
+				"bearer_token": true,
+				"issuer_account": "test-account",
+				"proxy_required": true,
+				"pub": {
+					"allow": [
+						"allowed"
 					],
-					"bearer_token": true,
-					"issuer_account": "test-account",
-					"proxy_required": true,
-					"pub": {
-						"allow": [
-							"allowed"
-						],
-						"deny": [
-							"denied"
-						]
-					},
-					"resp": {
-						"max": 10,
-						"ttl": 10
-					},
-					"src": [
-						"192.0.2.0/24"
-					],
-					"subs": 0,
-					"data": 0,
-					"payload": 0,
-					"sub": {
-						"allow": [
-							"allowed"
-						],
-						"deny": [
-							"denied"
-						]
-					},
-					"tags": [
-						"test-tag"
-					],
-					"times": [
-						{
-							"end": "12:00:00",
-							"start": "10:00:00"
-						}
-					],
-					"times_location": "America/New_York",
-					"type": "test-type"
+					"deny": [
+						"denied"
+					]
 				},
-				"sub": "test-subject"
+				"resp": {
+					"max": 10,
+					"ttl": 10
+				},
+				"src": [
+					"192.0.2.0/24"
+				],
+				"subs": 0,
+				"data": 0,
+				"payload": 0,
+				"sub": {
+					"allow": [
+						"allowed"
+					],
+					"deny": [
+						"denied"
+					]
+				},
+				"tags": [
+					"test-tag"
+				],
+				"times": [
+					{
+						"end": "12:00:00",
+						"start": "10:00:00"
+					}
+				],
+				"times_location": "America/New_York",
+				"type": "test-type"
 			}`
 
 			var expected jwt.UserClaims
@@ -242,11 +233,9 @@ func TestBackend_Creds_DefaultPermissions(t *testing.T) {
 		id := UserId("op1", "acc1", "user1")
 		SetupTestUser(t, id, map[string]any{
 			"claims": map[string]any{
-				"nats": map[string]any{
-					"subs":    0,
-					"data":    0,
-					"payload": 0,
-				},
+				"subs":    0,
+				"data":    0,
+				"payload": 0,
 			},
 		})
 
@@ -266,9 +255,7 @@ func TestBackend_Creds_DefaultPermissions(t *testing.T) {
 		id := UserId("op1", "acc1", "user1")
 		SetupTestUser(t, id, map[string]any{
 			"claims": map[string]any{
-				"nats": map[string]any{
-					"subs": 0,
-				},
+				"subs": 0,
 			},
 		})
 
@@ -288,9 +275,7 @@ func TestBackend_Creds_DefaultPermissions(t *testing.T) {
 		id := UserId("op1", "acc1", "user1")
 		SetupTestUser(t, id, map[string]any{
 			"claims": map[string]any{
-				"nats": map[string]any{
-					"src": []string{"192.0.2.0/24"},
-				},
+				"src": []string{"192.0.2.0/24"},
 			},
 		})
 
@@ -319,11 +304,9 @@ func TestBackend_Creds_DefaultPermissions(t *testing.T) {
 		SetupTestUser(t, id, map[string]any{
 			"default_signing_key": "sk1",
 			"claims": map[string]any{
-				"nats": map[string]any{
-					"subs":    10,
-					"data":    -1,
-					"payload": 142,
-				},
+				"subs":    10,
+				"data":    -1,
+				"payload": 142,
 			},
 		})
 

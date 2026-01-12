@@ -83,16 +83,12 @@ func TestBackend_Account_Config(t *testing.T) {
 			name: "set old-style claims",
 			data: map[string]any{
 				"claims": map[string]any{
-					"nats": map[string]any{
-						"tags": []string{"tag1", "tag2"},
-					},
+					"tags": []string{"tag1", "tag2"},
 				},
 			},
 			expected: map[string]any{
 				"claims": map[string]any{
-					"nats": map[string]any{
-						"tags": []any{"tag1", "tag2"},
-					},
+					"tags": []any{"tag1", "tag2"},
 				},
 				"status": map[string]any{
 					"is_managed":        false,

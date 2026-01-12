@@ -283,11 +283,9 @@ func TestBackend_AccountImport_List(ts *testing.T) {
 	accId := AccountId("op1", "acc1")
 	SetupTestAccount(t, accId, map[string]any{
 		"claims": map[string]any{
-			"nats": map[string]any{
-				"limits": map[string]any{
-					"imports": -1,
-					"exports": -1,
-				},
+			"limits": map[string]any{
+				"imports": -1,
+				"exports": -1,
 			},
 		},
 	})

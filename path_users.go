@@ -217,18 +217,31 @@ func (b *backend) pathUserCreateUpdate(ctx context.Context, req *logical.Request
 	resp := &logical.Response{}
 
 	if user.RawClaims != nil {
-		var claims jwt.UserClaims
-		err = json.Unmarshal(user.RawClaims, &claims)
+		rawClaims := user.RawClaims
+
+		var claimsMap map[string]json.RawMessage
+		err = json.Unmarshal(rawClaims, &claimsMap)
 		if err != nil {
 			return nil, err
 		}
 
-		// clear irrelevant fields
-		claims.IssuerAccount = "" // issuer account is overridden during cred generation
-		claims.NotBefore = 0      // the claim not being valid yet isn't a warning we care about
+		innerClaims, ok := claimsMap["nats"]
+		if ok {
+			// this is an old-style claims
+			rawClaims = innerClaims
+		}
+
+		var opClaims jwt.User
+		err = json.Unmarshal(rawClaims, &opClaims)
+		if err != nil {
+			return nil, err
+		}
+
+		// clear fields we don't want to validate
+		opClaims.IssuerAccount = "" // issuer account is overridden during cred generation
 
 		var vr jwt.ValidationResults
-		claims.Validate(&vr)
+		opClaims.Validate(&vr)
 
 		errors := vr.Errors()
 		if len(errors) > 0 {

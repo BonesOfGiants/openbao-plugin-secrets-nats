@@ -2,7 +2,6 @@ package natsbackend
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"iter"
 	"strings"
@@ -356,12 +355,35 @@ func (b *backend) getAccountSync(ctx context.Context, storage logical.Storage, i
 			return nil, fmt.Errorf("operator does not exist: %w", err)
 		}
 
-		claims, err := copyClaims(&DefaultSyncUserClaims)
-		if err != nil {
-			return nil, fmt.Errorf("failed to copy system user claims: %w", err)
+		claims := &jwt.UserClaims{
+			ClaimsData: jwt.ClaimsData{
+				Subject: sub,
+			},
+			User: jwt.User{
+				UserPermissionLimits: jwt.UserPermissionLimits{
+					Permissions: jwt.Permissions{
+						Pub: jwt.Permission{
+							Allow: jwt.StringList{
+								accountsync.SysClaimsUpdateSubject,
+								accountsync.SysClaimsDeleteSubject,
+							},
+						},
+						Sub: jwt.Permission{
+							Allow: jwt.StringList{
+								"_INBOX.*",
+							},
+						},
+					},
+					Limits: jwt.Limits{
+						NatsLimits: jwt.NatsLimits{
+							Subs:    -1,
+							Payload: -1,
+							Data:    -1,
+						},
+					},
+				},
+			},
 		}
-
-		claims.Subject = sub
 
 		signingKey, enrichWarnings, err := b.enrichUserClaims(ctx, storage, enrichUserParams{
 			op:     id.op,
@@ -599,51 +621,4 @@ func sprintErrors(errors []error) string {
 	}
 
 	return strings.Join(errs, "; ")
-}
-
-// Converts operator claims into json.RawMessage.
-// If the conversion fails, panic.
-func fromOperatorClaims(claims *jwt.OperatorClaims) json.RawMessage {
-	data, err := json.Marshal(claims)
-	if err != nil {
-		panic(err)
-	}
-
-	return data
-}
-
-// Converts account claims into json.RawMessage.
-// If the conversion fails, panic.
-func fromAccountClaims(claims *jwt.AccountClaims) json.RawMessage {
-	data, err := json.Marshal(claims)
-	if err != nil {
-		panic(err)
-	}
-
-	return data
-}
-
-// Converts user claims into json.RawMessage.
-// If the conversion fails, panic.
-func fromUserClaims(claims *jwt.UserClaims) json.RawMessage {
-	data, err := json.Marshal(claims)
-	if err != nil {
-		panic(err)
-	}
-
-	return data
-}
-
-// copyClaims marshals claims to json and back to
-// perform a deep copy.
-func copyClaims[T jwt.Claims](claims T) (T, error) {
-	str := claims.String()
-
-	var r T
-	err := json.Unmarshal([]byte(str), &r)
-	if err != nil {
-		return r, err
-	}
-
-	return r, nil
 }

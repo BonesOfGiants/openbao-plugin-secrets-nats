@@ -241,19 +241,29 @@ func (b *backend) issueAndSaveOperatorJWT(ctx context.Context, storage logical.S
 		return nil, fmt.Errorf("failed to decode public key: %w", err)
 	}
 
-	var claims *jwt.OperatorClaims = nil
+	claims := jwt.NewOperatorClaims(sub)
 	if operator.RawClaims != nil {
-		err = json.Unmarshal(operator.RawClaims, &claims)
+		rawClaims := operator.RawClaims
+
+		var claimsMap map[string]json.RawMessage
+		err = json.Unmarshal(rawClaims, &claimsMap)
 		if err != nil {
 			return nil, err
 		}
-	}
 
-	if claims == nil {
-		claims = jwt.NewOperatorClaims(sub)
-	} else {
-		claims.Subject = sub
-		claims.Issuer = sub
+		innerClaims, ok := claimsMap["nats"]
+		if ok {
+			// this is an old-style claims
+			rawClaims = innerClaims
+		}
+
+		var opClaims jwt.Operator
+		err = json.Unmarshal(rawClaims, &opClaims)
+		if err != nil {
+			return nil, err
+		}
+
+		claims.Operator = opClaims
 	}
 
 	warnings, err := b.enrichOperatorClaims(ctx, storage, id, operator.SysAccountName, claims)
@@ -466,18 +476,30 @@ func (b *backend) issueAndSaveAccountJWT(ctx context.Context, storage logical.St
 		return warnings, fmt.Errorf("failed to decode public key: %w", err)
 	}
 
-	var claims *jwt.AccountClaims = nil
+	claims := jwt.NewAccountClaims(sub)
 	if account.RawClaims != nil {
-		err = json.Unmarshal(account.RawClaims, &claims)
-		if err != nil {
-			return warnings, err
-		}
-	}
+		rawClaims := account.RawClaims
 
-	if claims == nil {
-		claims = jwt.NewAccountClaims(sub)
-	} else {
-		claims.Subject = sub
+		var claimsMap map[string]json.RawMessage
+		err = json.Unmarshal(rawClaims, &claimsMap)
+		if err != nil {
+			return nil, err
+		}
+
+		innerClaims, ok := claimsMap["nats"]
+		if ok {
+			// this is an old-style claims
+			rawClaims = innerClaims
+		}
+
+		var opClaims jwt.Account
+		err = json.Unmarshal(rawClaims, &opClaims)
+		if err != nil {
+			return nil, err
+		}
+
+		unlimitedClaims := claims.Account.Limits
+		claims.Account = opClaims
 
 		// ensure consistency with expected defaults
 		if claims.SigningKeys == nil {
@@ -488,25 +510,22 @@ func (b *backend) issueAndSaveAccountJWT(ctx context.Context, storage logical.St
 		}
 
 		// we need to futz with the raw mapping
-		// because the claims don't differentiate
+		// because the claims obj can't differentiate
 		// between missing and 0
-		var mapClaims map[string]any
-		err = json.Unmarshal(account.RawClaims, &mapClaims)
+		var nats map[string]any
+		err = json.Unmarshal(rawClaims, &nats)
+		if err != nil {
+			goto cont
+		}
 
-		natsRaw, ok := mapClaims["nats"]
-		if !ok {
-			goto cont
-		}
-		nats, ok := natsRaw.(map[string]any)
-		if !ok {
-			goto cont
-		}
 		limitsRaw, ok := nats["limits"]
 		if !ok {
+			claims.Limits = unlimitedClaims
 			goto cont
 		}
 		limits, ok := limitsRaw.(map[string]any)
 		if !ok {
+			claims.Limits = unlimitedClaims
 			goto cont
 		}
 		_, ok = limits["subs"]

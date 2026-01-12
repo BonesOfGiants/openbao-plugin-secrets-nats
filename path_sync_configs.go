@@ -7,9 +7,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/accountsync"
 	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/shimtx"
-	"github.com/nats-io/jwt/v2"
 	"github.com/openbao/openbao/sdk/v2/framework"
 	"github.com/openbao/openbao/sdk/v2/logical"
 )
@@ -51,33 +49,7 @@ type operatorSyncStatus struct {
 }
 
 var (
-	DefaultSyncUserTtl    = 5 * time.Minute
-	DefaultSyncUserClaims = jwt.UserClaims{
-		User: jwt.User{
-			UserPermissionLimits: jwt.UserPermissionLimits{
-				Permissions: jwt.Permissions{
-					Pub: jwt.Permission{
-						Allow: jwt.StringList{
-							accountsync.SysClaimsUpdateSubject,
-							accountsync.SysClaimsDeleteSubject,
-						},
-					},
-					Sub: jwt.Permission{
-						Allow: jwt.StringList{
-							"_INBOX.*",
-						},
-					},
-				},
-				Limits: jwt.Limits{
-					NatsLimits: jwt.NatsLimits{
-						Subs:    -1,
-						Payload: -1,
-						Data:    -1,
-					},
-				},
-			},
-		},
-	}
+	DefaultSyncUserTtl = 5 * time.Minute
 )
 
 func pathConfigOperatorSync(b *backend) []*framework.Path {

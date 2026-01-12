@@ -11,19 +11,16 @@ import (
 )
 
 var (
-	complexAccountClaimsSample = unmarshalToMap(fromAccountClaims(
-		&jwt.AccountClaims{
-			Account: jwt.Account{
-				GenericFields: jwt.GenericFields{
-					Tags: jwt.TagList{
-						"tag1",
-						"tag2",
-					},
-					Version: 2,
+	complexAccountClaimsSample = fromAccountClaims(
+		&jwt.Account{
+			GenericFields: jwt.GenericFields{
+				Tags: jwt.TagList{
+					"tag1",
+					"tag2",
 				},
 			},
 		},
-	))
+	)
 )
 
 func TestBackend_Account_Config(t *testing.T) {
@@ -36,15 +33,13 @@ func TestBackend_Account_Config(t *testing.T) {
 		{
 			name: "invalid jwt",
 			data: map[string]any{
-				"claims": unmarshalToMap(fromAccountClaims(
-					&jwt.AccountClaims{
-						Account: jwt.Account{
-							Imports: []*jwt.Import{
-								nil,
-							},
+				"claims": fromAccountClaims(
+					&jwt.Account{
+						Imports: []*jwt.Import{
+							nil,
 						},
 					},
-				)),
+				),
 			},
 			err: errors.New(`failed to encode account jwt: null import is not allowed`),
 		},
@@ -78,6 +73,27 @@ func TestBackend_Account_Config(t *testing.T) {
 			},
 			expected: map[string]any{
 				"claims": map[string]any{},
+				"status": map[string]any{
+					"is_managed":        false,
+					"is_system_account": false,
+				},
+			},
+		},
+		{
+			name: "set old-style claims",
+			data: map[string]any{
+				"claims": map[string]any{
+					"nats": map[string]any{
+						"tags": []string{"tag1", "tag2"},
+					},
+				},
+			},
+			expected: map[string]any{
+				"claims": map[string]any{
+					"nats": map[string]any{
+						"tags": []any{"tag1", "tag2"},
+					},
+				},
 				"status": map[string]any{
 					"is_managed":        false,
 					"is_system_account": false,

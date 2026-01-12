@@ -145,22 +145,33 @@ func (b *backend) pathEphemeralUserCredsRead(ctx context.Context, req *logical.R
 		return nil, fmt.Errorf("failed to decode public key: %w", err)
 	}
 
-	var claims *jwt.UserClaims
+	limitFlags := LimitFlags(0)
+	claims := jwt.NewUserClaims(sub)
 	if user.RawClaims != nil {
-		err = json.Unmarshal(user.RawClaims, &claims)
+		rawClaims := user.RawClaims
+
+		var claimsMap map[string]json.RawMessage
+		err = json.Unmarshal(rawClaims, &claimsMap)
 		if err != nil {
 			return nil, err
 		}
-	}
 
-	limitFlags := LimitFlags(0)
+		innerClaims, ok := claimsMap["nats"]
+		if ok {
+			// this is an old-style claims
+			rawClaims = innerClaims
+		}
 
-	if claims == nil {
-		claims = jwt.NewUserClaims(sub)
-	} else {
+		var opClaims jwt.User
+		err = json.Unmarshal(rawClaims, &opClaims)
+		if err != nil {
+			return nil, err
+		}
+
+		claims.User = opClaims
 		claims.Subject = sub
 
-		limitFlags, err = readLimitFlags(user.RawClaims)
+		limitFlags, err = readLimitFlags(rawClaims)
 		if err != nil {
 			return nil, err
 		}
@@ -178,7 +189,7 @@ func (b *backend) pathEphemeralUserCredsRead(ctx context.Context, req *logical.R
 		nbf:        nbf,
 	})
 	if err != nil {
-		return nil, err
+		return logical.ErrorResponse("failed to generate user creds: %s", err.Error()), nil
 	}
 
 	result := b.generateUserCreds(idKey, signingKey, claims, ttl)

@@ -16,24 +16,20 @@ func TestBackend_EphemeralUser_Config(_t *testing.T) {
 		expected map[string]any
 		err      error
 	}{
-		// jwt is created on the fly, not sure if we want to try to verify claims
-		// on config write also...
 		{
 			name: "invalid jwt",
 			data: map[string]any{
-				"claims": unmarshalToMap(fromUserClaims(
-					&jwt.UserClaims{
-						User: jwt.User{
-							UserPermissionLimits: jwt.UserPermissionLimits{
-								Permissions: jwt.Permissions{
-									Pub: jwt.Permission{
-										Allow: []string{""},
-									},
+				"claims": fromUserClaims(
+					&jwt.User{
+						UserPermissionLimits: jwt.UserPermissionLimits{
+							Permissions: jwt.Permissions{
+								Pub: jwt.Permission{
+									Allow: []string{""},
 								},
 							},
 						},
 					},
-				)),
+				),
 			},
 			err: errors.New(`validation error: subject cannot be empty`),
 		},
@@ -83,42 +79,55 @@ func TestBackend_EphemeralUser_Config(_t *testing.T) {
 			},
 		},
 		{
-			name: "set complex claims",
+			name: "set old-style claims",
 			data: map[string]any{
-				"claims": unmarshalToMap(fromUserClaims(
-					&jwt.UserClaims{
-						User: jwt.User{
-							UserPermissionLimits: jwt.UserPermissionLimits{
-								Permissions: jwt.Permissions{
-									Pub: jwt.Permission{
-										Allow: []string{"test-subject"},
-									},
-								},
-							},
-							GenericFields: jwt.GenericFields{
-								Tags: jwt.TagList{"k1:v1"},
-							},
-						},
+				"claims": map[string]any{
+					"nats": map[string]any{
+						"tags": []string{"tag1", "tag2"},
 					},
-				)),
+				},
 			},
 			expected: map[string]any{
-				"claims": unmarshalToMap(fromUserClaims(
-					&jwt.UserClaims{
-						User: jwt.User{
-							UserPermissionLimits: jwt.UserPermissionLimits{
-								Permissions: jwt.Permissions{
-									Pub: jwt.Permission{
-										Allow: []string{"test-subject"},
-									},
+				"claims": map[string]any{
+					"nats": map[string]any{
+						"tags": []any{"tag1", "tag2"},
+					},
+				},
+			},
+		},
+		{
+			name: "set complex claims",
+			data: map[string]any{
+				"claims": fromUserClaims(
+					&jwt.User{
+						UserPermissionLimits: jwt.UserPermissionLimits{
+							Permissions: jwt.Permissions{
+								Pub: jwt.Permission{
+									Allow: []string{"test-subject"},
 								},
 							},
-							GenericFields: jwt.GenericFields{
-								Tags: jwt.TagList{"k1:v1"},
-							},
+						},
+						GenericFields: jwt.GenericFields{
+							Tags: jwt.TagList{"k1:v1"},
 						},
 					},
-				)),
+				),
+			},
+			expected: map[string]any{
+				"claims": fromUserClaims(
+					&jwt.User{
+						UserPermissionLimits: jwt.UserPermissionLimits{
+							Permissions: jwt.Permissions{
+								Pub: jwt.Permission{
+									Allow: []string{"test-subject"},
+								},
+							},
+						},
+						GenericFields: jwt.GenericFields{
+							Tags: jwt.TagList{"k1:v1"},
+						},
+					},
+				),
 			},
 		},
 	}

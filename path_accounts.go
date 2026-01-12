@@ -291,6 +291,7 @@ func (b *backend) pathAccountCreateUpdate(ctx context.Context, req *logical.Requ
 		if !ok {
 			return logical.ErrorResponse("claims must be a map, got %T", claims), nil
 		}
+
 		rawClaims, err := json.Marshal(c)
 		if err != nil {
 			return nil, err

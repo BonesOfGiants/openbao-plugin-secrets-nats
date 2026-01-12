@@ -14,20 +14,18 @@ import (
 )
 
 var (
-	complexOperatorClaimsSample = unmarshalToMap(fromOperatorClaims(
-		&jwt.OperatorClaims{
-			Operator: jwt.Operator{
-				AccountServerURL: "https://example.com/jwt/v1",
-				GenericFields: jwt.GenericFields{
-					Tags: jwt.TagList{
-						"tag1",
-						"tag2",
-					},
-					Version: 2,
+	complexOperatorClaimsSample = fromOperatorClaims(
+		&jwt.Operator{
+			AccountServerURL: "https://example.com/jwt/v1",
+			GenericFields: jwt.GenericFields{
+				Tags: jwt.TagList{
+					"tag1",
+					"tag2",
 				},
+				Version: 2,
 			},
 		},
-	))
+	)
 )
 
 func TestBackend_Operator_Config(_t *testing.T) {
@@ -42,13 +40,11 @@ func TestBackend_Operator_Config(_t *testing.T) {
 		{
 			name: "invalid jwt",
 			data: map[string]any{
-				"claims": unmarshalToMap(fromOperatorClaims(
-					&jwt.OperatorClaims{
-						Operator: jwt.Operator{
-							AccountServerURL: "invalid-url",
-						},
+				"claims": fromOperatorClaims(
+					&jwt.Operator{
+						AccountServerURL: "invalid-url",
 					},
-				)),
+				),
 			},
 			err: errors.New(`failed to encode operator jwt: account server url "invalid-url" requires a protocol`),
 		},
@@ -122,6 +118,25 @@ func TestBackend_Operator_Config(_t *testing.T) {
 				"create_system_account": true,
 				"system_account_name":   "SYS",
 				"claims":                map[string]any{},
+			},
+		},
+		{
+			name: "set old-style claims",
+			data: map[string]any{
+				"claims": map[string]any{
+					"nats": map[string]any{
+						"tags": []string{"tag1", "tag2"},
+					},
+				},
+			},
+			expected: map[string]any{
+				"create_system_account": true,
+				"system_account_name":   "SYS",
+				"claims": map[string]any{
+					"nats": map[string]any{
+						"tags": []any{"tag1", "tag2"},
+					},
+				},
 			},
 		},
 		{
@@ -243,7 +258,7 @@ func TestBackend_Operator_SystemAccount(t *testing.T) {
 		sysConf := ReadConfig[accountEntry](b, sysId)
 		assert.True(b, sysConf.Status.IsManaged)
 		assert.True(b, sysConf.Status.IsSystemAccount)
-		assert.Equal(b, unmarshalToMap(fromAccountClaims(DefaultSysAccountClaims)), unmarshalToMap(sysConf.RawClaims))
+		assert.Equal(b, unmarshalToMap(DefaultSysAccountClaims), unmarshalToMap(sysConf.RawClaims))
 
 		// check jwt
 		opClaims := ReadJwt[*jwt.OperatorClaims](b, opId)

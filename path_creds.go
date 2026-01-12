@@ -168,22 +168,33 @@ func (b *backend) pathUserCredsRead(ctx context.Context, req *logical.Request, d
 		return nil, fmt.Errorf("failed to decode public key: %w", err)
 	}
 
-	var claims *jwt.UserClaims = nil
+	limitFlags := LimitFlags(0)
+	claims := jwt.NewUserClaims(sub)
 	if user.RawClaims != nil {
-		err = json.Unmarshal(user.RawClaims, &claims)
+		rawClaims := user.RawClaims
+
+		var claimsMap map[string]json.RawMessage
+		err = json.Unmarshal(rawClaims, &claimsMap)
 		if err != nil {
 			return nil, err
 		}
-	}
 
-	limitFlags := LimitFlags(0)
+		innerClaims, ok := claimsMap["nats"]
+		if ok {
+			// this is an old-style claims
+			rawClaims = innerClaims
+		}
 
-	if claims == nil {
-		claims = jwt.NewUserClaims(sub)
-	} else {
+		var opClaims jwt.User
+		err = json.Unmarshal(rawClaims, &opClaims)
+		if err != nil {
+			return nil, err
+		}
+
+		claims.User = opClaims
 		claims.Subject = sub
 
-		limitFlags, err = readLimitFlags(user.RawClaims)
+		limitFlags, err = readLimitFlags(rawClaims)
 		if err != nil {
 			return nil, err
 		}
@@ -258,21 +269,12 @@ func (b *backend) pathUserCredsExistenceCheck(ctx context.Context, req *logical.
 
 func readLimitFlags(claims json.RawMessage) (LimitFlags, error) {
 	// we need to futz with the raw mapping
-	// because the claims don't differentiate
+	// because the claims can't differentiate
 	// between missing and 0
-	var mapClaims map[string]any
-	err := json.Unmarshal(claims, &mapClaims)
+	var nats map[string]any
+	err := json.Unmarshal(claims, &nats)
 	if err != nil {
 		return 0, err
-	}
-
-	natsRaw, ok := mapClaims["nats"]
-	if !ok {
-		return 0, nil
-	}
-	nats, ok := natsRaw.(map[string]any)
-	if !ok {
-		return 0, nil
 	}
 
 	var flags LimitFlags
@@ -368,7 +370,22 @@ func (b *backend) userCredsRevoke(ctx context.Context, req *logical.Request, dat
 		return nil, nil
 	}
 
-	revocation := NewAccountRevocationWithParams(id, now, ttl)
+	revocation, err := b.AccountRevocation(ctx, req.Storage, id)
+	if err != nil {
+		return nil, err
+	}
+	if revocation != nil {
+		expirationTime := revocation.CreationTime.Add(revocation.Ttl)
+		remainingTtl := expirationTime.Sub(now)
+
+		if remainingTtl < ttl {
+			revocation.Ttl = ttl
+			revocation.CreationTime = now
+		}
+	} else {
+		revocation = NewAccountRevocationWithParams(id, now, ttl)
+	}
+
 	err = storeInStorage(ctx, req.Storage, id.configPath(), revocation)
 	if err != nil {
 		return nil, err

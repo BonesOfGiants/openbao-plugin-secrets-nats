@@ -591,3 +591,36 @@ func ReadServerConfigJson(t testContext, id operatorId, data map[string]any) map
 
 	return parsedConf
 }
+
+// Converts operator claims into map[string]any.
+// If the conversion fails, panic.
+func fromOperatorClaims(claims *jwt.Operator) map[string]any {
+	data, err := json.Marshal(claims)
+	if err != nil {
+		panic(err)
+	}
+
+	return unmarshalToMap(data)
+}
+
+// Converts account claims into map[string]any.
+// If the conversion fails, panic.
+func fromAccountClaims(claims *jwt.Account) map[string]any {
+	data, err := json.Marshal(claims)
+	if err != nil {
+		panic(err)
+	}
+
+	return unmarshalToMap(data)
+}
+
+// Converts user claims into map[string]any.
+// If the conversion fails, panic.
+func fromUserClaims(claims *jwt.User) map[string]any {
+	data, err := json.Marshal(claims)
+	if err != nil {
+		panic(err)
+	}
+
+	return unmarshalToMap(data)
+}

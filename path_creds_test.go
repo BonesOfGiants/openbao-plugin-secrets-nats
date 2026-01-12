@@ -13,6 +13,48 @@ import (
 )
 
 func TestBackend_Creds_Read(t *testing.T) {
+	t.Run("old-style template", func(t *testing.T) {
+		// run in a synctest bubble to accurately assess ttl/expires
+		synctest.Test(t, func(_t *testing.T) {
+			t := testBackend(_t)
+
+			claims := `
+			{
+				"nats": {
+					"tags": [
+						"test-tag"
+					]
+				}
+			}`
+
+			var parsedClaims jwt.UserClaims
+			err := json.Unmarshal([]byte(claims), &parsedClaims)
+
+			id := UserId("op1", "acc1", "user1")
+			SetupTestUser(t, id, map[string]any{
+				"claims": unmarshalToMap(json.RawMessage(claims)),
+			})
+
+			resp, err := ReadCreds(t, id, nil)
+			RequireNoRespError(t, resp, err)
+
+			creds, ok := resp.Data["creds"]
+			require.True(t, ok)
+
+			claimBytes, err := jwt.ParseDecoratedJWT([]byte(creds.(string)))
+			require.NoError(t, err)
+
+			rawClaims, err := jwt.Decode(claimBytes)
+			require.NoError(t, err)
+
+			userClaims, ok := rawClaims.(*jwt.UserClaims)
+			require.True(t, ok)
+
+			// user config
+			assert.Equal(t, parsedClaims.User.Tags, userClaims.User.Tags)
+		})
+	})
+
 	t.Run("complete claims", func(t *testing.T) {
 		// run in a synctest bubble to accurately assess ttl/expires
 		synctest.Test(t, func(_t *testing.T) {
@@ -130,10 +172,6 @@ func TestBackend_Creds_Read(t *testing.T) {
 
 			// check that the jwt and creds jwt are the same
 			assert.Equal(t, userJwt, string(claimBytes))
-
-			// custom claim data
-			assert.Equal(t, expected.ClaimsData.Audience, userClaims.ClaimsData.Audience)
-			assert.Equal(t, expected.ClaimsData.NotBefore, userClaims.ClaimsData.NotBefore)
 
 			// fixed claim data
 			accountPublicKey := ReadPublicKey(t, id.accountId())
@@ -540,22 +578,20 @@ func TestBackend_Creds_Tags(t *testing.T) {
 
 		id := UserId("op1", "acc1", "user1")
 		SetupTestUser(t, id, map[string]any{
-			"claims": unmarshalToMap(fromUserClaims(
-				&jwt.UserClaims{
-					User: jwt.User{
-						UserPermissionLimits: jwt.UserPermissionLimits{
-							Permissions: jwt.Permissions{
-								Pub: jwt.Permission{
-									Allow: []string{"test-subject"},
-								},
+			"claims": fromUserClaims(
+				&jwt.User{
+					UserPermissionLimits: jwt.UserPermissionLimits{
+						Permissions: jwt.Permissions{
+							Pub: jwt.Permission{
+								Allow: []string{"test-subject"},
 							},
 						},
-						GenericFields: jwt.GenericFields{
-							Tags: jwt.TagList{"k1:v1"},
-						},
+					},
+					GenericFields: jwt.GenericFields{
+						Tags: jwt.TagList{"k1:v1"},
 					},
 				},
-			)),
+			),
 		})
 
 		resp, err := ReadCreds(t, id, map[string]any{
@@ -573,22 +609,20 @@ func TestBackend_Creds_Tags(t *testing.T) {
 
 		id := UserId("op1", "acc1", "user1")
 		SetupTestUser(t, id, map[string]any{
-			"claims": unmarshalToMap(fromUserClaims(
-				&jwt.UserClaims{
-					User: jwt.User{
-						UserPermissionLimits: jwt.UserPermissionLimits{
-							Permissions: jwt.Permissions{
-								Pub: jwt.Permission{
-									Allow: []string{"test-subject"},
-								},
+			"claims": fromUserClaims(
+				&jwt.User{
+					UserPermissionLimits: jwt.UserPermissionLimits{
+						Permissions: jwt.Permissions{
+							Pub: jwt.Permission{
+								Allow: []string{"test-subject"},
 							},
 						},
-						GenericFields: jwt.GenericFields{
-							Tags: jwt.TagList{"k1:v1"},
-						},
+					},
+					GenericFields: jwt.GenericFields{
+						Tags: jwt.TagList{"k1:v1"},
 					},
 				},
-			)),
+			),
 		})
 
 		resp, err := ReadCreds(t, id, map[string]any{
@@ -606,22 +640,20 @@ func TestBackend_Creds_Tags(t *testing.T) {
 
 		id := UserId("op1", "acc1", "user1")
 		SetupTestUser(t, id, map[string]any{
-			"claims": unmarshalToMap(fromUserClaims(
-				&jwt.UserClaims{
-					User: jwt.User{
-						UserPermissionLimits: jwt.UserPermissionLimits{
-							Permissions: jwt.Permissions{
-								Pub: jwt.Permission{
-									Allow: []string{"test-subject"},
-								},
+			"claims": fromUserClaims(
+				&jwt.User{
+					UserPermissionLimits: jwt.UserPermissionLimits{
+						Permissions: jwt.Permissions{
+							Pub: jwt.Permission{
+								Allow: []string{"test-subject"},
 							},
 						},
-						GenericFields: jwt.GenericFields{
-							Tags: jwt.TagList{"k1:v1", "k1:v1"},
-						},
+					},
+					GenericFields: jwt.GenericFields{
+						Tags: jwt.TagList{"k1:v1", "k1:v1"},
 					},
 				},
-			)),
+			),
 		})
 
 		resp, err := ReadCreds(t, id, nil)

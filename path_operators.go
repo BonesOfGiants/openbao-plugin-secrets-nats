@@ -8,8 +8,6 @@ import (
 	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/shimtx"
 	"github.com/openbao/openbao/sdk/v2/framework"
 	"github.com/openbao/openbao/sdk/v2/logical"
-
-	"github.com/nats-io/jwt/v2"
 )
 
 const (
@@ -119,33 +117,27 @@ type OperatorReader interface {
 }
 
 var (
-	DefaultSysAccountClaims = &jwt.AccountClaims{
-		Account: jwt.Account{
-			Exports: jwt.Exports{
-				{
-					Name:                 "account-monitoring-services",
-					Subject:              "$SYS.REQ.ACCOUNT.*.*",
-					Type:                 jwt.Service,
-					ResponseType:         jwt.ResponseTypeStream,
-					AccountTokenPosition: 4,
-					Info: jwt.Info{
-						Description: `Request account specific monitoring services for: SUBSZ, CONNZ, LEAFZ, JSZ and INFO`,
-						InfoURL:     "https://docs.nats.io/nats-server/configuration/sys_accounts",
-					},
-				},
-				{
-					Name:                 "account-monitoring-streams",
-					Subject:              "$SYS.ACCOUNT.*.>",
-					Type:                 jwt.Stream,
-					AccountTokenPosition: 3,
-					Info: jwt.Info{
-						Description: `Account specific monitoring stream`,
-						InfoURL:     "https://docs.nats.io/nats-server/configuration/sys_accounts",
-					},
-				},
-			},
+	DefaultSysAccountClaims = json.RawMessage(`{
+	  "exports": [
+	  	{
+		  "name": "account-monitoring-services",
+		  "subject": "$SYS.REQ.ACCOUNT.*.*",
+		  "type": "service",
+		  "response_type": "Stream",
+		  "account_token_position": 4,
+		  "description": "Request account specific monitoring services for: SUBSZ, CONNZ, LEAFZ, JSZ and INFO",
+		  "info_url": "https://docs.nats.io/nats-server/configuration/sys_accounts"
 		},
-	}
+		{
+		  "name": "account-monitoring-streams",
+		  "subject": "$SYS.ACCOUNT.*.>",
+		  "type": "stream",
+		  "account_token_position": 3,
+		  "description": "Account specific monitoring stream",
+		  "info_url": "https://docs.nats.io/nats-server/configuration/sys_accounts"
+		}
+	  ]
+	}`)
 )
 
 func pathConfigOperator(b *backend) []*framework.Path {
@@ -340,7 +332,7 @@ func (b *backend) pathOperatorCreateUpdate(ctx context.Context, req *logical.Req
 					return logical.ErrorResponse("managed system account name %s clashes with existing account", operator.SysAccountName), nil
 				}
 			} else {
-				newAcc := NewAccountWithParams(accountId, fromAccountClaims(DefaultSysAccountClaims))
+				newAcc := NewAccountWithParams(accountId, DefaultSysAccountClaims)
 				newAcc.Status.IsManaged = true
 				newAcc.Status.IsSystemAccount = true
 				err = storeInStorage(ctx, req.Storage, newAcc.configPath(), newAcc)

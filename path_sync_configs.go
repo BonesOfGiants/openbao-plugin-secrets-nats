@@ -119,11 +119,12 @@ func pathConfigOperatorSync(b *backend) []*framework.Path {
 }
 
 func (b *backend) OperatorSync(ctx context.Context, s logical.Storage, id operatorId) (*operatorSyncConfigEntry, error) {
-	operator, err := getFromStorage[operatorSyncConfigEntry](ctx, s, id.syncConfigPath())
-	if operator != nil {
-		operator.operatorId = id
+	var sync *operatorSyncConfigEntry
+	err := get(ctx, s, id.configPath(), &sync)
+	if sync != nil {
+		sync.operatorId = id
 	}
-	return operator, err
+	return sync, err
 }
 
 func NewOperatorSync(id operatorId) *operatorSyncConfigEntry {

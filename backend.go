@@ -273,26 +273,20 @@ The best place to get started is using the "nats/operators/" endpoint to create
 a new operator.
 `
 
-func getFromStorage[T any](ctx context.Context, s logical.Storage, path string) (*T, error) {
-	if path == "" {
-		return nil, fmt.Errorf("missing path")
-	}
-
-	// get data entry from storage backend
+func get(ctx context.Context, s logical.Storage, path string, d any) error {
 	entry, err := s.Get(ctx, path)
 	if err != nil {
-		return nil, fmt.Errorf("error retrieving data: %w", err)
+		return err
 	}
 	if entry == nil {
-		return nil, nil
+		return nil
 	}
 
-	// convert json data to T
-	var t T
-	if err := entry.DecodeJSON(&t); err != nil {
-		return nil, fmt.Errorf("error decoding data: %w", err)
+	if err := entry.DecodeJSON(&d); err != nil {
+		return err
 	}
-	return &t, nil
+
+	return nil
 }
 
 type configPather interface {

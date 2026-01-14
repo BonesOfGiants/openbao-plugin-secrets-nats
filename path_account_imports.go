@@ -165,8 +165,9 @@ func pathConfigAccountImport(b *backend) []*framework.Path {
 	}
 }
 
-func (b *backend) AccountImport(ctx context.Context, storage logical.Storage, id accountImportId) (*accountImportEntry, error) {
-	imp, err := getFromStorage[accountImportEntry](ctx, storage, id.configPath())
+func (b *backend) AccountImport(ctx context.Context, s logical.Storage, id accountImportId) (*accountImportEntry, error) {
+	var imp *accountImportEntry
+	err := get(ctx, s, id.configPath(), &imp)
 	if imp != nil {
 		imp.accountImportId = id
 	}

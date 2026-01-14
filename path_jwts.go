@@ -91,8 +91,10 @@ type jwtPather interface {
 	jwtPath() string
 }
 
-func (b *backend) Jwt(ctx context.Context, storage logical.Storage, id jwtPather) (*jwtEntry, error) {
-	return getFromStorage[jwtEntry](ctx, storage, id.jwtPath())
+func (b *backend) Jwt(ctx context.Context, s logical.Storage, id jwtPather) (*jwtEntry, error) {
+	var jwt *jwtEntry
+	err := get(ctx, s, id.jwtPath(), &jwt)
+	return jwt, err
 }
 
 func (b *backend) pathOperatorJwtRead(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {

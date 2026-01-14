@@ -48,11 +48,12 @@ func OperatorIdField(d *framework.FieldData) operatorId {
 }
 
 func (id operatorId) Operator(ctx context.Context, s logical.Storage) (*operatorEntry, error) {
-	account, err := getFromStorage[operatorEntry](ctx, s, id.configPath())
-	if account != nil {
-		account.operatorId = id
+	var operator *operatorEntry
+	err := get(ctx, s, id.configPath(), &operator)
+	if operator != nil {
+		operator.operatorId = id
 	}
-	return account, err
+	return operator, err
 }
 
 func (id operatorId) OperatorId() operatorId {

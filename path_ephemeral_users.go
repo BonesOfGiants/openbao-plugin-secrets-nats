@@ -149,7 +149,8 @@ func NewEphemeralUserWithParams(
 }
 
 func (b *backend) EphemeralUser(ctx context.Context, s logical.Storage, id ephemeralUserId) (*ephemeralUserEntry, error) {
-	user, err := getFromStorage[ephemeralUserEntry](ctx, s, id.configPath())
+	var user *ephemeralUserEntry
+	err := get(ctx, s, id.configPath(), &user)
 	if user != nil {
 		user.ephemeralUserId = id
 	}

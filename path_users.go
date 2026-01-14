@@ -149,8 +149,9 @@ func pathConfigUser(b *backend) []*framework.Path {
 	}
 }
 
-func (b *backend) User(ctx context.Context, storage logical.Storage, id userId) (*userEntry, error) {
-	user, err := getFromStorage[userEntry](ctx, storage, id.configPath())
+func (b *backend) User(ctx context.Context, s logical.Storage, id userId) (*userEntry, error) {
+	var user *userEntry
+	err := get(ctx, s, id.configPath(), &user)
 	if user != nil {
 		user.userId = id
 	}

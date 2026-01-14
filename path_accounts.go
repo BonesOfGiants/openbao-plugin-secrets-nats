@@ -65,7 +65,8 @@ func AccountIdField(d *framework.FieldData) accountId {
 }
 
 func (id accountId) Account(ctx context.Context, s logical.Storage) (*accountEntry, error) {
-	account, err := getFromStorage[accountEntry](ctx, s, id.configPath())
+	var account *accountEntry
+	err := get(ctx, s, id.configPath(), &account)
 	if account != nil {
 		account.accountId = id
 	}

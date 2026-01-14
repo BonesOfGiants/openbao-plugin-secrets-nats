@@ -106,12 +106,13 @@ func pathConfigAccountRevocation(b *backend) []*framework.Path {
 	}
 }
 
-func (b *backend) AccountRevocation(ctx context.Context, storage logical.Storage, id accountRevocationId) (*accountRevocationEntry, error) {
-	rev, err := getFromStorage[accountRevocationEntry](ctx, storage, id.configPath())
-	if rev != nil {
-		rev.accountRevocationId = id
+func (b *backend) AccountRevocation(ctx context.Context, s logical.Storage, id accountRevocationId) (*accountRevocationEntry, error) {
+	var revocation *accountRevocationEntry
+	err := get(ctx, s, id.configPath(), &revocation)
+	if revocation != nil {
+		revocation.accountRevocationId = id
 	}
-	return rev, err
+	return revocation, err
 }
 
 func NewAccountRevocation(id accountRevocationId) *accountRevocationEntry {

@@ -334,7 +334,8 @@ func pathNkey(b *backend) []*framework.Path {
 }
 
 func (b *backend) Nkey(ctx context.Context, s logical.Storage, id nkeyId) (*nkeyEntry, error) {
-	nkey, err := getFromStorage[nkeyEntry](ctx, s, id.nkeyPath())
+	var nkey *nkeyEntry
+	err := get(ctx, s, id.nkeyPath(), &nkey)
 	if err != nil {
 		return nil, err
 	}

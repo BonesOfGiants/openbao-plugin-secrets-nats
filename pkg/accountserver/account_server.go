@@ -1,4 +1,4 @@
-package accountsync
+package accountserver
 
 import (
 	"encoding/json"
@@ -13,8 +13,11 @@ import (
 )
 
 const (
-	SysClaimsUpdateSubject = "$SYS.REQ.CLAIMS.UPDATE"
-	SysClaimsDeleteSubject = "$SYS.REQ.CLAIMS.DELETE"
+	SysClaimsUpdateSubject        = "$SYS.REQ.CLAIMS.UPDATE"
+	SysClaimsDeleteSubject        = "$SYS.REQ.CLAIMS.DELETE"
+	SysAccountClaimsLookupSubject = "$SYS.REQ.ACCOUNT.*.CLAIMS.LOOKUP"
+	accLookupReqTokens            = 6
+	accReqAccIndex                = 3
 )
 
 type Config struct {
@@ -22,64 +25,60 @@ type Config struct {
 	IgnoreSyncErrorsOnDelete bool
 }
 
-type AccountSync struct {
+type JwtLookupFunc func(id string) (string, error)
+type AccountServer struct {
 	Config
 
+	lookup JwtLookupFunc
 	logger hclog.Logger
 	nc     abstractnats.NatsConnection
 }
 
-type natsConn struct {
-	c *nats.Conn
-}
+func NewAccountServer(syncConfig Config, lookupFunc JwtLookupFunc, logger hclog.Logger, nc abstractnats.NatsConnection) (*AccountServer, error) {
+	server := &AccountServer{
+		Config: syncConfig,
+		lookup: lookupFunc,
+		logger: logger,
+		nc:     nc,
+	}
 
-func (c *natsConn) Close() {
-	c.c.Close()
-}
-
-func (c *natsConn) Servers() []string {
-	return c.c.Opts.Servers
-}
-
-func (c *natsConn) SubscribeSync(subj string) (abstractnats.NatsSubscription, error) {
-	return c.c.SubscribeSync(subj)
-}
-
-func (c *natsConn) PublishRequest(subj string, reply string, data []byte) error {
-	return c.c.PublishRequest(subj, reply, data)
-}
-
-func NewNatsConnection(servers []string, o ...nats.Option) (abstractnats.NatsConnection, error) {
-	url := strings.Join(servers, ",")
-
-	c, err := nats.Connect(url, o...)
+	_, err := nc.Subscribe(SysAccountClaimsLookupSubject, server.accountLookupRequest)
 	if err != nil {
 		return nil, err
 	}
 
-	return &natsConn{
-		c: c,
-	}, nil
+	return server, nil
 }
 
-func NewAccountSync(syncConfig Config, logger hclog.Logger, nc abstractnats.NatsConnection) (*AccountSync, error) {
-	return &AccountSync{
-		Config: syncConfig,
-		logger: logger,
-		nc:     nc,
-	}, nil
-}
-
-func (r *AccountSync) CloseConnection() {
+func (r *AccountServer) CloseConnection() {
 	if r != nil {
 		if r.nc != nil {
 			r.logger.Debug("sync: closing connection", "operator", r.Operator, "servers", r.nc.Servers())
-			r.nc.Close()
+			r.nc.Drain()
 		}
 	}
 }
 
-func (r *AccountSync) claimUpdateRequest(subject string, data []byte, timeout time.Duration) error {
+func (r *AccountServer) accountLookupRequest(msg *abstractnats.Msg) {
+	tk := strings.Split(msg.Subject, ".")
+	if len(tk) != accLookupReqTokens {
+		return
+	}
+
+	acc := tk[accReqAccIndex]
+	jwt, err := r.lookup(acc)
+	if err != nil {
+		r.logger.Debug("sync: failed to lookup jwt", "operator", r.Operator, "id", acc, "error", err)
+	}
+
+	// if the jwt is not found "" will be returned. An empty response is valid to signal absence of a jwt.
+	err = msg.Respond([]byte(jwt))
+	if err != nil {
+		r.logger.Debug("sync: error returning jwt lookup", "operator", r.Operator, "id", acc, "error", err)
+	}
+}
+
+func (r *AccountServer) claimUpdateRequest(subject string, data []byte, timeout time.Duration) error {
 	ib := nats.NewInbox()
 	sub, err := r.nc.SubscribeSync(ib)
 	if err != nil {
@@ -123,7 +122,7 @@ func (r *AccountSync) claimUpdateRequest(subject string, data []byte, timeout ti
 	return nil
 }
 
-func (r *AccountSync) DeleteAccount(accKey nkeys.KeyPair, signingKey nkeys.KeyPair) error {
+func (r *AccountServer) DeleteAccount(accKey nkeys.KeyPair, signingKey nkeys.KeyPair) error {
 	subject, err := signingKey.PublicKey()
 	if err != nil {
 		return err
@@ -150,7 +149,7 @@ func (r *AccountSync) DeleteAccount(accKey nkeys.KeyPair, signingKey nkeys.KeyPa
 	return nil
 }
 
-func (r *AccountSync) UpdateAccount(token string) error {
+func (r *AccountServer) UpdateAccount(token string) error {
 	err := r.claimUpdateRequest(SysClaimsUpdateSubject, []byte(token), 1*time.Second)
 	if err != nil {
 		return err

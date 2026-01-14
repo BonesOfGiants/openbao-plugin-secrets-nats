@@ -226,10 +226,16 @@ func (b *backend) pathOperatorSyncCreateUpdate(ctx context.Context, req *logical
 	resp := &logical.Response{}
 
 	if syncDirty {
-		accountSync := b.popOperatorSync(id.op)
+		accountSync := b.popAccountServer(id.op)
 		if accountSync != nil {
 			accountSync.CloseConnection()
 		}
+	}
+
+	// get account server to ensure it exists for lookups
+	_, err = b.getAccountServer(ctx, req.Storage, operator.operatorId)
+	if err != nil {
+		return nil, err
 	}
 
 	// todo investigate sync having issues when servers are changed

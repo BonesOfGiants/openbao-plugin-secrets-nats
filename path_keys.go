@@ -556,7 +556,7 @@ func (b *backend) pathOperatorSigningNkeyDelete(ctx context.Context, req *logica
 	}
 
 	if len(updatedAccounts) > 0 {
-		accountSync, err := b.getAccountSync(ctx, req.Storage, id.operatorId())
+		accountSync, err := b.getAccountServer(ctx, req.Storage, id.operatorId())
 		if err != nil {
 			b.Logger().Warn("failed to retrieve account sync", "operator", id.op, "error", err)
 			resp.AddWarning(fmt.Sprintf("unable to sync account jwts: %s", err))
@@ -564,7 +564,7 @@ func (b *backend) pathOperatorSigningNkeyDelete(ctx context.Context, req *logica
 			for _, accId := range updatedAccounts {
 				// handle case where cached instance is invalidated
 				if accountSync == nil {
-					accountSync, err = b.getAccountSync(ctx, req.Storage, id.operatorId())
+					accountSync, err = b.getAccountServer(ctx, req.Storage, id.operatorId())
 					if err != nil {
 						b.Logger().Warn("failed to retrieve account sync", "operator", id.op, "error", err)
 						resp.AddWarning(fmt.Sprintf("unable to sync account jwts: %s", err))
@@ -740,7 +740,7 @@ func (b *backend) pathAccountSigningNkeyCreateUpdate(ctx context.Context, req *l
 	}
 
 	if jwtDirty {
-		accountSync, err := b.getAccountSync(ctx, req.Storage, id.operatorId())
+		accountSync, err := b.getAccountServer(ctx, req.Storage, id.operatorId())
 		if err != nil {
 			b.Logger().Warn("failed to retrieve account sync", "operator", id.op, "account", id.acc, "error", err)
 			resp.AddWarning(fmt.Sprintf("unable to sync jwt for account %q: %s", id.acc, err))
@@ -848,6 +848,33 @@ func (b *backend) pathAccountSigningNkeyList(ctx context.Context, req *logical.R
 	}
 
 	return logical.ListResponse(entries), nil
+}
+
+func (b *backend) listAccountIdentityKeys(
+	ctx context.Context,
+	storage logical.Storage,
+	id operatorId,
+) iter.Seq2[*nkeyEntry, error] {
+	return func(yield func(*nkeyEntry, error) bool) {
+		for p, err := range listPaged(ctx, storage, id.accountsConfigPrefix(), DefaultPagingSize) {
+			if err != nil {
+				yield(nil, err)
+				return
+			}
+
+			nkey, err := b.Nkey(ctx, storage, id.accountId(p))
+			if err != nil {
+				_ = yield(nil, err)
+				return
+			}
+			if nkey == nil {
+				continue
+			}
+			if !yield(nkey, nil) {
+				return
+			}
+		}
+	}
 }
 
 func (b *backend) listAccountSigningKeys(

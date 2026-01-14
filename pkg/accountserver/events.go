@@ -1,4 +1,4 @@
-package accountsync
+package accountserver
 
 import (
 	"fmt"

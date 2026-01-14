@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/abstractnats"
-	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/accountsync"
+	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/accountserver"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/nats-io/jwt/v2"
 	nats "github.com/nats-io/nats.go"
@@ -53,10 +53,6 @@ const (
 	DefaultPagingSize = 100
 )
 
-type configPather interface {
-	configPath() string
-}
-
 var (
 	operatorField = &framework.FieldSchema{
 		Type:        framework.TypeString,
@@ -95,15 +91,21 @@ var (
 	PluginVersion string
 )
 
-type SyncConnectionFunc func(servers []string, o ...nats.Option) (abstractnats.NatsConnection, error)
+type NatsConnectionFunc func(servers []string, o ...nats.Option) (abstractnats.NatsConnection, error)
 
 type backend struct {
 	*framework.Backend
 
-	NewSyncConnection SyncConnectionFunc
+	// A cached storage instance used for account lookups.
+	s logical.Storage
 
-	operatorSyncLock  sync.RWMutex
-	operatorSyncCache map[string]*accountsync.AccountSync
+	NatsConnectionFunc NatsConnectionFunc
+
+	accServerLock  sync.RWMutex
+	accServerCache map[string]*accountserver.AccountServer
+
+	accCacheLock       sync.RWMutex
+	accNkeyToNameCache map[string]map[string]string
 
 	// todo metrics? (see pki/database)
 }
@@ -119,8 +121,9 @@ func Factory(ctx context.Context, conf *logical.BackendConfig) (logical.Backend,
 func Backend() *backend {
 	var b = backend{}
 
-	b.NewSyncConnection = accountsync.NewNatsConnection
-	b.operatorSyncCache = map[string]*accountsync.AccountSync{}
+	b.NatsConnectionFunc = abstractnats.NewNatsConnection
+	b.accNkeyToNameCache = map[string]map[string]string{}
+	b.accServerCache = map[string]*accountserver.AccountServer{}
 	b.Backend = &framework.Backend{
 		Help: strings.TrimSpace(backendHelp),
 		PathsSpecial: &logical.Paths{
@@ -149,6 +152,7 @@ func Backend() *backend {
 		Secrets: []*framework.Secret{
 			b.userCredsSecretType(),
 		},
+		InitializeFunc:    b.initialize,
 		BackendType:       logical.TypeLogical,
 		WALRollback:       b.walRollback,
 		WALRollbackMinAge: minRollbackAge,
@@ -159,38 +163,111 @@ func Backend() *backend {
 	return &b
 }
 
-func (b *backend) getOperatorSync(name string) *accountsync.AccountSync {
-	b.operatorSyncLock.RLock()
-	defer b.operatorSyncLock.RUnlock()
-	return b.operatorSyncCache[name]
+func (b *backend) writeAccountToCache(id accountId, key string) {
+	b.accCacheLock.Lock()
+	defer b.accCacheLock.Unlock()
+	opCache, ok := b.accNkeyToNameCache[id.op]
+	if !ok {
+		opCache = map[string]string{}
+		b.accNkeyToNameCache[id.op] = opCache
+	}
+
+	opCache[key] = id.acc
 }
 
-func (b *backend) putOperatorSync(name string, sync *accountsync.AccountSync) {
-	b.operatorSyncLock.Lock()
-	defer b.operatorSyncLock.Unlock()
-	b.operatorSyncCache[name] = sync
-}
-
-func (b *backend) popOperatorSync(name string) *accountsync.AccountSync {
-	b.operatorSyncLock.Lock()
-	defer b.operatorSyncLock.Unlock()
-	sync, ok := b.operatorSyncCache[name]
+func (b *backend) accountNameFromNkey(ctx context.Context, s logical.Storage, id operatorId, key string) (string, bool) {
+	b.accCacheLock.RLock()
+	opCache, ok := b.accNkeyToNameCache[id.op]
 	if ok {
-		delete(b.operatorSyncCache, name)
+		acc, ok := opCache[key]
+		if ok {
+			return acc, true
+		}
+	}
+	b.accCacheLock.RUnlock()
+
+	err := b.refreshNkeyCache(ctx, s, id)
+	if err != nil {
+		return "", false
+	}
+
+	b.accCacheLock.RLock()
+	opCache, ok = b.accNkeyToNameCache[id.op]
+	if ok {
+		acc, ok := opCache[key]
+		if ok {
+			return acc, true
+		}
+	}
+	b.accCacheLock.RUnlock()
+
+	return "", false
+}
+
+func (b *backend) refreshNkeyCache(ctx context.Context, s logical.Storage, id operatorId) error {
+	for nkey, err := range b.listAccountIdentityKeys(ctx, s, id) {
+		if err != nil {
+			return err
+		}
+
+		key, err := nkey.publicKey()
+		if err != nil {
+			return err
+		}
+
+		b.writeAccountToCache(id.accountId(nkey.nkeyName()), key)
+	}
+
+	return nil
+}
+
+func (b *backend) accountJwtLookupFunc(id operatorId) accountserver.JwtLookupFunc {
+	return func(key string) (string, error) {
+		acc, ok := b.accountNameFromNkey(context.TODO(), b.s, id, key)
+		if !ok {
+			return "", nil
+		}
+
+		jwt, err := b.Jwt(context.TODO(), b.s, id.accountId(acc))
+		if err != nil {
+			return "", err
+		}
+
+		return jwt.Token, nil
+	}
+}
+
+func (b *backend) putAccountServer(name string, sync *accountserver.AccountServer) {
+	b.accServerLock.Lock()
+	defer b.accServerLock.Unlock()
+	b.accServerCache[name] = sync
+}
+
+func (b *backend) popAccountServer(name string) *accountserver.AccountServer {
+	b.accServerLock.Lock()
+	defer b.accServerLock.Unlock()
+	sync, ok := b.accServerCache[name]
+	if ok {
+		delete(b.accServerCache, name)
 	}
 	return sync
 }
 
-func (b *backend) clearOperatorSync() map[string]*accountsync.AccountSync {
-	b.operatorSyncLock.Lock()
-	defer b.operatorSyncLock.Unlock()
-	old := b.operatorSyncCache
-	b.operatorSyncCache = make(map[string]*accountsync.AccountSync)
+func (b *backend) clearAccountServers() map[string]*accountserver.AccountServer {
+	b.accServerLock.Lock()
+	defer b.accServerLock.Unlock()
+	old := b.accServerCache
+	b.accServerCache = make(map[string]*accountserver.AccountServer)
 	return old
 }
 
+func (b *backend) initialize(ctx context.Context, req *logical.InitializationRequest) error {
+	b.s = req.Storage
+	return nil
+}
+
 const backendHelp = `
-A fully-managed interface for NATS JWT authentication/authorization in OpenBao.
+A declarative interface for NATS JWT authentication/authorization in OpenBao.
 
 The best place to get started is using the "nats/operators/" endpoint to create
 a new operator.
@@ -216,6 +293,10 @@ func getFromStorage[T any](ctx context.Context, s logical.Storage, path string) 
 		return nil, fmt.Errorf("error decoding data: %w", err)
 	}
 	return &t, nil
+}
+
+type configPather interface {
+	configPath() string
 }
 
 func deleteFromStorage(ctx context.Context, s logical.Storage, path string) error {
@@ -270,7 +351,7 @@ func listPaged(
 }
 
 func (b *backend) periodicFunc(ctx context.Context, req *logical.Request) error {
-	b.Logger().Trace("Periodic: starting periodic func for syncing accounts to nats")
+	b.Logger().Trace("starting periodic refresh")
 	txRollback, err := logical.StartTxStorage(ctx, req)
 	if err != nil {
 		return err
@@ -282,8 +363,15 @@ func (b *backend) periodicFunc(ctx context.Context, req *logical.Request) error 
 			return err
 		}
 
-		if err = b.periodicRefreshAccounts(ctx, req.Storage, OperatorId(op)); err != nil {
-			b.Logger().Warn("periodic refresh failed", "error", err)
+		id := OperatorId(op)
+
+		// ensure account server is live for applicable operators
+		if _, err := b.getAccountServer(ctx, req.Storage, id); err != nil {
+			b.Logger().Warn("periodic: failed to ensure account server", "error", err)
+		}
+
+		if err = b.periodicRefreshAccounts(ctx, req.Storage, id); err != nil {
+			b.Logger().Warn("periodic: failed to refresh accounts", "error", err)
 		}
 	}
 
@@ -319,7 +407,7 @@ func (b *backend) periodicPruneAccountRevocations(ctx context.Context, storage l
 	return dirty, nil
 }
 
-func (b *backend) getAccountSync(ctx context.Context, storage logical.Storage, id operatorId) (*accountsync.AccountSync, error) {
+func (b *backend) getAccountServer(ctx context.Context, storage logical.Storage, id operatorId) (*accountserver.AccountServer, error) {
 	syncConfig, err := b.OperatorSync(ctx, storage, id)
 	if err != nil {
 		return nil, err
@@ -331,9 +419,11 @@ func (b *backend) getAccountSync(ctx context.Context, storage logical.Storage, i
 		return nil, nil
 	}
 
-	sync := b.getOperatorSync(id.op)
+	b.accServerLock.RLock()
+	srv := b.accServerCache[id.op]
+	b.accServerLock.RUnlock()
 
-	if sync == nil {
+	if srv == nil {
 		idKey, err := nkeys.CreateUser()
 		if err != nil {
 			return nil, fmt.Errorf("failed to create user identity key: %w", err)
@@ -364,12 +454,14 @@ func (b *backend) getAccountSync(ctx context.Context, storage logical.Storage, i
 					Permissions: jwt.Permissions{
 						Pub: jwt.Permission{
 							Allow: jwt.StringList{
-								accountsync.SysClaimsUpdateSubject,
-								accountsync.SysClaimsDeleteSubject,
+								accountserver.SysClaimsUpdateSubject,
+								accountserver.SysClaimsDeleteSubject,
+								"_INBOX.*",
 							},
 						},
 						Sub: jwt.Permission{
 							Allow: jwt.StringList{
+								accountserver.SysAccountClaimsLookupSubject,
 								"_INBOX.*",
 							},
 						},
@@ -404,9 +496,9 @@ func (b *backend) getAccountSync(ctx context.Context, storage logical.Storage, i
 			return nil, fmt.Errorf("failed to encode user jwt: %w", result)
 		}
 
-		nc, err := b.NewSyncConnection(
+		nc, err := b.NatsConnectionFunc(
 			syncConfig.Servers,
-			nats.Name("openbao_account_sync"),
+			nats.Name("openbao_account_server"),
 			nats.UserJWTAndSeed(result.jwt, string(seed)),
 			nats.Timeout(syncConfig.ConnectTimeout),
 			nats.ReconnectWait(syncConfig.ReconnectWait),
@@ -414,7 +506,7 @@ func (b *backend) getAccountSync(ctx context.Context, storage logical.Storage, i
 			nats.DisconnectErrHandler(func(c *nats.Conn, err error) {
 				b.Logger().Debug("sync: disconnected from nats", "url", c.ConnectedUrl(), "error", err)
 				// invalidate cached conn
-				sync := b.popOperatorSync(id.op)
+				sync := b.popAccountServer(id.op)
 				if sync != nil {
 					sync.CloseConnection()
 				}
@@ -425,7 +517,7 @@ func (b *backend) getAccountSync(ctx context.Context, storage logical.Storage, i
 			nats.ClosedHandler(func(c *nats.Conn) {
 				b.Logger().Debug("sync: connection to nats server closed", "url", c.ConnectedUrl())
 				// invalidate cached conn
-				sync := b.popOperatorSync(id.op)
+				sync := b.popAccountServer(id.op)
 				if sync != nil {
 					sync.CloseConnection()
 				}
@@ -435,24 +527,27 @@ func (b *backend) getAccountSync(ctx context.Context, storage logical.Storage, i
 			return nil, err
 		}
 
-		sync, err = accountsync.NewAccountSync(
-			accountsync.Config{
+		srv, err = accountserver.NewAccountServer(
+			accountserver.Config{
+				Operator:                 id.op,
 				IgnoreSyncErrorsOnDelete: syncConfig.IgnoreSyncErrorsOnDelete,
 			},
+			b.accountJwtLookupFunc(id),
 			b.Logger(),
 			nc,
 		)
+
 		if err != nil {
 			return nil, err
 		}
-		b.putOperatorSync(id.op, sync)
+		b.putAccountServer(id.op, srv)
 	}
 
-	return sync, nil
+	return srv, nil
 }
 
 func (b *backend) periodicRefreshAccounts(ctx context.Context, s logical.Storage, opId operatorId) error {
-	var accountSync *accountsync.AccountSync
+	var accountSync *accountserver.AccountServer
 
 	for name, err := range listPaged(ctx, s, opId.accountsConfigPrefix(), DefaultPagingSize) {
 		if err != nil {
@@ -480,7 +575,7 @@ func (b *backend) periodicRefreshAccounts(ctx context.Context, s logical.Storage
 			}
 
 			if accountSync == nil {
-				accountSync, err = b.getAccountSync(ctx, s, opId)
+				accountSync, err = b.getAccountServer(ctx, s, opId)
 				if err != nil {
 					b.Logger().Warn("failed to create account sync", "operator", opId.op, "error", err)
 				}
@@ -503,10 +598,10 @@ func (b *backend) periodicRefreshAccounts(ctx context.Context, s logical.Storage
 type syncErrors map[string]error
 
 func (b *backend) syncOperatorAccounts(ctx context.Context, s logical.Storage, id operatorId) (syncErrors, error) {
-	accountSync, err := b.getAccountSync(ctx, s, id)
+	srv, err := b.getAccountServer(ctx, s, id)
 	if err != nil {
 		return nil, err
-	} else if accountSync == nil {
+	} else if srv == nil {
 		b.Logger().Debug("sync not configured", "operator", id.op)
 		return nil, nil
 	}
@@ -520,20 +615,20 @@ func (b *backend) syncOperatorAccounts(ctx context.Context, s logical.Storage, i
 		}
 
 		// todo improve cache invalidation handling
-		if accountSync == nil {
-			accountSync, err := b.getAccountSync(ctx, s, id)
+		if srv == nil {
+			srv, err = b.getAccountServer(ctx, s, id)
 			if err != nil {
 				return nil, err
-			} else if accountSync == nil {
+			} else if srv == nil {
 				b.Logger().Debug("sync not configured", "operator", id.op)
 				return nil, nil
 			}
 		}
 
-		err = b.syncAccountUpdate(ctx, s, accountSync, id.accountId(acc))
+		err = b.syncAccountUpdate(ctx, s, srv, id.accountId(acc))
 		if err != nil {
 			errors[acc] = err
-			accountSync = nil
+			srv = nil
 		}
 	}
 
@@ -568,7 +663,7 @@ func (b *backend) syncOperatorAccounts(ctx context.Context, s logical.Storage, i
 }
 
 func (b *backend) clean(_ context.Context) {
-	cache := b.clearOperatorSync()
+	cache := b.clearAccountServers()
 
 	for _, v := range cache {
 		v.CloseConnection()
@@ -596,7 +691,7 @@ func (b *backend) walRollback(ctx context.Context, req *logical.Request, kind st
 		return nil
 	}
 
-	accountsrv, err := b.getAccountSync(ctx, req.Storage, id.operatorId())
+	accountsrv, err := b.getAccountServer(ctx, req.Storage, id.operatorId())
 	if err != nil {
 		return err
 	}

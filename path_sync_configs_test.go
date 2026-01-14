@@ -2,9 +2,11 @@ package natsbackend
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/abstractnats"
+	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/accountserver"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -174,5 +176,43 @@ func TestBackend_Operator_SyncConfig_Update(t *testing.T) {
 		ExpectDeleteSync(t, nats, opPublicKey, accPublicKey)
 
 		DeleteConfig(t, accId)
+	})
+}
+
+func TestBackend_Operator_SyncConfig_Lookup(t *testing.T) {
+	t.Run("lookup", func(_t *testing.T) {
+		nats := abstractnats.NewMock(_t)
+		t := testBackendWithNats(_t, nats)
+
+		id := OperatorId("op1")
+		SetupTestOperator(t, id, map[string]any{
+			"create_system_account": true,
+		})
+
+		accId := id.accountId("acc1")
+		SetupTestAccount(t, accId, nil)
+
+		publicKey := ReadPublicKey(t, accId)
+		resp, err := ReadJwtRaw(t, accId)
+		RequireNoRespError(t, resp, err)
+		jwt := resp.Data["jwt"].(string)
+
+		subject := strings.Replace(accountserver.SysAccountClaimsLookupSubject, "*", publicKey, 1)
+		reply := "_INBOX.123"
+		sub := nats.ExpectSubscription(accountserver.SysAccountClaimsLookupSubject)
+
+		// queue up the call
+		sub.Publish(subject, reply, nil)
+
+		nats.ExpectPublish(reply, func(m abstractnats.MockNatsConnection, subj, reply string, data []byte) error {
+			assert.Equal(t, jwt, string(data))
+			return nil
+		})
+
+		resp, err = WriteSyncConfig(t, id, map[string]any{
+			"servers":  []string{"nats://localhost:4222"},
+			"sync_now": false,
+		})
+		RequireNoRespError(t, resp, err)
 	})
 }

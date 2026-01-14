@@ -318,7 +318,7 @@ func (b *backend) pathAccountImportCreateUpdate(ctx context.Context, req *logica
 	}
 
 	if jwtDirty {
-		accountSync, err := b.getAccountSync(ctx, req.Storage, id.operatorId())
+		accountSync, err := b.getAccountServer(ctx, req.Storage, id.operatorId())
 		if err != nil {
 			b.Logger().Warn("failed to retrieve account sync", "operator", id.op, "account", id.acc, "error", err)
 			resp.AddWarning(fmt.Sprintf("unable to sync jwt for account %q: %s", id.acc, err))
@@ -433,7 +433,7 @@ func (b *backend) pathAccountImportDelete(ctx context.Context, req *logical.Requ
 		return nil, err
 	}
 
-	accountSync, err := b.getAccountSync(ctx, req.Storage, id.operatorId())
+	accountSync, err := b.getAccountServer(ctx, req.Storage, id.operatorId())
 	if err != nil {
 		b.Logger().Warn("failed to retrieve account sync", "operator", id.op, "account", id.acc, "error", err)
 		resp.AddWarning(fmt.Sprintf("unable to sync jwt for account %q: %s", id.acc, err))

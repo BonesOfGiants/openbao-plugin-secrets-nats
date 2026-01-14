@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/abstractnats"
-	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/accountsync"
+	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/accountserver"
 	"github.com/nats-io/jwt/v2"
 	nats "github.com/nats-io/nats.go"
 	"github.com/openbao/openbao/sdk/v2/logical"
@@ -47,9 +47,9 @@ todo: list of things that still need tests:
 func testFactory(ctx context.Context, conf *logical.BackendConfig, n abstractnats.MockNatsConnection) (logical.Backend, error) {
 	b := Backend()
 	if n != nil {
-		b.NewSyncConnection = n.NewMockConnection
+		b.NatsConnectionFunc = n.NewMockConnection
 	} else {
-		b.NewSyncConnection = func(_ []string, _ ...nats.Option) (abstractnats.NatsConnection, error) {
+		b.NatsConnectionFunc = func(_ []string, _ ...nats.Option) (abstractnats.NatsConnection, error) {
 			return nil, errors.New(`must pass a nats mock to create nats connections in unit tests`)
 		}
 	}
@@ -57,6 +57,7 @@ func testFactory(ctx context.Context, conf *logical.BackendConfig, n abstractnat
 	if err := b.Setup(ctx, conf); err != nil {
 		return nil, err
 	}
+
 	return b, nil
 }
 
@@ -78,6 +79,10 @@ func testBackend(tb testing.TB) testContext {
 		tb.Fatal(err)
 	}
 
+	b.Initialize(context.Background(), &logical.InitializationRequest{
+		Storage: config.StorageView,
+	})
+
 	return testContext{
 		TB:      tb,
 		Backend: b,
@@ -96,6 +101,10 @@ func testBackendWithNats(tb testing.TB, n abstractnats.MockNatsConnection) testC
 	if err != nil {
 		tb.Fatal(err)
 	}
+
+	b.Initialize(context.Background(), &logical.InitializationRequest{
+		Storage: config.StorageView,
+	})
 
 	return testContext{
 		TB:      tb,
@@ -510,13 +519,15 @@ func ExpectUpdateSync(t testContext, m abstractnats.MockNatsConnection, outJwt *
 	t.Helper()
 
 	sub := m.ExpectInboxSubscription()
-	m.ExpectPublish(accountsync.SysClaimsUpdateSubject, func(_ abstractnats.MockNatsConnection, subj, reply string, data []byte) error {
+	m.ExpectPublish(accountserver.SysClaimsUpdateSubject, func(_ abstractnats.MockNatsConnection, subj, reply string, data []byte) error {
 		t.Helper()
 
 		assert.Equal(t, sub.Subject(), reply, "reply inbox does not match")
-		*outJwt = string(data)
+		if outJwt != nil {
+			*outJwt = string(data)
+		}
 
-		msg := &accountsync.ServerAPIClaimUpdateResponse{}
+		msg := &accountserver.ServerAPIClaimUpdateResponse{}
 
 		msgBytes, err := json.Marshal(msg)
 		require.NoError(t, err)
@@ -531,7 +542,7 @@ func ExpectDeleteSync(t testContext, m abstractnats.MockNatsConnection, operator
 	t.Helper()
 
 	sub := m.ExpectInboxSubscription()
-	m.ExpectPublish(accountsync.SysClaimsDeleteSubject, func(_ abstractnats.MockNatsConnection, subj, reply string, data []byte) error {
+	m.ExpectPublish(accountserver.SysClaimsDeleteSubject, func(_ abstractnats.MockNatsConnection, subj, reply string, data []byte) error {
 		t.Helper()
 
 		assert.Equal(t, sub.Subject(), reply, "reply inbox does not match")
@@ -543,7 +554,7 @@ func ExpectDeleteSync(t testContext, m abstractnats.MockNatsConnection, operator
 		assert.Equal(t, operatorKey, claims.Subject)
 		assert.Contains(t, claims.Data["accounts"], accountKey)
 
-		msg := &accountsync.ServerAPIClaimUpdateResponse{}
+		msg := &accountserver.ServerAPIClaimUpdateResponse{}
 
 		msgBytes, err := json.Marshal(msg)
 		require.NoError(t, err)

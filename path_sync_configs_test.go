@@ -12,10 +12,11 @@ import (
 
 func TestBackend_Operator_SyncConfig(t *testing.T) {
 	testCases := []struct {
-		name     string
-		data     map[string]any
-		expected map[string]any
-		err      error
+		name         string
+		data         map[string]any
+		expected     map[string]any
+		expectLookup bool
+		err          error
 	}{
 		{
 			name: "must provide a server",
@@ -27,13 +28,10 @@ func TestBackend_Operator_SyncConfig(t *testing.T) {
 			data: map[string]any{
 				"servers": []string{"nats://localhost:4222"},
 			},
+			expectLookup: true,
 			expected: map[string]any{
-				"connect_timeout":              0,
-				"ignore_sync_errors_on_delete": false,
-				"max_reconnects":               0,
-				"reconnect_wait":               0,
-				"servers":                      []string{"nats://localhost:4222"},
-				"sync_user_name":               DefaultSyncUserName,
+				"servers":        []string{"nats://localhost:4222"},
+				"sync_user_name": DefaultSyncUserName,
 
 				"status": map[string]any{
 					"status": OperatorSyncStatusCreated,
@@ -43,15 +41,19 @@ func TestBackend_Operator_SyncConfig(t *testing.T) {
 		{
 			name: "override defaults",
 			data: map[string]any{
-				"servers":         []string{"nats://localhost:4222"},
-				"connect_timeout": "10s",
-				"max_reconnects":  5,
-				"reconnect_wait":  "10s",
-				"sync_user_name":  "test-name",
+				"servers":                      []string{"nats://localhost:4222"},
+				"connect_timeout":              "10s",
+				"max_reconnects":               5,
+				"reconnect_wait":               "10s",
+				"sync_user_name":               "test-name",
+				"ignore_sync_errors_on_delete": true,
+				"disable_account_lookup":       true,
 			},
+			expectLookup: false,
 			expected: map[string]any{
 				"connect_timeout":              10,
-				"ignore_sync_errors_on_delete": false,
+				"ignore_sync_errors_on_delete": true,
+				"disable_account_lookup":       true,
 				"max_reconnects":               5,
 				"reconnect_wait":               10,
 				"servers":                      []string{"nats://localhost:4222"},
@@ -66,12 +68,20 @@ func TestBackend_Operator_SyncConfig(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(_t *testing.T) {
-			t := testBackend(_t)
+			nats := abstractnats.NewMock(_t)
+			t := testBackendWithNats(_t, nats)
 
 			id := OperatorId("op1")
 			resp := SetupTestOperator(t, id, map[string]any{
 				"create_system_account": true,
 			})
+
+			if tc.expectLookup {
+				nats.ExpectSubscription(accountserver.SysAccountClaimsLookupSubject)
+			}
+
+			// disable syncing for config tests
+			tc.data["sync_now"] = false
 
 			// create config
 			resp, err := WriteSyncConfig(t, id, tc.data)
@@ -125,8 +135,9 @@ func TestBackend_Operator_SyncConfig_Update(t *testing.T) {
 		})
 
 		resp, err := WriteSyncConfig(t, id, map[string]any{
-			"servers":  []string{"nats://localhost:4222"},
-			"sync_now": false,
+			"servers":                []string{"nats://localhost:4222"},
+			"sync_now":               false,
+			"disable_account_lookup": true,
 		})
 		RequireNoRespError(t, resp, err)
 
@@ -155,9 +166,10 @@ func TestBackend_Operator_SyncConfig_Update(t *testing.T) {
 
 		// create config disabled
 		resp, err := WriteSyncConfig(t, id, map[string]any{
-			"servers":  []string{"nats://localhost:4222"},
-			"suspend":  true,
-			"sync_now": false,
+			"servers":                []string{"nats://localhost:4222"},
+			"suspend":                true,
+			"sync_now":               false,
+			"disable_account_lookup": true,
 		})
 		RequireNoRespError(t, resp, err)
 

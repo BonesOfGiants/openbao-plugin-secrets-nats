@@ -23,6 +23,7 @@ const (
 type Config struct {
 	Operator                 string
 	IgnoreSyncErrorsOnDelete bool
+	EnableAccountLookup      bool
 }
 
 type JwtLookupFunc func(id string) (string, error)
@@ -42,9 +43,11 @@ func NewAccountServer(syncConfig Config, lookupFunc JwtLookupFunc, logger hclog.
 		nc:     nc,
 	}
 
-	_, err := nc.Subscribe(SysAccountClaimsLookupSubject, server.accountLookupRequest)
-	if err != nil {
-		return nil, err
+	if syncConfig.EnableAccountLookup {
+		_, err := nc.Subscribe(SysAccountClaimsLookupSubject, server.accountLookupRequest)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return server, nil

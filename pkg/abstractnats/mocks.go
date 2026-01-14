@@ -14,7 +14,7 @@ import (
 type MockNatsConnection interface {
 	NatsConnection
 
-	NewMockConnection(servers []string, o ...nats.Option) (NatsConnection, error)
+	ValidateConnection(servers []string, o ...nats.Option) (NatsConnection, error)
 	ExpectInboxSubscription() MockNatsSubscription
 	ExpectSubscription(subj string) MockNatsSubscription
 	ExpectPublish(subj string, handler PublishHandler)
@@ -104,7 +104,11 @@ func (m *mockNats) AssertClosed() {
 	assert.Equal(m.tb, true, m.closed)
 }
 
-func (m *mockNats) NewMockConnection(servers []string, o ...nats.Option) (NatsConnection, error) {
+func (m *mockNats) ValidateConnection(servers []string, o ...nats.Option) (NatsConnection, error) {
+	m.tb.Helper()
+
+	// todo add asserts on the options we expect to see
+
 	return m, nil
 }
 
@@ -180,7 +184,7 @@ func (m *mockNats) Subscribe(subj string, cb MsgHandler) (NatsSubscription, erro
 		}
 	}
 
-	assert.FailNow(m.tb, "unexpected subscribe", subj)
+	assert.Fail(m.tb, "unexpected subscribe", subj)
 	return nil, nil
 }
 
@@ -201,7 +205,7 @@ func (m *mockNats) SubscribeSync(subj string) (NatsSubscription, error) {
 		}
 	}
 
-	assert.FailNow(m.tb, "unexpected subscribe", subj)
+	assert.Fail(m.tb, "unexpected subscribe", subj)
 	return nil, nil
 }
 
@@ -213,7 +217,7 @@ func (m *mockNats) Publish(subj string, data []byte) error {
 		return h(m, subj, "", data)
 	}
 
-	assert.FailNowf(m.tb, "unexpected publish", "subject: %q, data: %q", subj, string(data))
+	assert.Failf(m.tb, "unexpected publish", "subject: %q, data: %q", subj, string(data))
 	return nil
 }
 
@@ -243,16 +247,12 @@ func (m *mockNats) newNatsMockSubscription(subject string) *mockNatsSubscription
 
 func (m *mockNats) cleanup() {
 	if len(m.expectedInboxSubs) > 0 {
-		subjects := make([]string, 0, len(m.expectedInboxSubs))
-		for _, v := range m.expectedInboxSubs {
-			subjects = append(subjects, v.subject)
-		}
-		assert.Failf(m.tb, "lingering inbox subs", "%d inbox subs remaining at the end of the test: %#v", len(m.expectedInboxSubs), subjects)
+		assert.Failf(m.tb, "lingering inbox subs", "%d inbox subs remaining at the end of the test", len(m.expectedInboxSubs))
 	}
 	if len(m.expectedPublishes) > 0 {
-		assert.Failf(m.tb, "lingering requests", "%d requests remaining at the end of the test: %#v", len(m.expectedPublishes), slices.Collect(maps.Keys(m.expectedPublishes)))
+		assert.Failf(m.tb, "lingering requests", "%d requests remaining at the end of the test: %+v", len(m.expectedPublishes), slices.Collect(maps.Keys(m.expectedPublishes)))
 	}
 	if len(m.expectedSubs) > 0 {
-		assert.Failf(m.tb, "lingering inbox subs", "%d subs remaining at the end of the test: %#v", len(m.expectedSubs), slices.Collect(maps.Keys(m.expectedSubs)))
+		assert.Failf(m.tb, "lingering subs", "%d subs remaining at the end of the test: %+v", len(m.expectedSubs), slices.Collect(maps.Keys(m.expectedSubs)))
 	}
 }

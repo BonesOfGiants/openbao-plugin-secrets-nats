@@ -373,7 +373,7 @@ func (b *backend) pathDeleteUserIssue(ctx context.Context, req *logical.Request,
 				resp.AddWarning(fmt.Sprintf("while reissueing jwt for account %q: %s", id.acc, v))
 			}
 
-			accountSync, err := b.getAccountServer(ctx, req.Storage, id.operatorId())
+			accountSync, err := b.getAccountServer(ctx, id.operatorId())
 			if err != nil {
 				b.Logger().Warn("failed to retrieve account sync", "error", err)
 			} else if accountSync != nil {

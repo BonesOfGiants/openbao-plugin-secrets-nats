@@ -135,8 +135,9 @@ func TestBackend_Revocation_Sync(t *testing.T) {
 		SetupTestAccount(t, accId, nil)
 
 		resp, err := WriteSyncConfig(t, accId.operatorId(), map[string]any{
-			"servers":  []string{"nats://localhost:4222"},
-			"sync_now": false,
+			"servers":                []string{"nats://localhost:4222"},
+			"sync_now":               false,
+			"disable_account_lookup": true,
 		})
 		RequireNoRespError(t, resp, err)
 
@@ -161,9 +162,10 @@ func TestBackend_Revocation_Sync(t *testing.T) {
 		SetupTestAccount(t, accId, nil)
 
 		resp, err := WriteSyncConfig(t, accId.operatorId(), map[string]any{
-			"servers":  []string{"nats://localhost:4222"},
-			"suspend":  true,
-			"sync_now": false,
+			"servers":                []string{"nats://localhost:4222"},
+			"suspend":                true,
+			"sync_now":               false,
+			"disable_account_lookup": true,
 		})
 		RequireNoRespError(t, resp, err)
 
@@ -198,9 +200,10 @@ func TestBackend_Revocation_Sync(t *testing.T) {
 			SetupTestAccount(t, accId, nil)
 
 			resp, err := WriteSyncConfig(t, accId.operatorId(), map[string]any{
-				"servers":  []string{"nats://localhost:4222"},
-				"suspend":  true,
-				"sync_now": false,
+				"servers":                []string{"nats://localhost:4222"},
+				"suspend":                true,
+				"sync_now":               false,
+				"disable_account_lookup": true,
 			})
 			RequireNoRespError(t, resp, err)
 

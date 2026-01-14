@@ -391,7 +391,7 @@ func (b *backend) userCredsRevoke(ctx context.Context, req *logical.Request, dat
 		return nil, err
 	}
 
-	accountSync, err := b.getAccountServer(ctx, req.Storage, id.operatorId())
+	accountSync, err := b.getAccountServer(ctx, id.operatorId())
 	if err != nil {
 		return nil, fmt.Errorf("unable to sync jwt for account %q: %w", id.acc, err)
 	} else if accountSync != nil {

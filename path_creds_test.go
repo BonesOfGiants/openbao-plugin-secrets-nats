@@ -76,6 +76,14 @@ func TestBackend_Creds_Read(t *testing.T) {
 						"denied"
 					]
 				},
+				"sub": {
+					"allow": [
+						"allowed"
+					],
+					"deny": [
+						"denied"
+					]
+				},
 				"resp": {
 					"max": 10,
 					"ttl": 10
@@ -86,14 +94,6 @@ func TestBackend_Creds_Read(t *testing.T) {
 				"subs": 0,
 				"data": 0,
 				"payload": 0,
-				"sub": {
-					"allow": [
-						"allowed"
-					],
-					"deny": [
-						"denied"
-					]
-				},
 				"tags": [
 					"test-tag"
 				],
@@ -107,7 +107,7 @@ func TestBackend_Creds_Read(t *testing.T) {
 				"type": "test-type"
 			}`
 
-			var expected jwt.UserClaims
+			var expected jwt.User
 			err := json.Unmarshal([]byte(claims), &expected)
 			require.NoError(t, err)
 
@@ -174,7 +174,7 @@ func TestBackend_Creds_Read(t *testing.T) {
 			assert.Equal(t, "", userClaims.User.IssuerAccount)
 
 			// user config
-			assert.Equal(t, expected.User.UserPermissionLimits, userClaims.User.UserPermissionLimits)
+			assert.Equal(t, expected.UserPermissionLimits, userClaims.User.UserPermissionLimits)
 
 			// test system sets a 24hr default lease ttl
 			expectedExpires := time.Now().Add(24 * time.Hour)

@@ -47,7 +47,7 @@ todo: list of things that still need tests:
 func testFactory(ctx context.Context, conf *logical.BackendConfig, n abstractnats.MockNatsConnection) (logical.Backend, error) {
 	b := Backend()
 	if n != nil {
-		b.NatsConnectionFunc = n.NewMockConnection
+		b.NatsConnectionFunc = n.ValidateConnection
 	} else {
 		b.NatsConnectionFunc = func(_ []string, _ ...nats.Option) (abstractnats.NatsConnection, error) {
 			return nil, errors.New(`must pass a nats mock to create nats connections in unit tests`)

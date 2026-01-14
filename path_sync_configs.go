@@ -30,6 +30,9 @@ type operatorSyncConfigEntry struct {
 	// Whether to abort a deletion if the delete fails to sync
 	IgnoreSyncErrorsOnDelete bool `json:"ignore_sync_errors_on_delete"`
 
+	// Whether to disable account lookup request support
+	DisableAccountLookup bool `json:"disable_account_lookup"`
+
 	Status operatorSyncStatus `json:"status"`
 }
 
@@ -92,6 +95,11 @@ func pathConfigOperatorSync(b *backend) []*framework.Path {
 					Type:        framework.TypeBool,
 					Description: "Whether to abort a deletion if the delete fails to sync.",
 				},
+				"disable_account_lookup": {
+					Type:        framework.TypeBool,
+					Description: "Whether to disable responding to account lookup requests from the NATS cluster.",
+					Default:     false,
+				},
 				"sync_now": {
 					Type:        framework.TypeBool,
 					Description: "Whether to attempt a sync immediately after creating/updating the sync config.",
@@ -120,7 +128,7 @@ func pathConfigOperatorSync(b *backend) []*framework.Path {
 
 func (b *backend) OperatorSync(ctx context.Context, s logical.Storage, id operatorId) (*operatorSyncConfigEntry, error) {
 	var sync *operatorSyncConfigEntry
-	err := get(ctx, s, id.configPath(), &sync)
+	err := get(ctx, s, id.syncConfigPath(), &sync)
 	if sync != nil {
 		sync.operatorId = id
 	}
@@ -203,6 +211,11 @@ func (b *backend) pathOperatorSyncCreateUpdate(ctx context.Context, req *logical
 		sync.IgnoreSyncErrorsOnDelete = ignoreSyncErrorsOnDelete.(bool)
 	}
 
+	if disableAccountLookup, ok := d.GetOk("disable_account_lookup"); ok {
+		syncDirty = syncDirty || (sync.DisableAccountLookup != disableAccountLookup)
+		sync.DisableAccountLookup = disableAccountLookup.(bool)
+	}
+
 	oldSyncUserName := sync.SyncUserName
 	if syncUserName, ok := d.GetOk("sync_user_name"); ok {
 		syncDirty = syncDirty || (oldSyncUserName != syncUserName)
@@ -234,7 +247,7 @@ func (b *backend) pathOperatorSyncCreateUpdate(ctx context.Context, req *logical
 	}
 
 	// get account server to ensure it exists for lookups
-	_, err = b.getAccountServer(ctx, req.Storage, operator.operatorId)
+	_, err = b.getAccountServer(ctx, operator.operatorId)
 	if err != nil {
 		return nil, err
 	}
@@ -279,13 +292,29 @@ func (b *backend) pathOperatorSyncRead(ctx context.Context, req *logical.Request
 	}
 
 	data := map[string]any{
-		"servers":                      sync.Servers,
-		"connect_timeout":              int(sync.ConnectTimeout.Seconds()),
-		"max_reconnects":               sync.MaxReconnects,
-		"reconnect_wait":               int(sync.ReconnectWait.Seconds()),
-		"ignore_sync_errors_on_delete": sync.IgnoreSyncErrorsOnDelete,
-		"sync_user_name":               sync.SyncUserName,
-		"status":                       status,
+		"servers":        sync.Servers,
+		"sync_user_name": sync.SyncUserName,
+		"status":         status,
+	}
+
+	if sync.ConnectTimeout > 0 {
+		data["connect_timeout"] = int(sync.ConnectTimeout.Seconds())
+	}
+
+	if sync.MaxReconnects > 0 {
+		data["max_reconnects"] = sync.MaxReconnects
+	}
+
+	if sync.ReconnectWait > 0 {
+		data["reconnect_wait"] = int(sync.ReconnectWait.Seconds())
+	}
+
+	if sync.DisableAccountLookup {
+		data["disable_account_lookup"] = sync.DisableAccountLookup
+	}
+
+	if sync.IgnoreSyncErrorsOnDelete {
+		data["ignore_sync_errors_on_delete"] = sync.IgnoreSyncErrorsOnDelete
 	}
 
 	return &logical.Response{Data: data}, nil

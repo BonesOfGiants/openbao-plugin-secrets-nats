@@ -329,7 +329,7 @@ func (b *backend) pathRotateAccount(ctx context.Context, req *logical.Request, d
 	}
 
 	// todo I think this needs a rollback op just like account deletion
-	accountSync, err := b.getAccountServer(ctx, req.Storage, id.operatorId())
+	accountSync, err := b.getAccountServer(ctx, id.operatorId())
 	if err != nil {
 		b.Logger().Warn("failed to retrieve account sync", "operator", id.op, "account", id.acc, "error", err)
 		resp.AddWarning(fmt.Sprintf("unable to sync jwt for account %q: %s", id.acc, err))
@@ -384,7 +384,7 @@ func (b *backend) pathRotateAccountSigningKey(ctx context.Context, req *logical.
 		return nil, err
 	}
 
-	accountSync, err := b.getAccountServer(ctx, req.Storage, id.operatorId())
+	accountSync, err := b.getAccountServer(ctx, id.operatorId())
 	if err != nil {
 		b.Logger().Warn("failed to retrieve account sync", "operator", id.op, "account", id.acc, "error", err)
 		resp.AddWarning(fmt.Sprintf("unable to sync jwt for account %q: %s", id.acc, err))

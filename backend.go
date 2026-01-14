@@ -360,7 +360,7 @@ func (b *backend) periodicFunc(ctx context.Context, req *logical.Request) error 
 		id := OperatorId(op)
 
 		// ensure account server is live for applicable operators
-		if _, err := b.getAccountServer(ctx, req.Storage, id); err != nil {
+		if _, err := b.getAccountServer(ctx, id); err != nil {
 			b.Logger().Warn("periodic: failed to ensure account server", "error", err)
 		}
 
@@ -401,8 +401,112 @@ func (b *backend) periodicPruneAccountRevocations(ctx context.Context, storage l
 	return dirty, nil
 }
 
-func (b *backend) getAccountServer(ctx context.Context, storage logical.Storage, id operatorId) (*accountserver.AccountServer, error) {
-	syncConfig, err := b.OperatorSync(ctx, storage, id)
+func (b *backend) createAuthCallback(opId operatorId) (nats.Option, error) {
+	idKey, err := nkeys.CreateUser()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create identity key: %w", err)
+	}
+	sub, err := idKey.PublicKey()
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode identity key: %w", err)
+	}
+
+	return nats.UserJWT(
+		func() (string, error) {
+			operator, err := b.Operator(context.TODO(), b.s, opId)
+			if err != nil {
+				return "", fmt.Errorf("failed to read operator: %w", err)
+			}
+			if operator == nil {
+				return "", fmt.Errorf("operator does not exist: %w", err)
+			}
+
+			syncConfig, err := b.OperatorSync(context.TODO(), b.s, opId)
+			if err != nil {
+				return "", fmt.Errorf("failed to read sync config: %w", err)
+			}
+			if syncConfig == nil {
+				return "", fmt.Errorf("sync config does not exist: %w", err)
+			}
+
+			claims := &jwt.UserClaims{
+				ClaimsData: jwt.ClaimsData{
+					Subject: sub,
+					Expires: time.Now().Add(1 * time.Hour).Unix(),
+				},
+				User: jwt.User{
+					UserPermissionLimits: jwt.UserPermissionLimits{
+						Permissions: jwt.Permissions{
+							Pub: jwt.Permission{
+								Allow: jwt.StringList{
+									accountserver.SysClaimsUpdateSubject,
+									accountserver.SysClaimsDeleteSubject,
+									"_INBOX.*",
+								},
+							},
+							Sub: jwt.Permission{
+								Allow: jwt.StringList{
+									accountserver.SysAccountClaimsLookupSubject,
+									"_INBOX.*",
+								},
+							},
+						},
+						Limits: jwt.Limits{
+							NatsLimits: jwt.NatsLimits{
+								Subs:    -1,
+								Payload: -1,
+								Data:    -1,
+							},
+						},
+					},
+				},
+			}
+
+			signingKey, enrichWarnings, err := b.enrichUserClaims(context.TODO(), b.s, enrichUserParams{
+				op:     opId.op,
+				acc:    operator.SysAccountName,
+				user:   syncConfig.SyncUserName,
+				claims: claims,
+			})
+			if err != nil {
+				return "", err
+			}
+
+			if len(enrichWarnings) > 0 {
+				b.Logger().Debug("got warnings enriching user claims", "warnings", enrichWarnings)
+			}
+
+			result := encodeUserJWT(signingKey, claims, 1*time.Hour)
+			if len(result.errors) > 0 {
+				return "", fmt.Errorf("failed to encode user jwt: %w", result)
+			}
+
+			return result.jwt, nil
+		},
+		func(nonce []byte) ([]byte, error) {
+			operator, err := b.Operator(context.TODO(), b.s, opId)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read operator: %w", err)
+			}
+			if operator == nil {
+				return nil, fmt.Errorf("operator does not exist: %w", err)
+			}
+
+			syncConfig, err := b.OperatorSync(context.TODO(), b.s, opId)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read sync config: %w", err)
+			}
+			if syncConfig == nil {
+				return nil, fmt.Errorf("sync config does not exist: %w", err)
+			}
+
+			return idKey.Sign(nonce)
+		},
+	), nil
+}
+
+func (b *backend) getAccountServer(ctx context.Context, id operatorId) (*accountserver.AccountServer, error) {
+	syncConfig, err := b.OperatorSync(ctx, b.s, id)
 	if err != nil {
 		return nil, err
 	}
@@ -418,82 +522,15 @@ func (b *backend) getAccountServer(ctx context.Context, storage logical.Storage,
 	b.accServerLock.RUnlock()
 
 	if srv == nil {
-		idKey, err := nkeys.CreateUser()
+		authCb, err := b.createAuthCallback(id)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create user identity key: %w", err)
-		}
-		sub, err := idKey.PublicKey()
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode identity key: %w", err)
-		}
-		seed, err := idKey.Seed()
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode identity key: %w", err)
-		}
-
-		operator, err := b.Operator(ctx, storage, id)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read operator: %w", err)
-		}
-		if operator == nil {
-			return nil, fmt.Errorf("operator does not exist: %w", err)
-		}
-
-		claims := &jwt.UserClaims{
-			ClaimsData: jwt.ClaimsData{
-				Subject: sub,
-			},
-			User: jwt.User{
-				UserPermissionLimits: jwt.UserPermissionLimits{
-					Permissions: jwt.Permissions{
-						Pub: jwt.Permission{
-							Allow: jwt.StringList{
-								accountserver.SysClaimsUpdateSubject,
-								accountserver.SysClaimsDeleteSubject,
-								"_INBOX.*",
-							},
-						},
-						Sub: jwt.Permission{
-							Allow: jwt.StringList{
-								accountserver.SysAccountClaimsLookupSubject,
-								"_INBOX.*",
-							},
-						},
-					},
-					Limits: jwt.Limits{
-						NatsLimits: jwt.NatsLimits{
-							Subs:    -1,
-							Payload: -1,
-							Data:    -1,
-						},
-					},
-				},
-			},
-		}
-
-		signingKey, enrichWarnings, err := b.enrichUserClaims(ctx, storage, enrichUserParams{
-			op:     id.op,
-			acc:    operator.SysAccountName,
-			user:   syncConfig.SyncUserName,
-			claims: claims,
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		if len(enrichWarnings) > 0 {
-			b.Logger().Debug("got warnings enriching user claims", "warnings", enrichWarnings)
-		}
-
-		result := encodeUserJWT(signingKey, claims, 1*time.Hour)
-		if len(result.errors) > 0 {
-			return nil, fmt.Errorf("failed to encode user jwt: %w", result)
+			return nil, fmt.Errorf("failed to create auth callback for %q: %w", id.op, err)
 		}
 
 		nc, err := b.NatsConnectionFunc(
 			syncConfig.Servers,
 			nats.Name("openbao_account_server"),
-			nats.UserJWTAndSeed(result.jwt, string(seed)),
+			authCb,
 			nats.Timeout(syncConfig.ConnectTimeout),
 			nats.ReconnectWait(syncConfig.ReconnectWait),
 			nats.MaxReconnects(syncConfig.MaxReconnects),
@@ -504,6 +541,7 @@ func (b *backend) getAccountServer(ctx context.Context, storage logical.Storage,
 				if sync != nil {
 					sync.CloseConnection()
 				}
+				// todo schedule this to be reconnected
 			}),
 			nats.ReconnectHandler(func(c *nats.Conn) {
 				b.Logger().Debug("sync: reconnected to nats server", "url", c.ConnectedUrl())
@@ -515,6 +553,7 @@ func (b *backend) getAccountServer(ctx context.Context, storage logical.Storage,
 				if sync != nil {
 					sync.CloseConnection()
 				}
+				// todo schedule this to be reconnected
 			}),
 		)
 		if err != nil {
@@ -525,6 +564,7 @@ func (b *backend) getAccountServer(ctx context.Context, storage logical.Storage,
 			accountserver.Config{
 				Operator:                 id.op,
 				IgnoreSyncErrorsOnDelete: syncConfig.IgnoreSyncErrorsOnDelete,
+				EnableAccountLookup:      !syncConfig.DisableAccountLookup,
 			},
 			b.accountJwtLookupFunc(id),
 			b.Logger(),
@@ -541,8 +581,6 @@ func (b *backend) getAccountServer(ctx context.Context, storage logical.Storage,
 }
 
 func (b *backend) periodicRefreshAccounts(ctx context.Context, s logical.Storage, opId operatorId) error {
-	var accountSync *accountserver.AccountServer
-
 	for name, err := range listPaged(ctx, s, opId.accountsConfigPrefix(), DefaultPagingSize) {
 		if err != nil {
 			return err
@@ -568,20 +606,14 @@ func (b *backend) periodicRefreshAccounts(ctx context.Context, s logical.Storage
 				continue
 			}
 
-			if accountSync == nil {
-				accountSync, err = b.getAccountServer(ctx, s, opId)
-				if err != nil {
-					b.Logger().Warn("failed to create account sync", "operator", opId.op, "error", err)
-				}
-			}
-
-			if accountSync != nil {
+			accountSync, err := b.getAccountServer(ctx, opId)
+			if err != nil {
+				b.Logger().Warn("failed to create account sync", "operator", opId.op, "error", err)
+			} else if accountSync != nil {
 				b.Logger().Debug("syncing account", "operator", accId.op, "account", accId.acc)
 				if err = b.syncAccountUpdate(ctx, s, accountSync, accId); err != nil {
 					b.Logger().Warn("account sync error", "operator", accId.op, "account", accId.acc, "error", err)
-
-					// force the next account to refresh the accountSync
-					accountSync = nil
+					b.popAccountServer(opId.op)
 				}
 			}
 		}
@@ -592,7 +624,7 @@ func (b *backend) periodicRefreshAccounts(ctx context.Context, s logical.Storage
 type syncErrors map[string]error
 
 func (b *backend) syncOperatorAccounts(ctx context.Context, s logical.Storage, id operatorId) (syncErrors, error) {
-	srv, err := b.getAccountServer(ctx, s, id)
+	srv, err := b.getAccountServer(ctx, id)
 	if err != nil {
 		return nil, err
 	} else if srv == nil {
@@ -610,7 +642,7 @@ func (b *backend) syncOperatorAccounts(ctx context.Context, s logical.Storage, i
 
 		// todo improve cache invalidation handling
 		if srv == nil {
-			srv, err = b.getAccountServer(ctx, s, id)
+			srv, err = b.getAccountServer(ctx, id)
 			if err != nil {
 				return nil, err
 			} else if srv == nil {
@@ -685,7 +717,7 @@ func (b *backend) walRollback(ctx context.Context, req *logical.Request, kind st
 		return nil
 	}
 
-	accountsrv, err := b.getAccountServer(ctx, req.Storage, id.operatorId())
+	accountsrv, err := b.getAccountServer(ctx, id.operatorId())
 	if err != nil {
 		return err
 	}

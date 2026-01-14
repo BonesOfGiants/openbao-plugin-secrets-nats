@@ -365,7 +365,7 @@ func (b *backend) pathAccountCreateUpdate(ctx context.Context, req *logical.Requ
 	}
 
 	if jwtDirty {
-		accountSync, err := b.getAccountServer(ctx, req.Storage, id.operatorId())
+		accountSync, err := b.getAccountServer(ctx, id.operatorId())
 		if err != nil {
 			b.Logger().Warn("failed to retrieve account sync", "operator", id.op, "account", id.acc, "error", err)
 			resp.AddWarning(fmt.Sprintf("failed to sync jwt for account %q: %s", id.acc, err))
@@ -477,7 +477,7 @@ func (b *backend) pathAccountDelete(ctx context.Context, req *logical.Request, d
 		return logical.ErrorResponse("cannot delete a managed system account"), nil
 	}
 
-	accountSync, err := b.getAccountServer(ctx, req.Storage, id.operatorId())
+	accountSync, err := b.getAccountServer(ctx, id.operatorId())
 	if err != nil {
 		return nil, err
 	} else if accountSync != nil {

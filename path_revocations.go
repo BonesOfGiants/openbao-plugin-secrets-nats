@@ -182,7 +182,7 @@ func (b *backend) pathAccountRevocationCreateUpdate(ctx context.Context, req *lo
 		resp.AddWarning(fmt.Sprintf("while reissuing jwt for account %q: %s", id.acc, v))
 	}
 
-	accountSync, err := b.getAccountServer(ctx, req.Storage, id.operatorId())
+	accountSync, err := b.getAccountServer(ctx, id.operatorId())
 	if err != nil {
 		b.Logger().Warn("failed to retrieve account sync", "operator", id.op, "account", id.acc, "error", err)
 		resp.AddWarning(fmt.Sprintf("unable to sync jwt for account %q: %s", id.acc, err))
@@ -275,7 +275,7 @@ func (b *backend) pathAccountRevocationDelete(ctx context.Context, req *logical.
 		return nil, err
 	}
 
-	accountSync, err := b.getAccountServer(ctx, req.Storage, id.operatorId())
+	accountSync, err := b.getAccountServer(ctx, id.operatorId())
 	if err != nil {
 		b.Logger().Warn("failed to retrieve account sync", "operator", id.op, "account", id.acc, "error", err)
 		resp.AddWarning(fmt.Sprintf("unable to sync jwt for account %q: %s", id.acc, err))

@@ -557,7 +557,7 @@ func (b *backend) pathOperatorSigningNkeyDelete(ctx context.Context, req *logica
 	}
 
 	if len(updatedAccounts) > 0 {
-		accountSync, err := b.getAccountServer(ctx, req.Storage, id.operatorId())
+		accountSync, err := b.getAccountServer(ctx, id.operatorId())
 		if err != nil {
 			b.Logger().Warn("failed to retrieve account sync", "operator", id.op, "error", err)
 			resp.AddWarning(fmt.Sprintf("unable to sync account jwts: %s", err))
@@ -565,7 +565,7 @@ func (b *backend) pathOperatorSigningNkeyDelete(ctx context.Context, req *logica
 			for _, accId := range updatedAccounts {
 				// handle case where cached instance is invalidated
 				if accountSync == nil {
-					accountSync, err = b.getAccountServer(ctx, req.Storage, id.operatorId())
+					accountSync, err = b.getAccountServer(ctx, id.operatorId())
 					if err != nil {
 						b.Logger().Warn("failed to retrieve account sync", "operator", id.op, "error", err)
 						resp.AddWarning(fmt.Sprintf("unable to sync account jwts: %s", err))
@@ -741,7 +741,7 @@ func (b *backend) pathAccountSigningNkeyCreateUpdate(ctx context.Context, req *l
 	}
 
 	if jwtDirty {
-		accountSync, err := b.getAccountServer(ctx, req.Storage, id.operatorId())
+		accountSync, err := b.getAccountServer(ctx, id.operatorId())
 		if err != nil {
 			b.Logger().Warn("failed to retrieve account sync", "operator", id.op, "account", id.acc, "error", err)
 			resp.AddWarning(fmt.Sprintf("unable to sync jwt for account %q: %s", id.acc, err))

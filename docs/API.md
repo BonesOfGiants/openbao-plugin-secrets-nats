@@ -218,7 +218,7 @@ update your API calls accordingly.
 | :------------------------------------------------------------------------ | ---------------------------- |
 | [`/nats/operators`](#list-operators)                                      | List operators               |
 | [`/nats/operators/:op`](#createupdate-operator)                           | Manage operators             |
-| [`/nats/account-servers/:op`](#createupdate-account-server-configuration) | Configure account servers    |
+| [`/nats/account-servers/:op`](#createupdate-account-server-configuration) | Manage account servers       |
 | [`/nats/operator-keys/:op`](#read-operator-key)                           | Read operator id keys        |
 | [`/nats/operator-jwts/:op`](#read-operator-jwt)                           | Read operator jwts           |
 | [`/nats/operator-signing-keys/:op`](#list-operator-signing-keys)          | List operator signing keys   |

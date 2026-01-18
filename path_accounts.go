@@ -13,7 +13,6 @@ import (
 	"github.com/openbao/openbao/sdk/v2/framework"
 	"github.com/openbao/openbao/sdk/v2/logical"
 
-	accountsrv "github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/accountserver"
 	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/shimtx"
 )
 
@@ -148,13 +147,13 @@ func (id accountId) signingKeyPrefix() string {
 type accountStatus struct {
 	IsSystemAccount bool        `json:"is_system_account"`
 	IsManaged       bool        `json:"is_managed"`
-	Sync            *syncStatus `json:"sync_status"`
+	Sync            *syncStatus `json:"sync"`
 }
 
 type syncStatus struct {
-	Synced       bool      `json:"synced"`
-	LastError    string    `json:"last_error,omitempty"`
-	LastSyncTime time.Time `json:"last_sync_time"`
+	Synced             bool      `json:"synced"`
+	LastError          string    `json:"last_error,omitempty"`
+	LastSuccessfulSync time.Time `json:"last_successful_sync"`
 }
 
 type AccountReader interface {
@@ -365,16 +364,9 @@ func (b *backend) pathAccountCreateUpdate(ctx context.Context, req *logical.Requ
 	}
 
 	if jwtDirty {
-		accountSync, err := b.getAccountServer(ctx, id.operatorId())
+		err = b.syncAccountUpdate(ctx, id)
 		if err != nil {
-			b.Logger().Warn("failed to retrieve account sync", "operator", id.op, "account", id.acc, "error", err)
-			resp.AddWarning(fmt.Sprintf("failed to sync jwt for account %q: %s", id.acc, err))
-		} else if accountSync != nil {
-			err := b.syncAccountUpdate(ctx, req.Storage, accountSync, id)
-			if err != nil {
-				b.Logger().Warn("failed to sync account", "operator", id.op, "account", id.acc, "error", err)
-				resp.AddWarning(fmt.Sprintf("failed to sync jwt for account %q: %s", id.acc, err))
-			}
+			resp.AddWarning(fmt.Sprintf("failed to push jwt update: %s", err))
 		}
 	}
 
@@ -398,10 +390,19 @@ func (b *backend) pathAccountRead(ctx context.Context, req *logical.Request, d *
 	}
 
 	if account.Status.Sync != nil {
-		status["sync"] = map[string]any{
-			"last_sync": account.Status.Sync.LastSyncTime,
-			"synced":    account.Status.Sync.Synced,
+		sync := map[string]any{
+			"synced": account.Status.Sync.Synced,
 		}
+
+		if !account.Status.Sync.LastSuccessfulSync.IsZero() {
+			sync["last_successful_sync"] = account.Status.Sync.LastSuccessfulSync.Unix()
+		}
+
+		if account.Status.Sync.LastError != "" {
+			sync["last_error"] = account.Status.Sync.LastError
+		}
+
+		status["sync"] = sync
 	}
 
 	data := map[string]any{
@@ -477,24 +478,11 @@ func (b *backend) pathAccountDelete(ctx context.Context, req *logical.Request, d
 		return logical.ErrorResponse("cannot delete a managed system account"), nil
 	}
 
-	accountSync, err := b.getAccountServer(ctx, id.operatorId())
+	err = b.syncAccountDelete(ctx, id)
 	if err != nil {
-		return nil, err
-	} else if accountSync != nil {
-		if account.Status.IsSystemAccount {
-			resp.AddWarning("the deletion of a system account will not be synced as it requires an update to the nats server configuration")
-		} else {
-			err := b.syncAccountDelete(ctx, req.Storage, accountSync, id)
-			if err != nil {
-				b.Logger().Warn("failed to sync account delete", "operator", id.op, "account", id.acc, "error", err)
+		b.Logger().Warn("failed to sync account delete", "operator", id.op, "account", id.acc, "error", err)
 
-				if accountSync.IgnoreSyncErrorsOnDelete {
-					resp.AddWarning(fmt.Sprintf("failed to sync deletion to nats server: %s", err))
-				} else {
-					return nil, fmt.Errorf("failed to sync deletion for account %q: %w", id.acc, err)
-				}
-			}
-		}
+		return nil, fmt.Errorf("failed to delete account in nats server: %w", err)
 	}
 
 	walID, err := framework.PutWAL(ctx, req.Storage, deleteAccountWALKey, &deleteAccountWAL{
@@ -586,7 +574,7 @@ func (b *backend) deleteAccount(ctx context.Context, storage logical.Storage, id
 		if err != nil {
 			return err
 		}
-		err = deleteFromStorage(ctx, storage, id.signingKeyId(keyId).nkeyPath())
+		err = storage.Delete(ctx, id.signingKeyId(keyId).nkeyPath())
 		if err != nil {
 			return err
 		}
@@ -597,7 +585,7 @@ func (b *backend) deleteAccount(ctx context.Context, storage logical.Storage, id
 		if err != nil {
 			return err
 		}
-		err = deleteFromStorage(ctx, storage, id.importId(impId).configPath())
+		err = storage.Delete(ctx, id.importId(impId).configPath())
 		if err != nil {
 			return err
 		}
@@ -608,7 +596,7 @@ func (b *backend) deleteAccount(ctx context.Context, storage logical.Storage, id
 		if err != nil {
 			return err
 		}
-		err = deleteFromStorage(ctx, storage, id.revocationId(impId).configPath())
+		err = storage.Delete(ctx, id.revocationId(impId).configPath())
 		if err != nil {
 			return err
 		}
@@ -631,60 +619,73 @@ func (b *backend) deleteAccount(ctx context.Context, storage logical.Storage, id
 			return err
 		}
 
-		err = deleteFromStorage(ctx, storage, id.ephemeralUserId(user).configPath())
+		err = storage.Delete(ctx, id.ephemeralUserId(user).configPath())
 		if err != nil {
 			return err
 		}
 	}
 
 	// delete nkey
-	err := deleteFromStorage(ctx, storage, id.nkeyPath())
+	err := storage.Delete(ctx, id.nkeyPath())
 	if err != nil {
 		return err
 	}
 
 	// delete jwt
-	err = deleteFromStorage(ctx, storage, id.jwtPath())
+	err = storage.Delete(ctx, id.jwtPath())
 	if err != nil {
 		return err
 	}
 
 	// delete config
-	return deleteFromStorage(ctx, storage, id.configPath())
+	return storage.Delete(ctx, id.configPath())
 }
 
 // todo maybe instead of syncing immediately, we should debounce
 // like adding to a queue, maybe?
 func (b *backend) syncAccountUpdate(
 	ctx context.Context,
-	s logical.Storage,
-	accountSync *accountsrv.AccountServer,
 	id accountId,
 ) error {
-	// read account jwt
-	jwt, err := b.Jwt(ctx, s, id)
-	if err != nil {
-		return err
-	} else if jwt == nil {
-		return fmt.Errorf("unable to sync, account does not exist")
-	}
+	var syncErr error = nil
 
-	var syncErr error
-	err = accountSync.UpdateAccount(jwt.Token)
+	srv, err := b.startAccountServer(ctx, id.operatorId(), false)
 	if err != nil {
 		syncErr = err
+	} else if srv == nil {
+		return nil
+	} else {
+		// read account jwt
+		jwt, err := b.Jwt(ctx, b.s, id)
+		if err != nil {
+			return err
+		}
+		if jwt == nil {
+			syncErr = fmt.Errorf("unable to sync, account jwt does not exist")
+			goto update_status
+		}
 
-		// invalidate the cached sync
-		_ = b.popAccountServer(id.op)
-		accountSync.CloseConnection()
+		err = srv.UpdateAccount(jwt.Token)
+		if err != nil {
+			syncErr = fmt.Errorf("failed to send account update: %w", err)
+			goto update_status
+		}
 	}
 
-	err = b.updateAccountSyncStatus(ctx, s, id, syncErr)
+update_status:
+	if syncErr != nil {
+		// invalidate the cached sync
+		srv = b.popAccountServer(id.op)
+		if srv != nil {
+			srv.CloseConnection()
+		}
+	}
+
+	err = b.updateAccountSyncStatus(ctx, b.s, id, syncErr)
 	if err != nil {
 		return err
 	}
 
-	// return syncErr because we want to invalidate the accountsync instance
 	return syncErr
 }
 
@@ -702,11 +703,10 @@ func (b *backend) updateAccountSyncStatus(ctx context.Context, s logical.Storage
 			account.Status.Sync.Synced = false
 			account.Status.Sync.LastError = syncErr.Error()
 		} else {
+			account.Status.Sync.LastSuccessfulSync = time.Now().UTC()
 			account.Status.Sync.Synced = true
 			account.Status.Sync.LastError = ""
 		}
-
-		account.Status.Sync.LastSyncTime = time.Now().UTC()
 
 		err = storeInStorage(ctx, s, account.configPath(), account)
 		if err != nil {
@@ -719,37 +719,49 @@ func (b *backend) updateAccountSyncStatus(ctx context.Context, s logical.Storage
 
 func (b *backend) syncAccountDelete(
 	ctx context.Context,
-	storage logical.Storage,
-	accountSync *accountsrv.AccountServer,
 	id accountId,
 ) error {
-	operatorNkey, err := b.Nkey(ctx, storage, id.operatorId())
+	var syncErr error = nil
+
+	srv, err := b.startAccountServer(ctx, id.operatorId(), false)
 	if err != nil {
-		return err
-	} else if operatorNkey == nil {
-		return fmt.Errorf("unable to sync, operator nkey does not exist")
+		syncErr = err
+	} else if srv == nil {
+		return nil
+	} else {
+		operatorNkey, err := b.Nkey(ctx, b.s, id.operatorId())
+		if err != nil {
+			return err
+		} else if operatorNkey == nil {
+			return fmt.Errorf("unable to sync, operator nkey does not exist")
+		}
+
+		operatorKeyPair, err := operatorNkey.keyPair()
+		if err != nil {
+			return err
+		}
+
+		// read account nkey
+		accNkey, err := b.Nkey(ctx, b.s, id)
+		if err != nil {
+			return err
+		} else if accNkey == nil {
+			return fmt.Errorf("unable to sync, account nkey does not exist")
+		}
+		accountKeyPair, err := accNkey.keyPair()
+		if err != nil {
+			return err
+		}
+
+		err = srv.DeleteAccount(accountKeyPair, operatorKeyPair)
+		if err != nil {
+			syncErr = err
+		}
 	}
 
-	operatorKeyPair, err := operatorNkey.keyPair()
-	if err != nil {
-		return err
-	}
-
-	// read account nkey
-	accNkey, err := b.Nkey(ctx, storage, id)
-	if err != nil {
-		return err
-	} else if accNkey == nil {
-		return fmt.Errorf("unable to sync, account nkey does not exist")
-	}
-	accountKeyPair, err := accNkey.keyPair()
-	if err != nil {
-		return err
-	}
-
-	err = accountSync.DeleteAccount(accountKeyPair, operatorKeyPair)
-	if err != nil {
-		return err
+	if syncErr != nil {
+		// we don't update the account sync status because we're deleting it!
+		b.Logger().Warn("failed to sync account delete", "operator", id.op, "account", id.acc, "err", syncErr)
 	}
 
 	return nil
@@ -757,29 +769,55 @@ func (b *backend) syncAccountDelete(
 
 func (b *backend) syncAccountRotate(
 	ctx context.Context,
-	storage logical.Storage,
-	accountSync *accountsrv.AccountServer,
 	oldKeyPair nkeys.KeyPair,
 	id accountId,
 ) error {
-	operatorNkey, err := b.Nkey(ctx, storage, id.operatorId())
+	var syncErr error = nil
+
+	srv, err := b.startAccountServer(ctx, id.operatorId(), false)
 	if err != nil {
-		return err
-	} else if operatorNkey == nil {
-		return fmt.Errorf("unable to sync, operator nkey does not exist")
+		syncErr = err
+	} else if srv == nil {
+		return nil
+	} else {
+		// read account jwt
+		jwt, err := b.Jwt(ctx, b.s, id)
+		if err != nil {
+			return err
+		}
+		if jwt == nil {
+			syncErr = fmt.Errorf("unable to sync, account does not exist")
+			goto update_status
+		}
+
+		err = srv.UpdateAccount(jwt.Token)
+		if err != nil {
+			syncErr = err
+			goto update_status
+		}
+
+		operatorNkey, err := b.Nkey(ctx, b.s, id.operatorId())
+		if err != nil {
+			return err
+		} else if operatorNkey == nil {
+			syncErr = fmt.Errorf("unable to sync, operator nkey does not exist")
+			goto update_status
+		}
+
+		operatorKeyPair, err := operatorNkey.keyPair()
+		if err != nil {
+			return err
+		}
+
+		err = srv.DeleteAccount(oldKeyPair, operatorKeyPair)
+		if err != nil {
+			syncErr = err
+			goto update_status
+		}
 	}
 
-	operatorKeyPair, err := operatorNkey.keyPair()
-	if err != nil {
-		return err
-	}
-
-	err = accountSync.DeleteAccount(oldKeyPair, operatorKeyPair)
-	if err != nil {
-		return err
-	}
-
-	err = b.syncAccountUpdate(ctx, storage, accountSync, id)
+update_status:
+	err = b.updateAccountSyncStatus(ctx, b.s, id, syncErr)
 	if err != nil {
 		return err
 	}

@@ -319,16 +319,10 @@ func (b *backend) pathAccountImportCreateUpdate(ctx context.Context, req *logica
 	}
 
 	if jwtDirty {
-		accountSync, err := b.getAccountServer(ctx, id.operatorId())
+		err = b.syncAccountUpdate(ctx, id.accountId())
 		if err != nil {
-			b.Logger().Warn("failed to retrieve account sync", "operator", id.op, "account", id.acc, "error", err)
+			b.Logger().Warn("failed to sync account", "operator", id.op, "account", id.acc, "error", err)
 			resp.AddWarning(fmt.Sprintf("unable to sync jwt for account %q: %s", id.acc, err))
-		} else if accountSync != nil {
-			err := b.syncAccountUpdate(ctx, req.Storage, accountSync, id.accountId())
-			if err != nil {
-				b.Logger().Warn("failed to sync account", "operator", id.op, "account", id.acc, "error", err)
-				resp.AddWarning(fmt.Sprintf("unable to sync jwt for account %q: %s", id.acc, err))
-			}
 		}
 	}
 
@@ -414,7 +408,7 @@ func (b *backend) pathAccountImportDelete(ctx context.Context, req *logical.Requ
 
 	id := AccountImportIdField(d)
 
-	err = deleteFromStorage(ctx, req.Storage, id.configPath())
+	err = req.Storage.Delete(ctx, id.configPath())
 	if err != nil {
 		return nil, err
 	}
@@ -434,16 +428,10 @@ func (b *backend) pathAccountImportDelete(ctx context.Context, req *logical.Requ
 		return nil, err
 	}
 
-	accountSync, err := b.getAccountServer(ctx, id.operatorId())
+	err = b.syncAccountUpdate(ctx, id.accountId())
 	if err != nil {
-		b.Logger().Warn("failed to retrieve account sync", "operator", id.op, "account", id.acc, "error", err)
+		b.Logger().Warn("failed to sync account", "operator", id.op, "account", id.acc, "error", err)
 		resp.AddWarning(fmt.Sprintf("unable to sync jwt for account %q: %s", id.acc, err))
-	} else if accountSync != nil {
-		err := b.syncAccountUpdate(ctx, req.Storage, accountSync, id.accountId())
-		if err != nil {
-			b.Logger().Warn("failed to sync account", "operator", id.op, "account", id.acc, "error", err)
-			resp.AddWarning(fmt.Sprintf("unable to sync jwt for account %q: %s", id.acc, err))
-		}
 	}
 
 	return resp, nil

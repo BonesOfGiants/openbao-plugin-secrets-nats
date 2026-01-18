@@ -251,7 +251,7 @@ func TestBackend_Operator_SystemAccount(t *testing.T) {
 		sysId := opId.accountId(DefaultSysAccountName)
 
 		// check sys account
-		sysConf := ReadConfig[accountEntry](b, sysId)
+		sysConf := ReadConfig[*accountEntry](b, sysId)
 		assert.True(b, sysConf.Status.IsManaged)
 		assert.True(b, sysConf.Status.IsSystemAccount)
 		assert.Equal(b, unmarshalToMap(DefaultSysAccountClaims), unmarshalToMap(sysConf.RawClaims))
@@ -495,8 +495,8 @@ func TestBackend_Cascading_Delete(_t *testing.T) {
 
 	// operator
 	SetupTestOperator(t, opId, nil)
-	// operator sync config
-	WriteSyncConfig(t, opId, map[string]any{
+	// operator account server
+	WriteAccountServer(t, opId, map[string]any{
 		"servers": []string{"nats://localhost:4222"},
 		"suspend": true,
 	})
@@ -534,8 +534,8 @@ func TestBackend_Cascading_Delete(_t *testing.T) {
 
 	// operator
 	AssertConfigDeleted(t, opId)
-	// operator sync config
-	resp, err := ReadSyncConfigRaw(t, opId)
+	// operator account server
+	resp, err := ReadAccountServerRaw(t, opId)
 	RequireNoRespError(t, resp, err)
 	assert.Nil(t, resp)
 	// operator signing key

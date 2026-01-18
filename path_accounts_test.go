@@ -3,11 +3,16 @@ package natsbackend
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
+	"testing/synctest"
+	"time"
 
+	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/abstractnats"
 	"github.com/nats-io/jwt/v2"
 	"github.com/openbao/openbao/sdk/v2/logical"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -310,5 +315,84 @@ func TestBackend_Account_SigningKeys(t *testing.T) {
 
 		accountClaims := ReadJwt[*jwt.AccountClaims](t, id)
 		assert.Equal(t, opPublicKey, accountClaims.Issuer)
+	})
+}
+
+func TestBackend_Account_Status(t *testing.T) {
+	t.Run("synced", func(t *testing.T) {
+		synctest.Test(t, func(_t *testing.T) {
+			nats := abstractnats.NewMock(_t)
+			defer nats.AssertNoLingering(_t)
+			t := testBackendWithNats(_t, nats)
+
+			id := OperatorId("op1")
+			SetupTestOperator(t, id, map[string]any{
+				"create_system_account": true,
+			})
+
+			resp, err := WriteAccountServer(t, id, map[string]any{
+				"servers":         []string{"nats://localhost:4222"},
+				"sync_now":        false,
+				"disable_lookups": true,
+			})
+			RequireNoRespError(t, resp, err)
+
+			ExpectUpdateSync(t, nats, nil)
+
+			accId := id.accountId("acc1")
+			SetupTestAccount(t, accId, nil)
+
+			resp, err = ReadConfigRaw(t, accId)
+			RequireNoRespError(t, resp, err)
+
+			require.Contains(t, resp.Data, "status")
+			require.Contains(t, resp.Data["status"], "sync")
+
+			require.IsType(t, map[string]any{}, resp.Data["status"])
+
+			assert.Equal(t, map[string]any{
+				"last_successful_sync": time.Now().Unix(),
+				"synced":               true,
+			}, resp.Data["status"].(map[string]any)["sync"])
+		})
+	})
+
+	t.Run("sync error", func(t *testing.T) {
+		synctest.Test(t, func(_t *testing.T) {
+			nats := abstractnats.NewMock(_t)
+			defer nats.AssertNoLingering(_t)
+			t := testBackendWithNats(_t, nats)
+
+			id := OperatorId("op1")
+			SetupTestOperator(t, id, map[string]any{
+				"create_system_account": true,
+			})
+
+			resp, err := WriteAccountServer(t, id, map[string]any{
+				"servers":         []string{"nats://localhost:4222"},
+				"sync_now":        false,
+				"disable_lookups": true,
+			})
+			RequireNoRespError(t, resp, err)
+
+			expectedErr := fmt.Errorf("bad publish")
+			ExpectUpdateSyncErr(t, nats, expectedErr)
+
+			accId := id.accountId("acc1")
+			SetupTestAccount(t, accId, nil)
+
+			resp, err = ReadConfigRaw(t, accId)
+			RequireNoRespError(t, resp, err)
+
+			require.Contains(t, resp.Data, "status")
+			require.Contains(t, resp.Data["status"], "sync")
+
+			require.IsType(t, map[string]any{}, resp.Data["status"])
+
+			assert.Equal(t, map[string]any{
+				"last_error": "failed to send account update: bad publish",
+				"synced":     false,
+			}, resp.Data["status"].(map[string]any)["sync"])
+		})
 	})
 }

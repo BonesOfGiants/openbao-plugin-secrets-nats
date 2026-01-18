@@ -182,16 +182,10 @@ func (b *backend) pathAccountRevocationCreateUpdate(ctx context.Context, req *lo
 		resp.AddWarning(fmt.Sprintf("while reissuing jwt for account %q: %s", id.acc, v))
 	}
 
-	accountSync, err := b.getAccountServer(ctx, id.operatorId())
+	err = b.syncAccountUpdate(ctx, id.accountId())
 	if err != nil {
-		b.Logger().Warn("failed to retrieve account sync", "operator", id.op, "account", id.acc, "error", err)
+		b.Logger().Warn("failed to sync account", "operator", id.op, "account", id.acc, "error", err)
 		resp.AddWarning(fmt.Sprintf("unable to sync jwt for account %q: %s", id.acc, err))
-	} else if accountSync != nil {
-		err := b.syncAccountUpdate(ctx, req.Storage, accountSync, id.accountId())
-		if err != nil {
-			b.Logger().Warn("failed to sync account", "operator", id.op, "account", id.acc, "error", err)
-			resp.AddWarning(fmt.Sprintf("unable to sync jwt for account %q: %s", id.acc, err))
-		}
 	}
 
 	return resp, nil
@@ -254,7 +248,7 @@ func (b *backend) pathAccountRevocationDelete(ctx context.Context, req *logical.
 		return nil, nil
 	}
 
-	err = deleteFromStorage(ctx, req.Storage, id.configPath())
+	err = req.Storage.Delete(ctx, id.configPath())
 	if err != nil {
 		return nil, err
 	}
@@ -275,16 +269,10 @@ func (b *backend) pathAccountRevocationDelete(ctx context.Context, req *logical.
 		return nil, err
 	}
 
-	accountSync, err := b.getAccountServer(ctx, id.operatorId())
+	err = b.syncAccountUpdate(ctx, id.accountId())
 	if err != nil {
-		b.Logger().Warn("failed to retrieve account sync", "operator", id.op, "account", id.acc, "error", err)
+		b.Logger().Warn("failed to sync account", "operator", id.op, "account", id.acc, "error", err)
 		resp.AddWarning(fmt.Sprintf("unable to sync jwt for account %q: %s", id.acc, err))
-	} else if accountSync != nil {
-		err := b.syncAccountUpdate(ctx, req.Storage, accountSync, id.accountId())
-		if err != nil {
-			b.Logger().Warn("failed to sync account", "operator", id.op, "account", id.acc, "error", err)
-			resp.AddWarning(fmt.Sprintf("unable to sync jwt for account %q: %s", id.acc, err))
-		}
 	}
 
 	return resp, nil

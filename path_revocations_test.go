@@ -129,15 +129,16 @@ func TestBackend_Revocation_AutoDelete(t *testing.T) {
 func TestBackend_Revocation_Sync(t *testing.T) {
 	t.Run("sync on revocation create", func(_t *testing.T) {
 		nats := abstractnats.NewMock(_t)
+		defer nats.AssertNoLingering(_t)
 		t := testBackendWithNats(_t, nats)
 
 		accId := AccountId("op1", "acc1")
 		SetupTestAccount(t, accId, nil)
 
-		resp, err := WriteSyncConfig(t, accId.operatorId(), map[string]any{
-			"servers":                []string{"nats://localhost:4222"},
-			"sync_now":               false,
-			"disable_account_lookup": true,
+		resp, err := WriteAccountServer(t, accId.operatorId(), map[string]any{
+			"servers":         []string{"nats://localhost:4222"},
+			"sync_now":        false,
+			"disable_lookups": true,
 		})
 		RequireNoRespError(t, resp, err)
 
@@ -156,16 +157,17 @@ func TestBackend_Revocation_Sync(t *testing.T) {
 	})
 	t.Run("sync on revocation delete", func(_t *testing.T) {
 		nats := abstractnats.NewMock(_t)
+		defer nats.AssertNoLingering(_t)
 		t := testBackendWithNats(_t, nats)
 
 		accId := AccountId("op1", "acc1")
 		SetupTestAccount(t, accId, nil)
 
-		resp, err := WriteSyncConfig(t, accId.operatorId(), map[string]any{
-			"servers":                []string{"nats://localhost:4222"},
-			"suspend":                true,
-			"sync_now":               false,
-			"disable_account_lookup": true,
+		resp, err := WriteAccountServer(t, accId.operatorId(), map[string]any{
+			"servers":         []string{"nats://localhost:4222"},
+			"suspend":         true,
+			"sync_now":        false,
+			"disable_lookups": true,
 		})
 		RequireNoRespError(t, resp, err)
 
@@ -174,7 +176,7 @@ func TestBackend_Revocation_Sync(t *testing.T) {
 			"ttl": "10s",
 		})
 
-		resp, err = WriteSyncConfig(t, accId.operatorId(), map[string]any{
+		resp, err = WriteAccountServer(t, accId.operatorId(), map[string]any{
 			"suspend":  false,
 			"sync_now": false,
 		})
@@ -194,16 +196,17 @@ func TestBackend_Revocation_Sync(t *testing.T) {
 	t.Run("sync on revocation expire", func(t *testing.T) {
 		synctest.Test(t, func(_t *testing.T) {
 			nats := abstractnats.NewMock(_t)
+			defer nats.AssertNoLingering(_t)
 			t := testBackendWithNats(_t, nats)
 
 			accId := AccountId("op1", "acc1")
 			SetupTestAccount(t, accId, nil)
 
-			resp, err := WriteSyncConfig(t, accId.operatorId(), map[string]any{
-				"servers":                []string{"nats://localhost:4222"},
-				"suspend":                true,
-				"sync_now":               false,
-				"disable_account_lookup": true,
+			resp, err := WriteAccountServer(t, accId.operatorId(), map[string]any{
+				"servers":         []string{"nats://localhost:4222"},
+				"suspend":         true,
+				"sync_now":        false,
+				"disable_lookups": true,
 			})
 			RequireNoRespError(t, resp, err)
 
@@ -212,7 +215,7 @@ func TestBackend_Revocation_Sync(t *testing.T) {
 				"ttl": "10s",
 			})
 
-			resp, err = WriteSyncConfig(t, accId.operatorId(), map[string]any{
+			resp, err = WriteAccountServer(t, accId.operatorId(), map[string]any{
 				"suspend":  false,
 				"sync_now": false,
 			})

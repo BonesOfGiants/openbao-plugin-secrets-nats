@@ -17,20 +17,19 @@ import (
 
 /*
 todo: list of things that still need tests:
-- operator jwt change resulting in sync being suspended + warning
-- sync config status updates
-	- [ ] sync config object itself
-	- [ ] account status
+- operator jwt change resulting in account server being suspended + warning
+- account server status updates
+	- [x] account server itself
+	- [ ] account statuses
 - managed name clashes with existing account
-- account sync status updates
 - test partial updates
 	- [ ] operator
-	- [ ] sync
+	- [ ] account server
 	- [ ] account
 	- [ ] account import
 	- [ ] user
 	- [ ] eph user
-- all the variations of things that cause account syncing
+- all the variations of things that cause account server updates
 	- [ ] operator rotate
 	- [ ] operator signing key rotate
 	- [x] account import create/update/delete
@@ -339,7 +338,7 @@ func WriteConfig(t testContext, id configPather, data map[string]any) (*logical.
 	})
 }
 
-func WriteSyncConfig(t testContext, id operatorId, data map[string]any) (*logical.Response, error) {
+func WriteAccountServer(t testContext, id operatorId, data map[string]any) (*logical.Response, error) {
 	t.Helper()
 
 	if data == nil {
@@ -347,29 +346,29 @@ func WriteSyncConfig(t testContext, id operatorId, data map[string]any) (*logica
 	}
 
 	return t.HandleRequest(context.Background(), &logical.Request{
-		Path:      id.syncConfigPath(),
+		Path:      id.accountServerPath(),
 		Operation: logical.CreateOperation,
 		Storage:   t,
 		Data:      data,
 	})
 }
 
-func ReadSyncConfigRaw(t testContext, id operatorId) (*logical.Response, error) {
+func ReadAccountServerRaw(t testContext, id operatorId) (*logical.Response, error) {
 	t.Helper()
 
 	return t.HandleRequest(context.Background(), &logical.Request{
-		Path:      id.syncConfigPath(),
+		Path:      id.accountServerPath(),
 		Operation: logical.ReadOperation,
 		Storage:   t,
 		Data:      map[string]any{},
 	})
 }
 
-func DeleteSyncConfig(t testContext, id operatorId) (*logical.Response, error) {
+func DeleteAccountServer(t testContext, id operatorId) (*logical.Response, error) {
 	t.Helper()
 
 	return t.HandleRequest(context.Background(), &logical.Request{
-		Path:      id.syncConfigPath(),
+		Path:      id.accountServerPath(),
 		Operation: logical.DeleteOperation,
 		Storage:   t,
 		Data:      map[string]any{},
@@ -535,6 +534,19 @@ func ExpectUpdateSync(t testContext, m abstractnats.MockNatsConnection, outJwt *
 		sub.Reply("", msgBytes)
 
 		return nil
+	})
+}
+
+func ExpectUpdateSyncErr(t testContext, m abstractnats.MockNatsConnection, err error) {
+	t.Helper()
+
+	sub := m.ExpectInboxSubscription()
+	m.ExpectPublish(accountserver.SysClaimsUpdateSubject, func(_ abstractnats.MockNatsConnection, subj, reply string, data []byte) error {
+		t.Helper()
+
+		assert.Equal(t, sub.Subject(), reply, "reply inbox does not match")
+
+		return err
 	})
 }
 

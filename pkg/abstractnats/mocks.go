@@ -9,6 +9,7 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type MockNatsConnection interface {
@@ -18,6 +19,8 @@ type MockNatsConnection interface {
 	ExpectInboxSubscription() MockNatsSubscription
 	ExpectSubscription(subj string) MockNatsSubscription
 	ExpectPublish(subj string, handler PublishHandler)
+	AssertNoLingering(t assert.TestingT)
+	RequireNoLingering(t require.TestingT)
 }
 
 type MockNatsSubscription interface {
@@ -52,6 +55,7 @@ type PublishHandler func(m MockNatsConnection, subj string, reply string, data [
 
 type mockNats struct {
 	closed            bool
+	connErr           error
 	subs              map[string]*mockNatsSubscription
 	expectedPublishes map[string]PublishHandler
 	expectedSubs      map[string]*mockNatsSubscription
@@ -68,7 +72,15 @@ func NewMock(tb testing.TB) MockNatsConnection {
 		expectedInboxSubs: []*mockNatsSubscription{},
 	}
 
-	m.tb.Cleanup(m.cleanup)
+	return m
+}
+
+func NewMockError(tb testing.TB, err error) MockNatsConnection {
+	m := &mockNats{
+		tb:      tb,
+		connErr: err,
+	}
+
 	return m
 }
 
@@ -106,6 +118,10 @@ func (m *mockNats) AssertClosed() {
 
 func (m *mockNats) ValidateConnection(servers []string, o ...nats.Option) (NatsConnection, error) {
 	m.tb.Helper()
+
+	if m.connErr != nil {
+		return nil, m.connErr
+	}
 
 	// todo add asserts on the options we expect to see
 
@@ -245,14 +261,26 @@ func (m *mockNats) newNatsMockSubscription(subject string) *mockNatsSubscription
 	}
 }
 
-func (m *mockNats) cleanup() {
+func (m *mockNats) AssertNoLingering(t assert.TestingT) {
 	if len(m.expectedInboxSubs) > 0 {
-		assert.Failf(m.tb, "lingering inbox subs", "%d inbox subs remaining at the end of the test", len(m.expectedInboxSubs))
+		assert.Failf(t, "lingering inbox subs", "%d inbox subs remaining at the end of the test", len(m.expectedInboxSubs))
 	}
 	if len(m.expectedPublishes) > 0 {
-		assert.Failf(m.tb, "lingering requests", "%d requests remaining at the end of the test: %+v", len(m.expectedPublishes), slices.Collect(maps.Keys(m.expectedPublishes)))
+		assert.Failf(t, "lingering requests", "%d requests remaining at the end of the test: %+v", len(m.expectedPublishes), slices.Collect(maps.Keys(m.expectedPublishes)))
 	}
 	if len(m.expectedSubs) > 0 {
-		assert.Failf(m.tb, "lingering subs", "%d subs remaining at the end of the test: %+v", len(m.expectedSubs), slices.Collect(maps.Keys(m.expectedSubs)))
+		assert.Failf(t, "lingering subs", "%d subs remaining at the end of the test: %+v", len(m.expectedSubs), slices.Collect(maps.Keys(m.expectedSubs)))
+	}
+}
+
+func (m *mockNats) RequireNoLingering(t require.TestingT) {
+	if len(m.expectedInboxSubs) > 0 {
+		require.Failf(t, "lingering inbox subs", "%d inbox subs remaining at the end of the test", len(m.expectedInboxSubs))
+	}
+	if len(m.expectedPublishes) > 0 {
+		require.Failf(t, "lingering requests", "%d requests remaining at the end of the test: %+v", len(m.expectedPublishes), slices.Collect(maps.Keys(m.expectedPublishes)))
+	}
+	if len(m.expectedSubs) > 0 {
+		require.Failf(t, "lingering subs", "%d subs remaining at the end of the test: %+v", len(m.expectedSubs), slices.Collect(maps.Keys(m.expectedSubs)))
 	}
 }

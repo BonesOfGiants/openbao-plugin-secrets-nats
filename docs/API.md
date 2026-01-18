@@ -32,17 +32,17 @@ update your API calls accordingly.
 - [Delete operator](#delete-operator)
   - [Request parameters](#request-parameters-3)
   - [Sample request](#sample-request-3)
-- [Create/Update sync configuration](#createupdate-sync-configuration)
+- [Create/Update account server configuration](#createupdate-account-server-configuration)
   - [Request parameters](#request-parameters-4)
   - [Sample payload](#sample-payload-1)
   - [Sample request](#sample-request-4)
-- [Read sync configuration](#read-sync-configuration)
+- [Read account server configuration](#read-account-server-configuration)
   - [Request parameters](#request-parameters-5)
   - [Sample request](#sample-request-5)
   - [Response parameters](#response-parameters-1)
     - [Status parameters](#status-parameters)
   - [Sample response](#sample-response-2)
-- [Delete sync configuration](#delete-sync-configuration)
+- [Delete account server configuration](#delete-account-server-configuration)
   - [Request parameters](#request-parameters-6)
   - [Sample request](#sample-request-6)
 - [Read operator key](#read-operator-key)
@@ -214,15 +214,15 @@ update your API calls accordingly.
 
 ### Operator management
 
-| Path                                                                    | Purpose                      |
-| :---------------------------------------------------------------------- | ---------------------------- |
-| [`/nats/operators`](#list-operators)                                    | List operators               |
-| [`/nats/operators/:op`](#createupdate-operator)                         | Manage operators             |
-| [`/nats/sync-config/:op`](#createupdate-sync-config)                    | Configure account sync       |
-| [`/nats/operator-keys/:op`](#read-operator-key)                         | Read operator id keys        |
-| [`/nats/operator-jwts/:op`](#read-operator-jwt)                         | Read operator jwts           |
-| [`/nats/operator-signing-keys/:op`](#list-operator-signing-keys)        | List operator signing keys   |
-| [`/nats/operator-signing-keys/:op/:name`](#create-operator-signing-key) | Manage operator signing keys |
+| Path                                                                      | Purpose                      |
+| :------------------------------------------------------------------------ | ---------------------------- |
+| [`/nats/operators`](#list-operators)                                      | List operators               |
+| [`/nats/operators/:op`](#createupdate-operator)                           | Manage operators             |
+| [`/nats/account-servers/:op`](#createupdate-account-server-configuration) | Configure account servers    |
+| [`/nats/operator-keys/:op`](#read-operator-key)                           | Read operator id keys        |
+| [`/nats/operator-jwts/:op`](#read-operator-jwt)                           | Read operator jwts           |
+| [`/nats/operator-signing-keys/:op`](#list-operator-signing-keys)          | List operator signing keys   |
+| [`/nats/operator-signing-keys/:op/:name`](#create-operator-signing-key)   | Manage operator signing keys |
 
 ### Account management
 
@@ -271,7 +271,7 @@ This endpoint creates or updates an operator.
 > all NATS server configs using this operator. 
 > Account and user JWTs are not affected by operator JWT reissues.
 >
-> Additionally, **the active sync configuration will be suspended**.
+> Additionally, **the active account server will be suspended**.
 
 | Method | Path                        |
 | :----- | :-------------------------- |
@@ -403,7 +403,7 @@ This endpoint deletes an operator definition.
 
 > [!WARNING]
 > Deleting an operator will also delete all of the objects under the operator:
-> - sync config
+> - account server
 > - all keys and jwts
 > - account configurations
 > - account imports
@@ -429,18 +429,13 @@ $ curl \
     http://127.0.0.1:8200/v1/nats/operators/dev-cluster
 ```
 
-## Create/Update sync configuration
+## Create/Update account server configuration
 
-This endpoint configures sync behavior for an operator. 
+This endpoint configures the account server for an operator.
 
-> [!NOTE]
-> This system of syncing account changes is separate from the concept of 
-> [Managed Operators](https://docs.nats.io/using-nats/nats-tools/nsc/managed)
-> in nsc. The servers configured here are **not** added to the operator JWT under `operator_service_urls`.
-
-| Method | Path                          |
-| :----- | :---------------------------- |
-| `POST` | `/nats/sync-config/:operator` |
+| Method | Path                              |
+| :----- | :-------------------------------- |
+| `POST` | `/nats/account-servers/:operator` |
 
 ### Request parameters
 
@@ -456,7 +451,9 @@ This endpoint configures sync behavior for an operator.
   specified in seconds or as a Go duration format string, e.g. `"1h"`.
   If not set or set to 0, the default NATS value will be used.
 - `sync_user_name` `(string: "openbao")` - The name given to the ephemeral user used for sync operations.
-- `ignore_sync_errors_on_delete` `(bool: false)` - Whether to abort account deletions if unable to sync.
+- `disable_lookups` `(bool: false)` - Whether to disable responding to account lookup requests from the NATS cluster.
+- `disable_updates` `(bool: false)` - Whether to disable sending account updates to the NATS cluster.
+- `disable_deletes` `(bool: false)` - Whether to disable sending account deletes to the NATS cluster.
 
 ### Sample payload
 
@@ -475,20 +472,18 @@ $ curl \
     --header "X-Vault-Token: ..." \
     --request POST \
     --data @payload.json \
-    http://127.0.0.1:8200/v1/nats/sync-config/dev-cluster
+    http://127.0.0.1:8200/v1/nats/account-servers/dev-cluster
 ```
 
-## Read sync configuration
+## Read account server configuration
 
-This endpoint reads a sync configuration.
+This endpoint reads the current account server configuration, if it exists.
 
-The configuration will also return information about the status of the sync,
-such as whether it is currently suspended or any errors that occurred
-when last attempting a sync.
+The payload also includes information about the status of the account server.
 
 | Method | Path                          |
 | :----- | :---------------------------- |
-| `GET`  | `/nats/sync-config/:operator` |
+| `GET`  | `/nats/account-servers/:operator` |
 
 ### Request parameters
 
@@ -500,7 +495,7 @@ when last attempting a sync.
 $ curl \
     --header "X-Vault-Token: ..." \
     --request GET \
-    http://127.0.0.1:8200/v1/nats/sync-config/dev-cluster
+    http://127.0.0.1:8200/v1/nats/account-servers/dev-cluster
 ```
 
 ### Response parameters
@@ -511,18 +506,18 @@ $ curl \
 - `max_reconnects` `(int: <optional>)` - Maximum reconnects for the NATS connection.
 - `reconnect_wait` `(int: <optional>)` - Reconnect wait for the NATS connection in seconds.
 - `sync_user_name` `(string)` - The name given to the user credentials used for sync operations.
-- `ignore_sync_errors_on_delete` `(bool: <optional>)` - Whether sync errors are ignored when accounts are deleted.
+- `ignore_errors_on_delete` `(bool: <optional>)` - Whether sync errors are ignored when accounts are deleted.
 - `status` [`(status)`](#status-parameters) - Information about the current sync status.
 
 #### Status parameters
 
 - `status` `(string)` - The most recent status of the sync. This field may have the following values:
-  - `"created"` - An initial status before the first sync attempt.
-  - `"active"` - The sync is active and not erroring.
-  - `"suspended"` - The sync is suspended.
+  - `"created"` - An initial status before the NATS connection has been initialized.
+  - `"active"` - The server is active and not erroring.
+  - `"suspended"` - The server is suspended and not running.
   - `"error"` - The last sync attempt failed. Error details are available in the `errors` array. 
-- `last_sync_time` `(string: <optional>)` - The most recent successful sync time in RFC3339 format.
-- `errors` `(array[string]: <optional>)` - Any errors that occurred during the most recent sync.
+- `last_status_change` `(int: <optional>)` - The most recent successful sync time as a UNIX timestamp.
+- `error` `(string: <optional>)` - If the `status` is "error", the error that is preventing the account server from being active.
 
 ### Sample response
 
@@ -535,20 +530,19 @@ $ curl \
         
         "status": {
             "status": "active",
-            "last_sync_time": "2025-12-26T18:36:13.7238536-08:00",
-            "errors": []
+            "last_status_change": 1765874985,
         }
     }
 }
 ```
 
-## Delete sync configuration
+## Delete account server configuration
 
-This endpoint removes the sync configuration for an operator.
+This endpoint removes the account server for an operator.
 
 | Method   | Path                          |
 | :------- | :---------------------------- |
-| `DELETE` | `/nats/sync-config/:operator` |
+| `DELETE` | `/nats/account-servers/:operator` |
 
 ### Request parameters
 
@@ -560,7 +554,7 @@ This endpoint removes the sync configuration for an operator.
 $ curl \
     --header "X-Vault-Token: ..." \
     --request DELETE \
-    http://127.0.0.1:8200/v1/nats/sync-config/dev-cluster
+    http://127.0.0.1:8200/v1/nats/account-servers/dev-cluster
 ```
 
 ## Read operator key
@@ -647,7 +641,7 @@ Calling the same endpoint more than once is a noop.
 > For the new claims to take effect, the operator JWT must be updated on 
 > all NATS server configs using this operator. 
 >
-> Creating an operator signing key will also [suspend the active sync configuration](./Home.md#account-syncing).
+> Creating an operator signing key will also [suspend the active account server](./Home.md#suspend-the-account-server).
 
 | Method | Path                                          |
 | :----- | :-------------------------------------------- |
@@ -751,7 +745,7 @@ This endpoint deletes an operator signing key.
 > all NATS server configs using this operator.
 > All accounts that were signed with this operator JWT will be reissued using the operator identity key.
 >
-> Deleting an operator signing key will also [suspend the active sync configuration](./Home.md#account-syncing).
+> Deleting an operator signing key will also [suspend the active account server](./Home.md#suspend-the-account-server).
 
 | Method   | Path                                          |
 | :------- | :-------------------------------------------- |
@@ -776,7 +770,7 @@ $ curl \
 This endpoint create an account configuration under the specified operator.
 
 > [!WARNING]
-> Modifying an accounts's claims will reissue the account JWT. If a [sync config](#createupdate-sync-config)
+> Modifying an accounts's claims will reissue the account JWT. If an [account server](#createupdate-account-server-configuration)
 > is configured, account JWT changes will be automatically synced to the NATS server.
 
 | Method | Path                                |
@@ -970,7 +964,7 @@ import claim. When modifying an existing account import, the list of imports are
 will be overwritten entirely. 
 
 > [!WARNING]
-> Modifying an accounts's claims will reissue the account JWT. If a [sync config](#createupdate-sync-config)
+> Modifying an accounts's claims will reissue the account JWT. If an [account server](#createupdate-account-server-configuration)
 > is configured, account JWT changes will be automatically synced to the NATS server.
 
 | Method | Path                                             |
@@ -1188,7 +1182,7 @@ When creating a `scoped` signing key, the signing key name will be used as the r
 > [!WARNING]
 > Creating an account signing key will reissue the account JWT. 
 > 
-> If a [sync config](#createupdate-sync-config) is configured, 
+> If an [account server](#createupdate-account-server-configuration) is configured,
 > account JWT changes will be automatically synced to the NATS server.
 
 | Method | Path                                                  |
@@ -1306,7 +1300,7 @@ This endpoint deletes an account signing key.
 > [!WARNING]
 > Deleting an account signing keys will reissue the account JWT. 
 > 
-> If a [sync config](#createupdate-sync-config) is configured, 
+> If an [account server](#createupdate-account-server-configuration) is configured,
 > account JWT changes will be automatically synced to the NATS server. 
 > As a consequence, all user credentials signed with this signing key will immediately be invalidated.
 

@@ -21,9 +21,8 @@ const (
 )
 
 type Config struct {
-	Operator                 string
-	IgnoreSyncErrorsOnDelete bool
-	EnableAccountLookup      bool
+	Operator            string
+	EnableAccountLookup bool
 }
 
 type JwtLookupFunc func(id string) (string, error)
@@ -35,15 +34,15 @@ type AccountServer struct {
 	nc     abstractnats.NatsConnection
 }
 
-func NewAccountServer(syncConfig Config, lookupFunc JwtLookupFunc, logger hclog.Logger, nc abstractnats.NatsConnection) (*AccountServer, error) {
+func NewAccountServer(cfg Config, lookupFunc JwtLookupFunc, logger hclog.Logger, nc abstractnats.NatsConnection) (*AccountServer, error) {
 	server := &AccountServer{
-		Config: syncConfig,
+		Config: cfg,
 		lookup: lookupFunc,
 		logger: logger,
 		nc:     nc,
 	}
 
-	if syncConfig.EnableAccountLookup {
+	if cfg.EnableAccountLookup {
 		_, err := nc.Subscribe(SysAccountClaimsLookupSubject, server.accountLookupRequest)
 		if err != nil {
 			return nil, err
@@ -56,7 +55,7 @@ func NewAccountServer(syncConfig Config, lookupFunc JwtLookupFunc, logger hclog.
 func (r *AccountServer) CloseConnection() {
 	if r != nil {
 		if r.nc != nil {
-			r.logger.Debug("sync: closing connection", "operator", r.Operator, "servers", r.nc.Servers())
+			r.logger.Debug("account server: closing connection", "operator", r.Operator, "servers", r.nc.Servers())
 			r.nc.Drain()
 		}
 	}
@@ -71,13 +70,14 @@ func (r *AccountServer) accountLookupRequest(msg *abstractnats.Msg) {
 	acc := tk[accReqAccIndex]
 	jwt, err := r.lookup(acc)
 	if err != nil {
-		r.logger.Debug("sync: failed to lookup jwt", "operator", r.Operator, "id", acc, "error", err)
+		r.logger.Debug("account server: failed to lookup jwt", "operator", r.Operator, "id", acc, "error", err)
+		// todo update the config
 	}
 
 	// if the jwt is not found "" will be returned. An empty response is valid to signal absence of a jwt.
 	err = msg.Respond([]byte(jwt))
 	if err != nil {
-		r.logger.Debug("sync: error returning jwt lookup", "operator", r.Operator, "id", acc, "error", err)
+		r.logger.Debug("account server: error returning jwt lookup", "operator", r.Operator, "id", acc, "error", err)
 	}
 }
 
@@ -109,16 +109,16 @@ func (r *AccountServer) claimUpdateRequest(subject string, data []byte, timeout 
 		var resp ServerAPIClaimUpdateResponse
 		err = json.Unmarshal(msg.Data, &resp)
 		if err != nil {
-			r.logger.Debug("sync: failed to parse response", "payload", string(msg.Data))
+			r.logger.Debug("account server request error: failed to parse response", "subject", subject, "payload", string(msg.Data))
 			continue
 		}
 
 		if resp.Error != nil {
-			r.logger.Warn("sync delete error", "account", resp.Error.Account, "code", resp.Error.Code, "description", resp.Error.Description)
+			r.logger.Warn("account server request error: response error", "subject", subject, "account", resp.Error.Account, "code", resp.Error.Code, "description", resp.Error.Description)
 			// todo this might be overly strict?
 			return resp.Error
 		} else if resp.Data != nil {
-			r.logger.Trace("sync delete response", "account", resp.Data.Account, "code", resp.Data.Code, "message", resp.Data.Message)
+			r.logger.Trace("account server request success:", "subject", subject, "account", resp.Data.Account, "code", resp.Data.Code, "message", resp.Data.Message)
 		}
 	}
 

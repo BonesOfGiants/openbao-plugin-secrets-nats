@@ -20,7 +20,7 @@ import (
 
 const (
 	operatorsPathPrefix                    = "operators/"
-	syncConfigPathPrefix                   = "sync-config/"
+	accountServersPathPrefix               = "account-servers/"
 	operatorKeysPathPrefix                 = "operator-keys/"
 	operatorSigningKeysPathPrefix          = "operator-signing-keys/"
 	operatorJwtsPathPrefix                 = "operator-jwts/"
@@ -93,6 +93,9 @@ var (
 
 type NatsConnectionFunc func(servers []string, o ...nats.Option) (abstractnats.NatsConnection, error)
 
+type operatorMap[T any] map[string]T
+type nkeyToNameMap map[string]string
+
 type backend struct {
 	*framework.Backend
 
@@ -105,7 +108,13 @@ type backend struct {
 	accServerCache map[string]*accountserver.AccountServer
 
 	accCacheLock       sync.RWMutex
-	accNkeyToNameCache map[string]map[string]string
+	accNkeyToNameCache operatorMap[nkeyToNameMap]
+
+	// accountUpdateQueue *queue.PriorityQueue
+	// // queueCtx is the context for the account update queue
+	// queueCtx context.Context
+	// // cancelQueueCtx is used to terminate the background ticker
+	// cancelQueueCtx context.CancelFunc
 
 	// todo metrics? (see pki/database)
 }
@@ -122,8 +131,9 @@ func Backend() *backend {
 	var b = backend{}
 
 	b.NatsConnectionFunc = abstractnats.NewNatsConnection
-	b.accNkeyToNameCache = map[string]map[string]string{}
+	b.accNkeyToNameCache = operatorMap[nkeyToNameMap]{}
 	b.accServerCache = map[string]*accountserver.AccountServer{}
+	// b.accountUpdateQueue = queue.New()
 	b.Backend = &framework.Backend{
 		Help: strings.TrimSpace(backendHelp),
 		PathsSpecial: &logical.Paths{
@@ -143,7 +153,7 @@ func Backend() *backend {
 			pathConfigAccount(&b),
 			pathConfigUser(&b),
 			pathConfigEphemeralUser(&b),
-			pathConfigOperatorSync(&b),
+			pathConfigAccountServer(&b),
 			pathConfigAccountImport(&b),
 			pathConfigAccountRevocation(&b),
 			pathRotate(&b),
@@ -166,13 +176,13 @@ func Backend() *backend {
 func (b *backend) writeAccountToCache(id accountId, key string) {
 	b.accCacheLock.Lock()
 	defer b.accCacheLock.Unlock()
-	opCache, ok := b.accNkeyToNameCache[id.op]
+	cache, ok := b.accNkeyToNameCache[id.op]
 	if !ok {
-		opCache = map[string]string{}
-		b.accNkeyToNameCache[id.op] = opCache
+		cache = nkeyToNameMap{}
+		b.accNkeyToNameCache[id.op] = cache
 	}
 
-	opCache[key] = id.acc
+	cache[key] = id.acc
 }
 
 func (b *backend) accountNameFromNkey(ctx context.Context, s logical.Storage, id operatorId, key string) (string, bool) {
@@ -237,20 +247,20 @@ func (b *backend) accountJwtLookupFunc(id operatorId) accountserver.JwtLookupFun
 	}
 }
 
-func (b *backend) putAccountServer(name string, sync *accountserver.AccountServer) {
+func (b *backend) putAccountServer(name string, srv *accountserver.AccountServer) {
 	b.accServerLock.Lock()
 	defer b.accServerLock.Unlock()
-	b.accServerCache[name] = sync
+	b.accServerCache[name] = srv
 }
 
 func (b *backend) popAccountServer(name string) *accountserver.AccountServer {
 	b.accServerLock.Lock()
 	defer b.accServerLock.Unlock()
-	sync, ok := b.accServerCache[name]
+	srv, ok := b.accServerCache[name]
 	if ok {
 		delete(b.accServerCache, name)
 	}
-	return sync
+	return srv
 }
 
 func (b *backend) clearAccountServers() map[string]*accountserver.AccountServer {
@@ -263,6 +273,19 @@ func (b *backend) clearAccountServers() map[string]*accountserver.AccountServer 
 
 func (b *backend) initialize(ctx context.Context, req *logical.InitializationRequest) error {
 	b.s = req.Storage
+
+	for op, err := range listPaged(ctx, req.Storage, operatorsPathPrefix, DefaultPagingSize) {
+		if err != nil {
+			return err
+		}
+
+		id := OperatorId(op)
+
+		if _, err := b.startAccountServer(ctx, id, false); err != nil {
+			b.Logger().Warn("initialize: failed to start account server", "error", err)
+		}
+	}
+
 	return nil
 }
 
@@ -293,14 +316,7 @@ type configPather interface {
 	configPath() string
 }
 
-func deleteFromStorage(ctx context.Context, s logical.Storage, path string) error {
-	if err := s.Delete(ctx, path); err != nil {
-		return err
-	}
-	return nil
-}
-
-func storeInStorage[T any](ctx context.Context, s logical.Storage, path string, t *T) error {
+func storeInStorage(ctx context.Context, s logical.Storage, path string, t any) error {
 	entry, err := logical.StorageEntryJSON(path, t)
 	if err != nil {
 		return err
@@ -345,7 +361,7 @@ func listPaged(
 }
 
 func (b *backend) periodicFunc(ctx context.Context, req *logical.Request) error {
-	b.Logger().Trace("starting periodic refresh")
+	b.Logger().Trace("periodic: start")
 	txRollback, err := logical.StartTxStorage(ctx, req)
 	if err != nil {
 		return err
@@ -359,8 +375,7 @@ func (b *backend) periodicFunc(ctx context.Context, req *logical.Request) error 
 
 		id := OperatorId(op)
 
-		// ensure account server is live for applicable operators
-		if _, err := b.getAccountServer(ctx, id); err != nil {
+		if _, err := b.startAccountServer(ctx, id, false); err != nil {
 			b.Logger().Warn("periodic: failed to ensure account server", "error", err)
 		}
 
@@ -390,7 +405,7 @@ func (b *backend) periodicPruneAccountRevocations(ctx context.Context, storage l
 		}
 
 		if revocation.CreationTime.Add(revocation.Ttl).Before(now) {
-			err = deleteFromStorage(ctx, storage, revocation.configPath())
+			err = storage.Delete(ctx, revocation.configPath())
 			if err != nil {
 				b.Logger().Debug("failed to prune account revocation", "operator", revocation.op, "account", revocation.acc, "revocation", revocation.sub, "error", err)
 			} else {
@@ -421,12 +436,12 @@ func (b *backend) createAuthCallback(opId operatorId) (nats.Option, error) {
 				return "", fmt.Errorf("operator does not exist: %w", err)
 			}
 
-			syncConfig, err := b.OperatorSync(context.TODO(), b.s, opId)
+			accountServer, err := b.AccountServer(context.TODO(), b.s, opId)
 			if err != nil {
-				return "", fmt.Errorf("failed to read sync config: %w", err)
+				return "", fmt.Errorf("failed to read account server: %w", err)
 			}
-			if syncConfig == nil {
-				return "", fmt.Errorf("sync config does not exist: %w", err)
+			if accountServer == nil {
+				return "", fmt.Errorf("account server does not exist: %w", err)
 			}
 
 			claims := &jwt.UserClaims{
@@ -465,7 +480,7 @@ func (b *backend) createAuthCallback(opId operatorId) (nats.Option, error) {
 			signingKey, enrichWarnings, err := b.enrichUserClaims(context.TODO(), b.s, enrichUserParams{
 				op:     opId.op,
 				acc:    operator.SysAccountName,
-				user:   syncConfig.SyncUserName,
+				user:   accountServer.AccountServerClientName,
 				claims: claims,
 			})
 			if err != nil {
@@ -492,12 +507,12 @@ func (b *backend) createAuthCallback(opId operatorId) (nats.Option, error) {
 				return nil, fmt.Errorf("operator does not exist: %w", err)
 			}
 
-			syncConfig, err := b.OperatorSync(context.TODO(), b.s, opId)
+			accountServer, err := b.AccountServer(context.TODO(), b.s, opId)
 			if err != nil {
-				return nil, fmt.Errorf("failed to read sync config: %w", err)
+				return nil, fmt.Errorf("failed to read account server config: %w", err)
 			}
-			if syncConfig == nil {
-				return nil, fmt.Errorf("sync config does not exist: %w", err)
+			if accountServer == nil {
+				return nil, fmt.Errorf("account server config does not exist: %w", err)
 			}
 
 			return idKey.Sign(nonce)
@@ -505,76 +520,109 @@ func (b *backend) createAuthCallback(opId operatorId) (nats.Option, error) {
 	), nil
 }
 
-func (b *backend) getAccountServer(ctx context.Context, id operatorId) (*accountserver.AccountServer, error) {
-	syncConfig, err := b.OperatorSync(ctx, b.s, id)
+// startAccountServer creates an AccountServer for the given account server configuration
+// or returns an existing connection. Pass true to reconnect if you want to
+// ignore the cache and force a new connection.
+func (b *backend) startAccountServer(ctx context.Context, id operatorId, reconnect bool) (*accountserver.AccountServer, error) {
+	accountServer, err := b.AccountServer(ctx, b.s, id)
 	if err != nil {
 		return nil, err
 	}
-	if syncConfig == nil {
+	if accountServer == nil {
 		return nil, nil
 	}
-	if syncConfig.Suspend {
+	if accountServer.Suspend {
 		return nil, nil
 	}
 
 	b.accServerLock.RLock()
-	srv := b.accServerCache[id.op]
+	srv := b.accServerCache[accountServer.op]
 	b.accServerLock.RUnlock()
 
-	if srv == nil {
+	var syncErr error
+
+	if reconnect || srv == nil {
 		authCb, err := b.createAuthCallback(id)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create auth callback for %q: %w", id.op, err)
+			syncErr = fmt.Errorf("failed to create auth callback: %w", err)
+			goto update_status
 		}
 
 		nc, err := b.NatsConnectionFunc(
-			syncConfig.Servers,
-			nats.Name("openbao_account_server"),
+			accountServer.Servers,
+			nats.Name(accountServer.AccountServerClientName),
 			authCb,
-			nats.Timeout(syncConfig.ConnectTimeout),
-			nats.ReconnectWait(syncConfig.ReconnectWait),
-			nats.MaxReconnects(syncConfig.MaxReconnects),
+			nats.Timeout(accountServer.ConnectTimeout),
+			nats.ReconnectWait(accountServer.ReconnectWait),
+			nats.MaxReconnects(accountServer.MaxReconnects),
 			nats.DisconnectErrHandler(func(c *nats.Conn, err error) {
-				b.Logger().Debug("sync: disconnected from nats", "url", c.ConnectedUrl(), "error", err)
+				b.Logger().Trace("account server: disconnected from nats", "url", c.ConnectedUrl(), "error", err)
 				// invalidate cached conn
-				sync := b.popAccountServer(id.op)
-				if sync != nil {
-					sync.CloseConnection()
-				}
-				// todo schedule this to be reconnected
+
+				// todo maybe with a backoff if repeated disconnects in a short time?
+				b.startAccountServer(ctx, id, true)
 			}),
 			nats.ReconnectHandler(func(c *nats.Conn) {
-				b.Logger().Debug("sync: reconnected to nats server", "url", c.ConnectedUrl())
+				b.Logger().Trace("account server: reconnected to nats server", "url", c.ConnectedUrl())
 			}),
 			nats.ClosedHandler(func(c *nats.Conn) {
-				b.Logger().Debug("sync: connection to nats server closed", "url", c.ConnectedUrl())
+				b.Logger().Trace("account server: connection to nats server closed", "url", c.ConnectedUrl())
 				// invalidate cached conn
-				sync := b.popAccountServer(id.op)
-				if sync != nil {
-					sync.CloseConnection()
-				}
-				// todo schedule this to be reconnected
+				b.startAccountServer(ctx, id, true)
 			}),
 		)
 		if err != nil {
-			return nil, err
+			syncErr = fmt.Errorf("failed to create nats connection: %w", err)
 		}
 
-		srv, err = accountserver.NewAccountServer(
+		newSrv, err := accountserver.NewAccountServer(
 			accountserver.Config{
-				Operator:                 id.op,
-				IgnoreSyncErrorsOnDelete: syncConfig.IgnoreSyncErrorsOnDelete,
-				EnableAccountLookup:      !syncConfig.DisableAccountLookup,
+				Operator:            id.op,
+				EnableAccountLookup: !accountServer.DisableAccountLookup,
 			},
 			b.accountJwtLookupFunc(id),
 			b.Logger(),
 			nc,
 		)
+		if err != nil {
+			syncErr = fmt.Errorf("failed to create account server: %w", err)
+		}
 
+		b.putAccountServer(id.op, newSrv)
+
+		if srv != nil {
+			srv.CloseConnection()
+		}
+
+		srv = newSrv
+	}
+
+update_status:
+	syncDirty := false
+	if syncErr != nil {
+		errString := syncErr.Error()
+		if accountServer.Status.Error != errString {
+			accountServer.Status.Error = errString
+			syncDirty = true
+		}
+		if accountServer.Status.Status != AccountServerStatusError {
+			accountServer.Status.Status = AccountServerStatusError
+			accountServer.Status.LastStatusChange = time.Now()
+			syncDirty = true
+		}
+	} else {
+		if accountServer.Status.Status != AccountServerStatusActive {
+			accountServer.Status.Status = AccountServerStatusActive
+			accountServer.Status.LastStatusChange = time.Now()
+			syncDirty = true
+		}
+	}
+
+	if syncDirty {
+		err = storeInStorage(ctx, b.s, id.accountServerPath(), accountServer)
 		if err != nil {
 			return nil, err
 		}
-		b.putAccountServer(id.op, srv)
 	}
 
 	return srv, nil
@@ -606,15 +654,9 @@ func (b *backend) periodicRefreshAccounts(ctx context.Context, s logical.Storage
 				continue
 			}
 
-			accountSync, err := b.getAccountServer(ctx, opId)
+			err = b.syncAccountUpdate(ctx, accId)
 			if err != nil {
-				b.Logger().Warn("failed to create account sync", "operator", opId.op, "error", err)
-			} else if accountSync != nil {
-				b.Logger().Debug("syncing account", "operator", accId.op, "account", accId.acc)
-				if err = b.syncAccountUpdate(ctx, s, accountSync, accId); err != nil {
-					b.Logger().Warn("account sync error", "operator", accId.op, "account", accId.acc, "error", err)
-					b.popAccountServer(opId.op)
-				}
+				return err
 			}
 		}
 	}
@@ -624,68 +666,19 @@ func (b *backend) periodicRefreshAccounts(ctx context.Context, s logical.Storage
 type syncErrors map[string]error
 
 func (b *backend) syncOperatorAccounts(ctx context.Context, s logical.Storage, id operatorId) (syncErrors, error) {
-	srv, err := b.getAccountServer(ctx, id)
-	if err != nil {
-		return nil, err
-	} else if srv == nil {
-		b.Logger().Debug("sync not configured", "operator", id.op)
-		return nil, nil
-	}
-
-	startTime := time.Now()
-
 	errors := syncErrors{}
 	for acc, err := range listPaged(ctx, s, id.accountsConfigPrefix(), DefaultPagingSize) {
 		if err != nil {
 			return nil, err
 		}
 
-		// todo improve cache invalidation handling
-		if srv == nil {
-			srv, err = b.getAccountServer(ctx, id)
-			if err != nil {
-				return nil, err
-			} else if srv == nil {
-				b.Logger().Debug("sync not configured", "operator", id.op)
-				return nil, nil
-			}
-		}
-
-		err = b.syncAccountUpdate(ctx, s, srv, id.accountId(acc))
+		err = b.syncAccountUpdate(ctx, id.accountId(acc))
 		if err != nil {
 			errors[acc] = err
-			srv = nil
 		}
 	}
 
-	// update status
-	err = logical.WithTransaction(ctx, s, func(s logical.Storage) error {
-		syncConfig, err := b.OperatorSync(ctx, s, id)
-		if err != nil {
-			return err
-		}
-		if syncConfig == nil {
-			b.Logger().Warn("sync config unexpectedly null", "operator", id.op)
-			return nil
-		}
-
-		if len(errors) > 0 {
-			syncConfig.Status.Status = OperatorSyncStatusError
-			syncConfig.Status.Errors = make([]string, 0, len(errors))
-			for k, v := range errors {
-				syncConfig.Status.Errors = append(syncConfig.Status.Errors, fmt.Sprintf("account %q failed to sync: %s", k, v))
-			}
-		} else {
-			syncConfig.Status.Status = OperatorSyncStatusActive
-			syncConfig.Status.Errors = nil
-			syncConfig.Status.LastSyncTime = startTime
-		}
-		storeInStorage(ctx, s, id.syncConfigPath(), syncConfig)
-
-		return nil
-	})
-
-	return errors, err
+	return errors, nil
 }
 
 func (b *backend) clean(_ context.Context) {
@@ -717,17 +710,8 @@ func (b *backend) walRollback(ctx context.Context, req *logical.Request, kind st
 		return nil
 	}
 
-	accountsrv, err := b.getAccountServer(ctx, id.operatorId())
-	if err != nil {
-		return err
-	}
-	if accountsrv == nil {
-		// no sync config
-		return nil
-	}
-
 	// restore the account on the endpoint
-	err = b.syncAccountUpdate(ctx, req.Storage, accountsrv, id)
+	err = b.syncAccountUpdate(ctx, id)
 	if err != nil {
 		return err
 	}

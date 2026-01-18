@@ -324,7 +324,7 @@ func (b *backend) pathEphemeralUserDelete(ctx context.Context, req *logical.Requ
 	}
 	defer txRollback()
 
-	err = deleteFromStorage(ctx, req.Storage, EphemeralUserIdField(d).configPath())
+	err = req.Storage.Delete(ctx, EphemeralUserIdField(d).configPath())
 	if err != nil {
 		return nil, fmt.Errorf("failed to delete users: %w", err)
 	}

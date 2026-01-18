@@ -391,14 +391,10 @@ func (b *backend) userCredsRevoke(ctx context.Context, req *logical.Request, dat
 		return nil, err
 	}
 
-	accountSync, err := b.getAccountServer(ctx, id.operatorId())
+	err = b.syncAccountUpdate(ctx, id.accountId())
 	if err != nil {
-		return nil, fmt.Errorf("unable to sync jwt for account %q: %w", id.acc, err)
-	} else if accountSync != nil {
-		err := b.syncAccountUpdate(ctx, req.Storage, accountSync, id.accountId())
-		if err != nil {
-			return nil, fmt.Errorf("unable to sync jwt for account %q: %s", id.acc, err)
-		}
+		// todo is this a failed revocation that needs to be retried?
+		return nil, fmt.Errorf("unable to sync jwt for account %q: %s", id.acc, err)
 	}
 
 	return nil, nil

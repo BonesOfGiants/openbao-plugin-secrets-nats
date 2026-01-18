@@ -369,15 +369,16 @@ func TestBackend_AccountImport_List(ts *testing.T) {
 func TestBackend_AccountImport_Sync(t *testing.T) {
 	t.Run("sync on account import create", func(_t *testing.T) {
 		nats := abstractnats.NewMock(_t)
+		defer nats.AssertNoLingering(_t)
 		t := testBackendWithNats(_t, nats)
 
 		accId := AccountId("op1", "acc1")
 		SetupTestAccount(t, accId, nil)
 
-		resp, err := WriteSyncConfig(t, accId.operatorId(), map[string]any{
-			"servers":                []string{"nats://localhost:4222"},
-			"sync_now":               false,
-			"disable_account_lookup": true,
+		resp, err := WriteAccountServer(t, accId.operatorId(), map[string]any{
+			"servers":         []string{"nats://localhost:4222"},
+			"sync_now":        false,
+			"disable_lookups": true,
 		})
 		RequireNoRespError(t, resp, err)
 
@@ -405,16 +406,17 @@ func TestBackend_AccountImport_Sync(t *testing.T) {
 	})
 	t.Run("sync on account import delete", func(_t *testing.T) {
 		nats := abstractnats.NewMock(_t)
+		defer nats.AssertNoLingering(_t)
 		t := testBackendWithNats(_t, nats)
 
 		accId := AccountId("op1", "acc1")
 		SetupTestAccount(t, accId, nil)
 
-		resp, err := WriteSyncConfig(t, accId.operatorId(), map[string]any{
-			"servers":                []string{"nats://localhost:4222"},
-			"suspend":                true,
-			"sync_now":               false,
-			"disable_account_lookup": true,
+		resp, err := WriteAccountServer(t, accId.operatorId(), map[string]any{
+			"servers":         []string{"nats://localhost:4222"},
+			"suspend":         true,
+			"sync_now":        false,
+			"disable_lookups": true,
 		})
 		RequireNoRespError(t, resp, err)
 
@@ -426,7 +428,7 @@ func TestBackend_AccountImport_Sync(t *testing.T) {
 		}
 		WriteConfig(t, accId.importId("test-import"), expected)
 
-		resp, err = WriteSyncConfig(t, accId.operatorId(), map[string]any{
+		resp, err = WriteAccountServer(t, accId.operatorId(), map[string]any{
 			"suspend":  false,
 			"sync_now": false,
 		})

@@ -13,10 +13,10 @@ import (
 )
 
 const (
-	DefaultSyncUserName = "openbao"
+	DefaultAccountServerClientName = "openbao"
 )
 
-type operatorSyncConfigEntry struct {
+type accountServerEntry struct {
 	operatorId
 
 	Suspend        bool          `json:"suspend"`
@@ -25,40 +25,44 @@ type operatorSyncConfigEntry struct {
 	MaxReconnects  int           `json:"max_reconnects"`
 	ReconnectWait  time.Duration `json:"reconnect_wait"`
 
-	SyncUserName string `json:"sync_user_name"`
-
-	// Whether to abort a deletion if the delete fails to sync
-	IgnoreSyncErrorsOnDelete bool `json:"ignore_sync_errors_on_delete"`
+	AccountServerClientName string `json:"client_name"`
 
 	// Whether to disable account lookup request support
-	DisableAccountLookup bool `json:"disable_account_lookup"`
+	DisableAccountLookup bool `json:"disable_lookups"`
 
-	Status operatorSyncStatus `json:"status"`
+	DisableAccountUpdate bool `json:"disable_updates"`
+	DisableAccountDelete bool `json:"disable_deletes"`
+
+	Status accountServerStatus `json:"status"`
 }
 
-type OperatorSyncStatus string
+func (e *accountServerEntry) IsSuspended() bool {
+	return e.Suspend || (e.DisableAccountLookup && e.DisableAccountUpdate && e.DisableAccountDelete)
+}
+
+type AccountServerStatus string
 
 const (
-	OperatorSyncStatusCreated   OperatorSyncStatus = "created"
-	OperatorSyncStatusActive    OperatorSyncStatus = "active"
-	OperatorSyncStatusSuspended OperatorSyncStatus = "suspended"
-	OperatorSyncStatusError     OperatorSyncStatus = "error"
+	AccountServerStatusCreated   AccountServerStatus = "created"
+	AccountServerStatusActive    AccountServerStatus = "active"
+	AccountServerStatusSuspended AccountServerStatus = "suspended"
+	AccountServerStatusError     AccountServerStatus = "error"
 )
 
-type operatorSyncStatus struct {
-	LastSyncTime time.Time          `json:"last_sync_time"`
-	Status       OperatorSyncStatus `json:"status"`
-	Errors       []string           `json:"errors,omitempty"`
+type accountServerStatus struct {
+	LastStatusChange time.Time           `json:"last_status_change"`
+	Status           AccountServerStatus `json:"status"`
+	Error            string              `json:"error,omitempty"`
 }
 
 var (
 	DefaultSyncUserTtl = 5 * time.Minute
 )
 
-func pathConfigOperatorSync(b *backend) []*framework.Path {
+func pathConfigAccountServer(b *backend) []*framework.Path {
 	return []*framework.Path{
 		{
-			Pattern: syncConfigPathPrefix + operatorRegex + "$",
+			Pattern: accountServersPathPrefix + operatorRegex + "$",
 			Fields: map[string]*framework.FieldSchema{
 				"operator": operatorField,
 				"servers": {
@@ -88,64 +92,70 @@ func pathConfigOperatorSync(b *backend) []*framework.Path {
 				},
 				"sync_user_name": {
 					Type:        framework.TypeString,
-					Description: "The name to use for sync operations. Defaults to '" + DefaultSyncUserName + "'.",
-					Default:     DefaultSyncUserName,
+					Description: "The name to use for sync operations. Defaults to '" + DefaultAccountServerClientName + "'.",
+					Default:     DefaultAccountServerClientName,
 				},
-				"ignore_sync_errors_on_delete": {
-					Type:        framework.TypeBool,
-					Description: "Whether to abort a deletion if the delete fails to sync.",
-				},
-				"disable_account_lookup": {
+				"disable_lookups": {
 					Type:        framework.TypeBool,
 					Description: "Whether to disable responding to account lookup requests from the NATS cluster.",
 					Default:     false,
 				},
+				"disable_updates": {
+					Type:        framework.TypeBool,
+					Description: "Whether to disable sending account updates to the NATS cluster.",
+					Default:     false,
+				},
+				"disable_deletes": {
+					Type:        framework.TypeBool,
+					Description: "Whether to disable sending account deletes to the NATS cluster.",
+					Default:     false,
+				},
 				"sync_now": {
 					Type:        framework.TypeBool,
-					Description: "Whether to attempt a sync immediately after creating/updating the sync config.",
+					Description: "Whether to immediately sync all accounts after creating/updating the account server.",
 					Default:     true,
 				},
 			},
-			ExistenceCheck: b.pathOperatorSyncExistenceCheck,
+			ExistenceCheck: b.pathAccountServerExistenceCheck,
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.CreateOperation: &framework.PathOperation{
-					Callback: b.pathOperatorSyncCreateUpdate,
+					Callback: b.pathAccountServerCreateUpdate,
 				},
 				logical.UpdateOperation: &framework.PathOperation{
-					Callback: b.pathOperatorSyncCreateUpdate,
+					Callback: b.pathAccountServerCreateUpdate,
 				},
 				logical.ReadOperation: &framework.PathOperation{
-					Callback: b.pathOperatorSyncRead,
+					Callback: b.pathAccountServerRead,
 				},
 				logical.DeleteOperation: &framework.PathOperation{
-					Callback: b.pathOperatorSyncDelete,
+					Callback: b.pathAccountServerDelete,
 				},
 			},
-			HelpSynopsis: "Manage configuration for an operator's sync job.",
+			HelpSynopsis: "Manage configuration for the account server for an operator.",
 		},
 	}
 }
 
-func (b *backend) OperatorSync(ctx context.Context, s logical.Storage, id operatorId) (*operatorSyncConfigEntry, error) {
-	var sync *operatorSyncConfigEntry
-	err := get(ctx, s, id.syncConfigPath(), &sync)
+func (b *backend) AccountServer(ctx context.Context, s logical.Storage, id operatorId) (*accountServerEntry, error) {
+	var sync *accountServerEntry
+	err := get(ctx, s, id.accountServerPath(), &sync)
 	if sync != nil {
 		sync.operatorId = id
 	}
 	return sync, err
 }
 
-func NewOperatorSync(id operatorId) *operatorSyncConfigEntry {
-	return &operatorSyncConfigEntry{
-		operatorId:   id,
-		SyncUserName: DefaultSyncUserName,
-		Status: operatorSyncStatus{
-			Status: OperatorSyncStatusCreated,
+func NewAccountServer(id operatorId) *accountServerEntry {
+	return &accountServerEntry{
+		operatorId:              id,
+		AccountServerClientName: DefaultAccountServerClientName,
+		Status: accountServerStatus{
+			Status: AccountServerStatusCreated,
 		},
 	}
 }
 
-func (b *backend) pathOperatorSyncCreateUpdate(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {
+func (b *backend) pathAccountServerCreateUpdate(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {
 	txRollback, err := shimtx.StartTxStorageWithShim(ctx, req)
 	if err != nil {
 		return nil, err
@@ -171,14 +181,16 @@ func (b *backend) pathOperatorSyncCreateUpdate(ctx context.Context, req *logical
 	}
 
 	syncDirty := false
-	sync, err := b.OperatorSync(ctx, req.Storage, id)
+	sync, err := b.AccountServer(ctx, req.Storage, id)
 	if err != nil {
 		return nil, err
 	}
 	if sync == nil {
-		sync = NewOperatorSync(id)
+		sync = NewAccountServer(id)
 		syncDirty = true
 	}
+
+	oldSuspend := sync.IsSuspended()
 
 	if suspend, ok := d.GetOk("suspend"); ok {
 		syncDirty = syncDirty || (sync.Suspend != suspend)
@@ -187,6 +199,10 @@ func (b *backend) pathOperatorSyncCreateUpdate(ctx context.Context, req *logical
 
 	if serversRaw, ok := d.GetOk("servers"); ok {
 		sync.Servers = serversRaw.([]string)
+	}
+
+	if len(sync.Servers) == 0 {
+		return logical.ErrorResponse("must provide at least one server"), nil
 	}
 
 	if connectTimeout, ok := d.GetOk("connect_timeout"); ok {
@@ -206,29 +222,43 @@ func (b *backend) pathOperatorSyncCreateUpdate(ctx context.Context, req *logical
 		sync.ReconnectWait = t
 	}
 
-	if ignoreSyncErrorsOnDelete, ok := d.GetOk("ignore_sync_errors_on_delete"); ok {
-		syncDirty = syncDirty || (sync.IgnoreSyncErrorsOnDelete != ignoreSyncErrorsOnDelete)
-		sync.IgnoreSyncErrorsOnDelete = ignoreSyncErrorsOnDelete.(bool)
-	}
-
-	if disableAccountLookup, ok := d.GetOk("disable_account_lookup"); ok {
+	if disableAccountLookup, ok := d.GetOk("disable_lookups"); ok {
 		syncDirty = syncDirty || (sync.DisableAccountLookup != disableAccountLookup)
 		sync.DisableAccountLookup = disableAccountLookup.(bool)
 	}
 
-	oldSyncUserName := sync.SyncUserName
+	if disableAccountUpdate, ok := d.GetOk("disable_updates"); ok {
+		syncDirty = syncDirty || (sync.DisableAccountUpdate != disableAccountUpdate)
+		sync.DisableAccountUpdate = disableAccountUpdate.(bool)
+	}
+
+	if disableAccountDelete, ok := d.GetOk("disable_deletes"); ok {
+		syncDirty = syncDirty || (sync.DisableAccountDelete != disableAccountDelete)
+		sync.DisableAccountDelete = disableAccountDelete.(bool)
+	}
+
+	oldSyncUserName := sync.AccountServerClientName
 	if syncUserName, ok := d.GetOk("sync_user_name"); ok {
 		syncDirty = syncDirty || (oldSyncUserName != syncUserName)
-		sync.SyncUserName = syncUserName.(string)
+		sync.AccountServerClientName = syncUserName.(string)
 	}
 
 	syncNow := d.Get("sync_now").(bool)
 
-	if len(sync.Servers) == 0 {
-		return logical.ErrorResponse("must provide at least one server"), nil
+	newSuspend := sync.IsSuspended()
+	if newSuspend && oldSuspend != newSuspend {
+		if sync.Status.Status != AccountServerStatusSuspended {
+			sync.Status.Status = AccountServerStatusSuspended
+			sync.Status.LastStatusChange = time.Now()
+		}
+	} else {
+		if sync.Status.Status != AccountServerStatusCreated {
+			sync.Status.Status = AccountServerStatusCreated
+			sync.Status.LastStatusChange = time.Now()
+		}
 	}
 
-	err = storeInStorage(ctx, req.Storage, id.syncConfigPath(), sync)
+	err = storeInStorage(ctx, req.Storage, id.accountServerPath(), sync)
 	if err != nil {
 		return nil, err
 	}
@@ -239,15 +269,8 @@ func (b *backend) pathOperatorSyncCreateUpdate(ctx context.Context, req *logical
 
 	resp := &logical.Response{}
 
-	if syncDirty {
-		accountSync := b.popAccountServer(id.op)
-		if accountSync != nil {
-			accountSync.CloseConnection()
-		}
-	}
-
 	// get account server to ensure it exists for lookups
-	_, err = b.getAccountServer(ctx, operator.operatorId)
+	_, err = b.startAccountServer(ctx, id, syncDirty)
 	if err != nil {
 		return nil, err
 	}
@@ -255,11 +278,11 @@ func (b *backend) pathOperatorSyncCreateUpdate(ctx context.Context, req *logical
 	// todo investigate sync having issues when servers are changed
 	// especially changing from a broken to a working server url
 	// it feels like the sync is getting stuck
-	if syncNow && syncDirty && !sync.Suspend {
+	if syncNow && syncDirty && !sync.IsSuspended() {
 		// attempt an immediate sync
-		syncErrs, syncErr := b.syncOperatorAccounts(ctx, req.Storage, operator.operatorId)
-		if syncErr != nil {
-			resp.AddWarning(fmt.Sprintf("failed to sync accounts: %s", syncErr))
+		syncErrs, err := b.syncOperatorAccounts(ctx, req.Storage, operator.operatorId)
+		if err != nil {
+			resp.AddWarning(fmt.Sprintf("failed to sync accounts: %s", err))
 		} else if syncErrs != nil {
 			for _, v := range slices.Sorted(maps.Keys(syncErrs)) {
 				resp.AddWarning(fmt.Sprintf("failed to sync account %q: %s", v, syncErrs[v]))
@@ -270,8 +293,8 @@ func (b *backend) pathOperatorSyncCreateUpdate(ctx context.Context, req *logical
 	return resp, nil
 }
 
-func (b *backend) pathOperatorSyncRead(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {
-	sync, err := b.OperatorSync(ctx, req.Storage, OperatorIdField(d))
+func (b *backend) pathAccountServerRead(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {
+	sync, err := b.AccountServer(ctx, req.Storage, OperatorIdField(d))
 	if err != nil {
 		return nil, err
 	}
@@ -283,17 +306,17 @@ func (b *backend) pathOperatorSyncRead(ctx context.Context, req *logical.Request
 		"status": sync.Status.Status,
 	}
 
-	if sync.Status.LastSyncTime != (time.Time{}) {
-		status["last_sync_time"] = sync.Status.LastSyncTime
+	if sync.Status.LastStatusChange != (time.Time{}) {
+		status["last_status_change"] = sync.Status.LastStatusChange
 	}
 
-	if len(sync.Status.Errors) > 0 {
-		status["errors"] = sync.Status.Errors
+	if sync.Status.Error != "" {
+		status["error"] = sync.Status.Error
 	}
 
 	data := map[string]any{
 		"servers":        sync.Servers,
-		"sync_user_name": sync.SyncUserName,
+		"sync_user_name": sync.AccountServerClientName,
 		"status":         status,
 	}
 
@@ -310,18 +333,22 @@ func (b *backend) pathOperatorSyncRead(ctx context.Context, req *logical.Request
 	}
 
 	if sync.DisableAccountLookup {
-		data["disable_account_lookup"] = sync.DisableAccountLookup
+		data["disable_lookups"] = sync.DisableAccountLookup
 	}
 
-	if sync.IgnoreSyncErrorsOnDelete {
-		data["ignore_sync_errors_on_delete"] = sync.IgnoreSyncErrorsOnDelete
+	if sync.DisableAccountUpdate {
+		data["disable_updates"] = sync.DisableAccountUpdate
+	}
+
+	if sync.DisableAccountDelete {
+		data["disable_deletes"] = sync.DisableAccountDelete
 	}
 
 	return &logical.Response{Data: data}, nil
 }
 
-func (b *backend) pathOperatorSyncExistenceCheck(ctx context.Context, req *logical.Request, d *framework.FieldData) (bool, error) {
-	sync, err := b.OperatorSync(ctx, req.Storage, OperatorIdField(d))
+func (b *backend) pathAccountServerExistenceCheck(ctx context.Context, req *logical.Request, d *framework.FieldData) (bool, error) {
+	sync, err := b.AccountServer(ctx, req.Storage, OperatorIdField(d))
 	if err != nil {
 		return false, err
 	}
@@ -329,14 +356,14 @@ func (b *backend) pathOperatorSyncExistenceCheck(ctx context.Context, req *logic
 	return sync != nil, nil
 }
 
-func (b *backend) pathOperatorSyncDelete(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {
+func (b *backend) pathAccountServerDelete(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {
 	txRollback, err := shimtx.StartTxStorageWithShim(ctx, req)
 	if err != nil {
 		return nil, err
 	}
 	defer txRollback()
 
-	err = deleteFromStorage(ctx, req.Storage, OperatorIdField(d).syncConfigPath())
+	err = req.Storage.Delete(ctx, OperatorIdField(d).accountServerPath())
 	if err != nil {
 		return nil, err
 	}

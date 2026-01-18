@@ -6,7 +6,7 @@
     - manage the entire lifecycle of NATS operators, accounts, and users
     - generate user credentials with templating support and full openbao lease support
     - rotate account signing keys
-    - automatically sync accounts to nats server
+    - automatically sync accounts to nats cluster
     - automatically fetch accounts using the companion `openbao-nats-account-server`
 -->
 
@@ -15,33 +15,31 @@ For more information about how NATS JWT authentication works, view the [official
 
 This guide assumes a basic understanding of how to operate OpenBao, as well as a working knowledge of the NATS JWT system.
 
+This plugin is untested with Vault and is intended to be used with OpenBao.
+However, as long as the OpenBao SDK remains cross-compatible with Vault's plugin API,
+this plugin should be usable as a Vault plugin with no modifications.
+
 ## Setup
 
-<!-- 
-- setup
-    - OCI image or release binary
-    - using CLI
-    - using declarative plugin syntax -->
+A quickstart guide is also available in the [README](https://github.com/BonesOfGiants/openbao-plugin-secrets-nats?tab=readme-ov-file#quickstart).
 
 ### OCI Image
 
 This plugin is available as an OCI image and can be installed & registered via the [declarative plugin](https://openbao.org/docs/configuration/plugins/) configuration block in the OpenBao configuration.
+The latest release can be found on the [Releases page](https://github.com/BonesOfGiants/openbao-plugin-secrets-nats/releases) of the repository.
 
 > [!IMPORTANT]
 > Declarative plugins require a OpenBao version `2.5.0` or higher
 
-<!-- todo: post real image tag & use semantic-release to auto-update the README -->
+Replace the version and sha256sum fields with the correct values for the release version you are using.
+
 ```hcl
 plugin "secret" "nats" {
     image = "ghcr.io/bonesofgiants/openbao-plugin-secrets-nats"
-    version = "v2.1.1"
+    version = "v0.0.0"
     binary_name = "openbao-plugin-secrets-nats"
     sha256sum = "dec5b2c17a4616de030d7945cf4b4eeb87c037a30e4fa3b99c2bd4502e25e1bc"
 }
-
-# recommended settings
-plugin_auto_download = true
-plugin_auto_register = true
 ```
 
 ### Release Binary
@@ -50,12 +48,11 @@ This plugin is also available as a prebuilt binary in the [Releases page](https:
 
 The binary must be placed within the configured `plugin_directory` as part of your OpenBao deployment.
 
-It can then be registered using the `bao` CLI:
+It can then be registered using the `bao` CLI. Replace the version and sha256sum fields with the correct values for the release version you are using.
 
-<!-- todo: post real image tag & use semantic-release to auto-update the README -->
 ```sh
 $ bao plugin register \
-    -version=v2.1.1 \
+    -version=v0.0.0 \
     -sha256=dec5b2c17a4616de030d7945cf4b4eeb87c037a30e4fa3b99c2bd4502e25e1bc \
     -command=openbao-plugin-secrets-nats \
     nats
@@ -64,17 +61,12 @@ Success! TODO
 
 ### Mount the plugin
 
-Once registered, the plugin can be mounted:
+Once registered, the plugin may be mounted:
 
 ```sh
 $ bao secrets enable nats
 Success! Enabled the nats secrets engine at: nats/
 ```
-
-## HashiCorp Vault compatibility
-
-This plugin is presently untested with Vault. However, as long as the OpenBao SDK remains cross-compatible with Vault's
-plugin API, this plugin should be usable as a Vault plugin with no modifications.
 
 ## Operators
 <!-- 
@@ -90,20 +82,20 @@ plugin API, this plugin should be usable as a Vault plugin with no modifications
             - subject is always overwritten with the operator id 
             - signingkeys list is merged with any declared signing keys
         - they're self-signed
-        - warning!! updating operator claims will also suspend the account sync, since the operator is no longer in sync with the nats server
+        - warning!! updating operator claims will also suspend the account sync, since the operator is no longer in sync with the nats cluster
     - signing keys
         - rotating signing key
             - warning!! will reissue all accounts signed by this key
-            - warning!! will also suspend the account sync, since the operator is no longer in sync with the nats server
+            - warning!! will also suspend the account sync, since the operator is no longer in sync with the nats cluster
     - rotating operator key
         - warning!! will reissue all account jwts under the operator
-        - warning!! will also suspend the account sync, since the operator is no longer in sync with the nats server
+        - warning!! will also suspend the account sync, since the operator is no longer in sync with the nats cluster
     - system account
         - managed system account
             - cannot edit claims of the managed system account
         - custom system account
             - if you provide your own, it should have at least these claims: https://github.com/nats-io/nsc/blob/a8cd1b14b5694a65a1d4f97501435f001a538596/cmd/init.go#L328-L347 (or provide a link to my iteration of the default)
-    - sync config
+    - account server
         - generates sync user creds on the fly using the system account
         - if there is no system account for the operator, sync will not function
         - accounts will be synced whenever their JWT is reissued
@@ -121,7 +113,8 @@ plugin API, this plugin should be usable as a Vault plugin with no modifications
     - managed operators (eg. synadia)
         - not currently supported
 -->
-Operators own NATS servers. Their JWTs are provided directly in the NATS server config. All other objects are 
+
+Operators own NATS clusters. Their JWTs are provided directly in the NATS cluster config. All other objects are
 created within the context of an operator.
 
 The simplest operator requires no additional configuration:
@@ -129,18 +122,32 @@ The simplest operator requires no additional configuration:
 $ bao write -force=true nats/operators/my-operator
 ```
 
-This will create an operator called `my-operator`. It will also generate an identity key, issue a self-signed JWT, 
-and create a system account called `SYS`.
+This will create an operator called `my-operator`. When created, the operator will automatically generate an identity key,
+issue a self-signed JWT, and create a system account called `SYS`.
 
-At this point the operator is ready to be installed into a NATS server. The utility `generate-server-config` is
-designed to assist in this by providing a pre-configured NATS configuration file.
+If you're planning to utilize the [account server](#account-server) feature, the operator may be installed into the target NATS cluster at this point.
+The utility path [`nats/generate-server-config/:op`](API.md#generate-server-config) is
+designed to assist with this by providing a pre-configured NATS configuration file that can easily be included in another
+NATS cluster config.
+
+> [!NOTE]
+> The configuration generated by `nats/generate-server-config/:op` cannot be used *by itself* as
+> a valid NATS configuration. At minimum you must also provide a [resolver block](https://docs.nats.io/running-a-nats-service/configuration/securing_nats/auth_intro/jwt/resolver#nats-based-resolver).
 
 ```sh
-$ bao read -format=json nats/generate-server-config/my-operator | jq -r '.data.config' > nats-conf.json
+$ bao read -format=json nats/generate-server-config/my-operator | jq -r '.data.config' > operator.conf
 ``` 
 
 ```sh
-$ nats-server -c nats-conf.json
+$ cat << EOF > nats-server.conf
+include ./operator.conf
+
+resolver: {
+  type: "full"
+  dir: "./jwt"
+}
+EOF
+$ nats-server -c nats-server.conf
 ```
 
 ### Operator configuration
@@ -258,64 +265,77 @@ $ bao write -force=true nats/operator-signing-keys/my-operator/sk-1
 Creating a signing key will automatically add its public key to the operator's claims and reissue the operator JWT.
 
 > [!WARNING]
-> Modifying an operator's signing keys will **suspend** the active sync config for that operator.
-> Syncing may be re-enabled once the reissued operator JWT has been updated in the target NATS server config.
+> Modifying an operator's signing keys will **suspend** the active account server for that operator.
+> Syncing may be re-enabled once the reissued operator JWT has been updated in the target NATS cluster config.
 
 By default, the operator will sign account JWTs using its identity key. This can be overridden by supplying the name of
 a signing key in the `default_signing_key` field of the operator.
 
-### Account syncing
+### Account server
 
-The plugin can be configured to automatically push account modifications to a target NATS cluster.
-Account syncing behavior is controlled via the `sync-config` resource.
+The plugin can be configured to act as an account server for a target NATS cluster. This includes both
+pushing deletions and updates to account JWTs to the target cluster, as well as responding to account lookup requests
+by the NATS cluster. The plugin only supports clusters using the [NATS based resolver](https://docs.nats.io/running-a-nats-service/configuration/securing_nats/auth_intro/jwt/resolver#nats-based-resolver), *not* the legacy URL resolver.
 
-The simplest account sync config specifies a target NATS server url:
+Account server behavior is controlled via the `account-servers` resource.
+
+The simplest account server specifies a target NATS cluster url:
 
 ```sh
-$ bao write nats/sync-configs/my-operator servers="nats://localhost:4222"
+$ bao write nats/account-servers/my-operator servers="nats://localhost:4222"
 ```
 
 > [!IMPORTANT]
-> Enabling sync requires the operator to have a system account configured.
+> Creating the account server requires the operator to have a system account configured.
 
-Once created, all accounts under the operator will be periodically pushed to the target server.
+Once created, any issued account JWTs will be immediately pushed to the target NATS cluster.
+The modifications that result in an update include:
 
-Additionally, modifications that result in account JWTs being reissued, including changes to account signing keys,
-adding and removing revocations, and changes to account claims will result in the affected JWT being immediately
-pushed to the target NATS server.
+- Updating the account claims
+- Adding, removing, or updating account imports
+- Adding, removing, or updating account signing keys,
+- Adding, removing, or updating revocations
 
-#### Suspending account syncing
+Account deletions will be pushed to the NATS server as well.
+
+If a NATS server makes a request for an account JWT, which it will do if it does not
+contain a local copy of the JWT, or if its cached JWT has expired, the account server
+may respond with the account JWT.
+
+These behaviors can be [customized](#selectively-disabling-account-server-behavior).
+
+#### Suspend the account server
 
 If desired, sync behavior may be paused at any time by setting `suspend=true`:
 
 ```sh
-$ bao write nats/sync-configs/my-operator suspend=true
+$ bao write nats/account-servers/my-operator suspend=true
 ```
 
-However, changes to the operator JWT will also result in the syncing being suspended. This is because
-changes to the operator JWT must be manually updated in the target NATS server config. For example,
+However, changes to the operator JWT will also result in the account server being suspended. This is because
+changes to the operator JWT must be manually updated in the target NATS cluster config. For example,
 if the operator's signing keys were to be rotated, and all accounts were therefore resigned 
-with those new keys, pushing the resigned accounts to a NATS server with an out of date operator JWT
+with those new keys, pushing the resigned accounts to a NATS cluster with an out of date operator JWT
 would result in the accounts becoming unable to be validated.
 
-If a change results in syncing becoming suspended, a warning will be emitted in the response. Once the NATS
-server has been brought up to date with the new operator, syncing may be resumed at any time by
+If a change results in suspending the account server, a warning will be emitted in the response. Once the NATS
+server has been brought up to date with the new operator, the account server may be resumed at any time by
 disabling the suspension:
 
 ```sh
-$ bao write nats/sync-configs/my-operator suspend=false
+$ bao write nats/account-servers/my-operator suspend=false
 ```
 
-#### Pre-seeding accounts into NATS servers
+#### Selectively disabling account server behavior
 
-NATS servers cannot currently _pull_ account information from the plugin. The plugin may only _push_ account information to NATS servers.
-This isn't typically issue while account sync is active, as any changes to accounts are immediately synced. Additionally,
-the [NATS based resolver](https://docs.nats.io/running-a-nats-service/configuration/securing_nats/auth_intro/jwt/resolver#nats-based-resolver)
-will share known accounts between servers in the same cluster.
+If desired, specific behaviors of the account server may be disabled:
 
-However, there is a period of time between first initializing a cluster and account syncing being enabled in the plugin for that cluster where
-the NATS server has no way of validating user JWTs against accounts. This can be mitigated by generating a NATS config file via
-the [`/generate-server-config`](./api.md#generate-server-config) path and preloading the resolver using the `include_resolver_preload` parameter. 
+- `disable_lookups`: If `true`, the account server will not respond to requests for account JWTs from the NATS cluster.
+- `disable_updates`: If `true`, the account server will not send updates when account JWTs are created or reissued.
+- `disable_deletes`: If `true`, the account server will not send deletions when accounts are deleted.
+
+If all three of these fields are set to `true`, it is functionally equivalent to setting `suspend` to true and the account server
+will not run at all.
 
 ### Managed and pre-existing operators
 
@@ -709,7 +729,7 @@ path "sys/leases/revoke-prefix/nats/ephemeral-creds/my-operator/my-account/all-u
 $ bao write -force=true nats/rotate-operator/my-operator
 ```
 
-<!-- todo add blurbs about modifying operator jwts and pausing sync configs -->
+<!-- todo add blurbs about modifying operator jwts and pausing account server -->
 
 ### Operator signing key rotation
 
@@ -717,7 +737,7 @@ $ bao write -force=true nats/rotate-operator/my-operator
 $ bao write -force=true nats/rotate-operator-signing-key/my-operator/my-signing-key
 ```
 
-<!-- todo add blurbs about modifying operator jwts and pausing sync configs -->
+<!-- todo add blurbs about modifying operator jwts and pausing account server -->
 
 ### Account key rotation
 

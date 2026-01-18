@@ -164,14 +164,14 @@ nats: error: nats: permissions violation: Permissions Violation for Publish to "
 
 #### Automatically syncing account changes
 
-Set up the operator to sync account changes to the nats server:
+Set up an account server for the operator:
 
 ```sh
-$ bao write nats/sync-config/dev servers="0.0.0.0:4222"
-# Validate that the sync was successfully initialized
-$ bao read -format=json nats/sync-config/dev | jq '.data.status'
+$ bao write nats/account-servers/dev servers="0.0.0.0:4222"
+# Validate that the account server is active with no errors
+$ bao read -format=json nats/account-servers/dev | jq '.data.status'
 {
-  "last_sync_time": "2025-12-16T15:03:16.673884455-08:00",
+  "last_status_change": 1765874985,
   "status": "active"
 }
 ```

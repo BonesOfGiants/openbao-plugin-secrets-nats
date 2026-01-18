@@ -60,7 +60,7 @@ func pathRotate(b *backend) []*framework.Path {
 					Callback: b.pathRotateOperator,
 				},
 			},
-			HelpSynopsis: `Rotates an operator identity key. Also suspends the sync config.`,
+			HelpSynopsis: `Rotates an operator identity key. Also suspends the account server.`,
 		},
 		{
 			Pattern: rotateOperatorSigningKeyPathPrefix + operatorRegex + "/" + nameRegex + "$",
@@ -174,7 +174,7 @@ func (b *backend) pathRotateOperator(ctx context.Context, req *logical.Request, 
 	}
 
 	// suspend sync
-	sync, err := b.OperatorSync(ctx, req.Storage, id)
+	sync, err := b.AccountServer(ctx, req.Storage, id)
 	if err != nil {
 		return nil, err
 	}
@@ -265,7 +265,7 @@ func (b *backend) pathRotateOperatorSigningKey(ctx context.Context, req *logical
 	}
 
 	// suspend sync
-	sync, err := b.OperatorSync(ctx, req.Storage, id.operatorId())
+	sync, err := b.AccountServer(ctx, req.Storage, id.operatorId())
 	if err != nil {
 		return nil, err
 	}
@@ -329,17 +329,10 @@ func (b *backend) pathRotateAccount(ctx context.Context, req *logical.Request, d
 	}
 
 	// todo I think this needs a rollback op just like account deletion
-	accountSync, err := b.getAccountServer(ctx, id.operatorId())
+	err = b.syncAccountRotate(ctx, oldKeyPair, id)
 	if err != nil {
-		b.Logger().Warn("failed to retrieve account sync", "operator", id.op, "account", id.acc, "error", err)
+		b.Logger().Warn("failed to sync account", "operator", id.op, "account", id.acc, "error", err)
 		resp.AddWarning(fmt.Sprintf("unable to sync jwt for account %q: %s", id.acc, err))
-	} else if accountSync != nil {
-		// todo i don't love this, feels fragile
-		err := b.syncAccountRotate(ctx, req.Storage, accountSync, oldKeyPair, id)
-		if err != nil {
-			b.Logger().Warn("failed to sync account", "operator", id.op, "account", id.acc, "error", err)
-			resp.AddWarning(fmt.Sprintf("unable to sync jwt for account %q: %s", id.acc, err))
-		}
 	}
 
 	return resp, nil
@@ -384,16 +377,10 @@ func (b *backend) pathRotateAccountSigningKey(ctx context.Context, req *logical.
 		return nil, err
 	}
 
-	accountSync, err := b.getAccountServer(ctx, id.operatorId())
+	err = b.syncAccountUpdate(ctx, id.accountId())
 	if err != nil {
-		b.Logger().Warn("failed to retrieve account sync", "operator", id.op, "account", id.acc, "error", err)
+		b.Logger().Warn("failed to sync account", "operator", id.op, "account", id.acc, "error", err)
 		resp.AddWarning(fmt.Sprintf("unable to sync jwt for account %q: %s", id.acc, err))
-	} else if accountSync != nil {
-		err := b.syncAccountUpdate(ctx, req.Storage, accountSync, id.accountId())
-		if err != nil {
-			b.Logger().Warn("failed to sync account", "operator", id.op, "account", id.acc, "error", err)
-			resp.AddWarning(fmt.Sprintf("unable to sync jwt for account %q: %s", id.acc, err))
-		}
 	}
 
 	return resp, nil

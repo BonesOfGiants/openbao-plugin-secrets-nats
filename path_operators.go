@@ -84,8 +84,8 @@ func (id operatorId) generateServerConfigPath() string {
 	return operatorGenerateServerConfigPathPrefix + id.op
 }
 
-func (id operatorId) syncConfigPath() string {
-	return syncConfigPathPrefix + id.op
+func (id operatorId) accountServerPath() string {
+	return accountServersPathPrefix + id.op
 }
 
 func (id operatorId) signingKeyPrefix() string {
@@ -461,7 +461,7 @@ func (b *backend) pathOperatorDelete(ctx context.Context, req *logical.Request, 
 		return nil, nil
 	}
 
-	err = deleteFromStorage(ctx, req.Storage, id.configPath())
+	err = req.Storage.Delete(ctx, id.configPath())
 	if err != nil {
 		return nil, err
 	}
@@ -475,19 +475,19 @@ func (b *backend) pathOperatorDelete(ctx context.Context, req *logical.Request, 
 	}
 
 	// delete operator sync
-	err = deleteFromStorage(ctx, req.Storage, id.syncConfigPath())
+	err = req.Storage.Delete(ctx, id.accountServerPath())
 	if err != nil {
 		return nil, err
 	}
 
 	// delete operator nkey
-	err = deleteFromStorage(ctx, req.Storage, id.nkeyPath())
+	err = req.Storage.Delete(ctx, id.nkeyPath())
 	if err != nil {
 		return nil, err
 	}
 
 	// delete operator jwt
-	err = deleteFromStorage(ctx, req.Storage, id.jwtPath())
+	err = req.Storage.Delete(ctx, id.jwtPath())
 	if err != nil {
 		return nil, err
 	}

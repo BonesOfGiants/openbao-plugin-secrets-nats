@@ -373,14 +373,10 @@ func (b *backend) pathDeleteUserIssue(ctx context.Context, req *logical.Request,
 				resp.AddWarning(fmt.Sprintf("while reissueing jwt for account %q: %s", id.acc, v))
 			}
 
-			accountSync, err := b.getAccountServer(ctx, id.operatorId())
+			err = b.syncAccountUpdate(ctx, id.accountId())
 			if err != nil {
-				b.Logger().Warn("failed to retrieve account sync", "error", err)
-			} else if accountSync != nil {
-				err := b.syncAccountUpdate(ctx, req.Storage, accountSync, id.accountId())
-				if err != nil {
-					resp.AddWarning(fmt.Sprintf("failed to sync jwt for account %q: %s", id.acc, err.Error()))
-				}
+				b.Logger().Warn("failed to sync account", "operator", id.op, "account", id.acc, "error", err)
+				resp.AddWarning(fmt.Sprintf("unable to sync jwt for account %q: %s", id.acc, err))
 			}
 		}
 	}
@@ -409,13 +405,13 @@ func (b *backend) deleteUser(ctx context.Context, s logical.Storage, id userId, 
 	}
 
 	// delete user config
-	err := deleteFromStorage(ctx, s, id.configPath())
+	err := s.Delete(ctx, id.configPath())
 	if err != nil {
 		return false, err
 	}
 
 	// delete user nkey
-	err = deleteFromStorage(ctx, s, id.nkeyPath())
+	err = s.Delete(ctx, id.nkeyPath())
 	if err != nil {
 		return false, err
 	}

@@ -1,0 +1,424 @@
+package natsbackend
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+	"testing"
+	"testing/synctest"
+	"time"
+
+	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/abstractnats"
+	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/accountserver"
+	nats "github.com/nats-io/nats.go"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestBackend_Operator_AccountServer(t *testing.T) {
+	type testConfig struct {
+		data         map[string]any
+		expected     map[string]any
+		expectLookup bool
+		err          error
+	}
+	runTest := func(_t *testing.T, tc testConfig) {
+		n := abstractnats.NewMock(_t)
+		t := testBackendWithNats(_t, n)
+
+		id := OperatorId("op1")
+		resp := SetupTestOperator(t, id, map[string]any{
+			"create_system_account": true,
+		})
+
+		if tc.expectLookup {
+			n.ExpectSubscription(accountserver.SysAccountClaimsLookupSubject)
+		}
+
+		// disable syncing for config tests
+		tc.data["sync_now"] = false
+
+		// create config
+		resp, err := WriteAccountServer(t, id, tc.data)
+		if err != nil || (resp != nil && resp.IsError()) {
+			if tc.err == nil {
+				t.Fatalf("err: %s; resp: %#v\n", err, resp)
+			} else if err != nil && err.Error() == tc.err.Error() {
+				return
+			} else if err == nil && resp.Error().Error() == tc.err.Error() {
+				return
+			} else {
+				t.Fatalf("expected err message: %q, got %q, response error: %q", tc.err, err, resp.Error())
+			}
+		}
+
+		if tc.err != nil {
+			if resp == nil || !resp.IsError() {
+				t.Fatalf("expected err, got none")
+			}
+		}
+
+		// read config
+		resp, err = ReadAccountServerRaw(t, id)
+		RequireNoRespError(t, resp, err)
+
+		assert.EqualValues(t, tc.expected, resp.Data)
+
+		// delete config
+		DeleteAccountServer(t, id)
+	}
+
+	t.Run("must provide a server", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			runTest(t, testConfig{
+				data: map[string]any{},
+				err:  errors.New(`must provide at least one server`),
+			})
+		})
+	})
+
+	t.Run("minimal config", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			runTest(t, testConfig{
+				data: map[string]any{
+					"servers": []string{"nats://localhost:4222"},
+				},
+				expectLookup: true,
+				expected: map[string]any{
+					"servers":        []string{"nats://localhost:4222"},
+					"sync_user_name": DefaultAccountServerClientName,
+
+					"status": map[string]any{
+						"status":             AccountServerStatusActive,
+						"last_status_change": time.Now(),
+					},
+				},
+			})
+		})
+	})
+
+	t.Run("override defaults", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			runTest(t, testConfig{
+				data: map[string]any{
+					"servers":         []string{"nats://localhost:4222"},
+					"connect_timeout": "10s",
+					"max_reconnects":  5,
+					"reconnect_wait":  "10s",
+					"sync_user_name":  "test-name",
+					"disable_lookups": true,
+					"sync_now":        false,
+				},
+				expectLookup: false,
+				expected: map[string]any{
+					"connect_timeout": 10,
+					"disable_lookups": true,
+					"max_reconnects":  5,
+					"reconnect_wait":  10,
+					"servers":         []string{"nats://localhost:4222"},
+					"sync_user_name":  "test-name",
+
+					"status": map[string]any{
+						"status":             AccountServerStatusActive,
+						"last_status_change": time.Now(),
+					},
+				},
+			})
+		})
+	})
+}
+
+func TestBackend_Operator_AccountServer_NonExistentOperator(_t *testing.T) {
+	t := testBackend(_t)
+
+	id := OperatorId("op1")
+	resp, err := WriteAccountServer(t, id, nil)
+	assert.NoError(t, err)
+	assert.ErrorContains(t, resp.Error(), "operator \"op1\" does not exist")
+}
+
+func TestBackend_Operator_AccountServer_Update(t *testing.T) {
+	t.Run("sync account creation", func(_t *testing.T) {
+		n := abstractnats.NewMock(_t)
+		defer n.AssertNoLingering(_t)
+		t := testBackendWithNats(_t, n)
+
+		id := OperatorId("op1")
+		SetupTestOperator(t, id, map[string]any{
+			"create_system_account": true,
+		})
+
+		resp, err := WriteAccountServer(t, id, map[string]any{
+			"servers":         []string{"nats://localhost:4222"},
+			"sync_now":        false,
+			"disable_lookups": true,
+		})
+		RequireNoRespError(t, resp, err)
+
+		var receivedJwt string
+		ExpectUpdateSync(t, n, &receivedJwt)
+
+		accId := id.accountId("acc1")
+		SetupTestAccount(t, accId, nil)
+
+		resp, err = ReadJwtRaw(t, accId)
+		RequireNoRespError(t, resp, err)
+
+		assert.Equal(t, resp.Data["jwt"].(string), receivedJwt)
+	})
+
+	t.Run("sync account deletion", func(_t *testing.T) {
+		n := abstractnats.NewMock(_t)
+		defer n.AssertNoLingering(_t)
+		t := testBackendWithNats(_t, n)
+
+		id := OperatorId("op1")
+		SetupTestOperator(t, id, map[string]any{
+			"create_system_account": true,
+		})
+
+		opPublicKey := ReadPublicKey(t, id)
+
+		// create config disabled
+		resp, err := WriteAccountServer(t, id, map[string]any{
+			"servers":         []string{"nats://localhost:4222"},
+			"suspend":         true,
+			"sync_now":        false,
+			"disable_lookups": true,
+		})
+		RequireNoRespError(t, resp, err)
+
+		accId := id.accountId("acc1")
+		SetupTestAccount(t, accId, nil)
+
+		// re-enable config
+		resp, err = WriteAccountServer(t, id, map[string]any{
+			"suspend":  false,
+			"sync_now": false,
+		})
+		RequireNoRespError(t, resp, err)
+
+		accPublicKey := ReadPublicKey(t, accId)
+
+		ExpectDeleteSync(t, n, opPublicKey, accPublicKey)
+
+		DeleteConfig(t, accId)
+	})
+
+	t.Run("no sync account creation if suspended", func(_t *testing.T) {
+		n := abstractnats.NewMock(_t)
+		defer n.AssertNoLingering(_t)
+		t := testBackendWithNats(_t, n)
+
+		id := OperatorId("op1")
+		SetupTestOperator(t, id, map[string]any{
+			"create_system_account": true,
+		})
+
+		// create config disabled
+		resp, err := WriteAccountServer(t, id, map[string]any{
+			"servers": []string{"nats://localhost:4222"},
+			"suspend": true,
+		})
+		RequireNoRespError(t, resp, err)
+
+		accId := id.accountId("acc1")
+		SetupTestAccount(t, accId, nil)
+	})
+
+	t.Run("no sync account delete if suspended", func(_t *testing.T) {
+		n := abstractnats.NewMock(_t)
+		defer n.AssertNoLingering(_t)
+		t := testBackendWithNats(_t, n)
+
+		id := OperatorId("op1")
+		SetupTestOperator(t, id, map[string]any{
+			"create_system_account": true,
+		})
+
+		// create config disabled
+		resp, err := WriteAccountServer(t, id, map[string]any{
+			"servers": []string{"nats://localhost:4222"},
+			"suspend": true,
+		})
+		RequireNoRespError(t, resp, err)
+
+		accId := id.accountId("acc1")
+		SetupTestAccount(t, accId, nil)
+
+		DeleteConfig(t, accId)
+	})
+}
+
+func TestBackend_Operator_AccountServer_Lookup(_t *testing.T) {
+	n := abstractnats.NewMock(_t)
+	defer n.AssertNoLingering(_t)
+	t := testBackendWithNats(_t, n)
+
+	id := OperatorId("op1")
+	SetupTestOperator(t, id, map[string]any{
+		"create_system_account": true,
+	})
+
+	accId := id.accountId("acc1")
+	SetupTestAccount(t, accId, nil)
+
+	publicKey := ReadPublicKey(t, accId)
+	resp, err := ReadJwtRaw(t, accId)
+	RequireNoRespError(t, resp, err)
+	jwt := resp.Data["jwt"].(string)
+
+	subject := strings.Replace(accountserver.SysAccountClaimsLookupSubject, "*", publicKey, 1)
+	reply := nats.NewInbox()
+	sub := n.ExpectSubscription(accountserver.SysAccountClaimsLookupSubject)
+
+	// queue up the call
+	sub.Publish(subject, reply, nil)
+
+	n.ExpectPublish(reply, func(m abstractnats.MockNatsConnection, subj, reply string, data []byte) error {
+		assert.Equal(t, jwt, string(data))
+		return nil
+	})
+
+	resp, err = WriteAccountServer(t, id, map[string]any{
+		"servers":  []string{"nats://localhost:4222"},
+		"sync_now": false,
+	})
+	RequireNoRespError(t, resp, err)
+}
+
+func TestBackend_Operator_AccountServer_Status(t *testing.T) {
+	t.Run("active", func(t *testing.T) {
+		synctest.Test(t, func(_t *testing.T) {
+			nats := abstractnats.NewMock(_t)
+			t := testBackendWithNats(_t, nats)
+
+			id := OperatorId("op1")
+			SetupTestOperator(t, id, map[string]any{
+				"create_system_account": true,
+			})
+
+			resp, err := WriteAccountServer(t, id, map[string]any{
+				"servers":         []string{"nats://localhost:4222"},
+				"sync_now":        false,
+				"disable_lookups": true,
+			})
+			RequireNoRespError(t, resp, err)
+
+			resp, err = ReadAccountServerRaw(t, id)
+			RequireNoRespError(t, resp, err)
+
+			require.Contains(t, resp.Data, "status")
+
+			assert.Equal(t,
+				map[string]any{
+					"status":             AccountServerStatusActive,
+					"last_status_change": time.Now(),
+				},
+				resp.Data["status"],
+			)
+		})
+	})
+
+	t.Run("suspended", func(t *testing.T) {
+		synctest.Test(t, func(_t *testing.T) {
+			t := testBackend(_t)
+
+			id := OperatorId("op1")
+			SetupTestOperator(t, id, map[string]any{
+				"create_system_account": true,
+			})
+
+			resp, err := WriteAccountServer(t, id, map[string]any{
+				"servers": []string{"nats://localhost:4222"},
+				"suspend": true,
+			})
+			RequireNoRespError(t, resp, err)
+
+			resp, err = ReadAccountServerRaw(t, id)
+			RequireNoRespError(t, resp, err)
+
+			require.Contains(t, resp.Data, "status")
+
+			assert.Equal(t,
+				map[string]any{
+					"status":             AccountServerStatusSuspended,
+					"last_status_change": time.Now(),
+				},
+				resp.Data["status"],
+			)
+		})
+	})
+
+	t.Run("update to suspended", func(t *testing.T) {
+		synctest.Test(t, func(_t *testing.T) {
+			nats := abstractnats.NewMock(_t)
+			t := testBackendWithNats(_t, nats)
+
+			id := OperatorId("op1")
+			SetupTestOperator(t, id, map[string]any{
+				"create_system_account": true,
+			})
+
+			resp, err := WriteAccountServer(t, id, map[string]any{
+				"servers":         []string{"nats://localhost:4222"},
+				"sync_now":        false,
+				"disable_lookups": true,
+			})
+			RequireNoRespError(t, resp, err)
+
+			resp, err = WriteAccountServer(t, id, map[string]any{
+				"suspend": true,
+			})
+			RequireNoRespError(t, resp, err)
+
+			resp, err = ReadAccountServerRaw(t, id)
+			RequireNoRespError(t, resp, err)
+
+			require.Contains(t, resp.Data, "status")
+
+			assert.Equal(t,
+				map[string]any{
+					"status":             AccountServerStatusSuspended,
+					"last_status_change": time.Now(),
+				},
+				resp.Data["status"],
+			)
+		})
+	})
+
+	t.Run("conn error", func(t *testing.T) {
+		synctest.Test(t, func(_t *testing.T) {
+			expectedErr := fmt.Errorf("a connection error happened")
+
+			nats := abstractnats.NewMockError(_t, expectedErr)
+			t := testBackendWithNats(_t, nats)
+
+			id := OperatorId("op1")
+			SetupTestOperator(t, id, map[string]any{
+				"create_system_account": true,
+			})
+
+			resp, err := WriteAccountServer(t, id, map[string]any{
+				"servers":         []string{"nats://localhost:4222"},
+				"sync_now":        false,
+				"disable_lookups": true,
+			})
+			RequireNoRespError(t, resp, err)
+
+			resp, err = ReadAccountServerRaw(t, id)
+			RequireNoRespError(t, resp, err)
+
+			require.Contains(t, resp.Data, "status")
+
+			assert.Equal(t,
+				map[string]any{
+					"status":             AccountServerStatusError,
+					"last_status_change": time.Now(),
+					"error":              fmt.Sprintf("failed to create nats connection: %v", expectedErr.Error()),
+				},
+				resp.Data["status"],
+			)
+		})
+	})
+}

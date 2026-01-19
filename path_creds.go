@@ -143,12 +143,7 @@ func (b *backend) pathUserCredsRead(ctx context.Context, req *logical.Request, d
 
 	nbf := int64(0)
 	if nbfRaw, ok := d.GetOk("not_before"); ok {
-		nbfTime, ok := nbfRaw.(time.Time)
-		if !ok {
-			return nil, fmt.Errorf("failed to parse not_before; got %T", nbfRaw)
-		}
-
-		nbf = nbfTime.Unix()
+		nbf = nbfRaw.(time.Time).Unix()
 	}
 
 	userIdKey, err := b.Nkey(ctx, req.Storage, user)
@@ -156,7 +151,7 @@ func (b *backend) pathUserCredsRead(ctx context.Context, req *logical.Request, d
 		return nil, err
 	}
 	if userIdKey == nil {
-		return nil, nil
+		return nil, fmt.Errorf("user identity key unexpectedly null")
 	}
 
 	idKey, err := userIdKey.keyPair()

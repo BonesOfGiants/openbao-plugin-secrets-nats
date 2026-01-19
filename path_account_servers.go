@@ -17,7 +17,7 @@ const (
 )
 
 type accountServerEntry struct {
-	operatorId
+	accountServerId
 
 	Suspend        bool          `json:"suspend"`
 	Servers        []string      `json:"servers"`
@@ -36,7 +36,7 @@ type accountServerEntry struct {
 	Status accountServerStatus `json:"status"`
 }
 
-func (e *accountServerEntry) IsSuspended() bool {
+func (e *accountServerEntry) Suspended() bool {
 	return e.Suspend || (e.DisableAccountLookup && e.DisableAccountUpdate && e.DisableAccountDelete)
 }
 
@@ -48,6 +48,30 @@ const (
 	AccountServerStatusSuspended AccountServerStatus = "suspended"
 	AccountServerStatusError     AccountServerStatus = "error"
 )
+
+type accountServerId struct {
+	op string
+}
+
+func AccountServerId(op string) accountServerId {
+	return accountServerId{
+		op: op,
+	}
+}
+
+func AccountServerIdField(d *framework.FieldData) accountServerId {
+	return accountServerId{
+		op: d.Get("operator").(string),
+	}
+}
+
+func (id accountServerId) operatorId() operatorId {
+	return OperatorId(id.op)
+}
+
+func (id accountServerId) configPath() string {
+	return accountServersPathPrefix + id.op
+}
 
 type accountServerStatus struct {
 	LastStatusChange time.Time           `json:"last_status_change"`
@@ -90,7 +114,7 @@ func pathConfigAccountServer(b *backend) []*framework.Path {
 					Description: "Reconnect wait for the nats connection.",
 					Required:    false,
 				},
-				"sync_user_name": {
+				"client_name": {
 					Type:        framework.TypeString,
 					Description: "The name to use for sync operations. Defaults to '" + DefaultAccountServerClientName + "'.",
 					Default:     DefaultAccountServerClientName,
@@ -136,18 +160,18 @@ func pathConfigAccountServer(b *backend) []*framework.Path {
 	}
 }
 
-func (b *backend) AccountServer(ctx context.Context, s logical.Storage, id operatorId) (*accountServerEntry, error) {
+func (b *backend) AccountServer(ctx context.Context, s logical.Storage, id accountServerId) (*accountServerEntry, error) {
 	var sync *accountServerEntry
-	err := get(ctx, s, id.accountServerPath(), &sync)
+	err := get(ctx, s, id.configPath(), &sync)
 	if sync != nil {
-		sync.operatorId = id
+		sync.accountServerId = AccountServerId(id.op)
 	}
 	return sync, err
 }
 
-func NewAccountServer(id operatorId) *accountServerEntry {
+func NewAccountServer(id accountServerId) *accountServerEntry {
 	return &accountServerEntry{
-		operatorId:              id,
+		accountServerId:         id,
 		AccountServerClientName: DefaultAccountServerClientName,
 		Status: accountServerStatus{
 			Status: AccountServerStatusCreated,
@@ -162,9 +186,10 @@ func (b *backend) pathAccountServerCreateUpdate(ctx context.Context, req *logica
 	}
 	defer txRollback()
 
-	id := OperatorIdField(d)
+	id := AccountServerIdField(d)
+	opId := id.operatorId()
 
-	operator, err := b.Operator(ctx, req.Storage, id)
+	operator, err := b.Operator(ctx, req.Storage, opId)
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +197,7 @@ func (b *backend) pathAccountServerCreateUpdate(ctx context.Context, req *logica
 		return logical.ErrorResponse("operator %q does not exist", id.op), nil
 	}
 
-	sysAccount, err := b.Account(ctx, req.Storage, id.accountId(operator.SysAccountName))
+	sysAccount, err := b.Account(ctx, req.Storage, opId.accountId(operator.SysAccountName))
 	if err != nil {
 		return nil, err
 	}
@@ -190,7 +215,7 @@ func (b *backend) pathAccountServerCreateUpdate(ctx context.Context, req *logica
 		syncDirty = true
 	}
 
-	oldSuspend := sync.IsSuspended()
+	oldSuspend := sync.Suspended()
 
 	if suspend, ok := d.GetOk("suspend"); ok {
 		syncDirty = syncDirty || (sync.Suspend != suspend)
@@ -238,14 +263,14 @@ func (b *backend) pathAccountServerCreateUpdate(ctx context.Context, req *logica
 	}
 
 	oldSyncUserName := sync.AccountServerClientName
-	if syncUserName, ok := d.GetOk("sync_user_name"); ok {
+	if syncUserName, ok := d.GetOk("client_name"); ok {
 		syncDirty = syncDirty || (oldSyncUserName != syncUserName)
 		sync.AccountServerClientName = syncUserName.(string)
 	}
 
 	syncNow := d.Get("sync_now").(bool)
 
-	newSuspend := sync.IsSuspended()
+	newSuspend := sync.Suspended()
 	if newSuspend && oldSuspend != newSuspend {
 		if sync.Status.Status != AccountServerStatusSuspended {
 			sync.Status.Status = AccountServerStatusSuspended
@@ -258,7 +283,7 @@ func (b *backend) pathAccountServerCreateUpdate(ctx context.Context, req *logica
 		}
 	}
 
-	err = storeInStorage(ctx, req.Storage, id.accountServerPath(), sync)
+	err = storeInStorage(ctx, req.Storage, id.configPath(), sync)
 	if err != nil {
 		return nil, err
 	}
@@ -278,7 +303,7 @@ func (b *backend) pathAccountServerCreateUpdate(ctx context.Context, req *logica
 	// todo investigate sync having issues when servers are changed
 	// especially changing from a broken to a working server url
 	// it feels like the sync is getting stuck
-	if syncNow && syncDirty && !sync.IsSuspended() {
+	if syncNow && syncDirty && !sync.Suspended() {
 		// attempt an immediate sync
 		syncErrs, err := b.syncOperatorAccounts(ctx, req.Storage, operator.operatorId)
 		if err != nil {
@@ -294,7 +319,7 @@ func (b *backend) pathAccountServerCreateUpdate(ctx context.Context, req *logica
 }
 
 func (b *backend) pathAccountServerRead(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {
-	sync, err := b.AccountServer(ctx, req.Storage, OperatorIdField(d))
+	sync, err := b.AccountServer(ctx, req.Storage, AccountServerIdField(d))
 	if err != nil {
 		return nil, err
 	}
@@ -315,9 +340,9 @@ func (b *backend) pathAccountServerRead(ctx context.Context, req *logical.Reques
 	}
 
 	data := map[string]any{
-		"servers":        sync.Servers,
-		"sync_user_name": sync.AccountServerClientName,
-		"status":         status,
+		"servers":     sync.Servers,
+		"client_name": sync.AccountServerClientName,
+		"status":      status,
 	}
 
 	if sync.ConnectTimeout > 0 {
@@ -344,11 +369,15 @@ func (b *backend) pathAccountServerRead(ctx context.Context, req *logical.Reques
 		data["disable_deletes"] = sync.DisableAccountDelete
 	}
 
+	if sync.Suspend {
+		data["suspend"] = sync.Suspend
+	}
+
 	return &logical.Response{Data: data}, nil
 }
 
 func (b *backend) pathAccountServerExistenceCheck(ctx context.Context, req *logical.Request, d *framework.FieldData) (bool, error) {
-	sync, err := b.AccountServer(ctx, req.Storage, OperatorIdField(d))
+	sync, err := b.AccountServer(ctx, req.Storage, AccountServerIdField(d))
 	if err != nil {
 		return false, err
 	}
@@ -363,7 +392,7 @@ func (b *backend) pathAccountServerDelete(ctx context.Context, req *logical.Requ
 	}
 	defer txRollback()
 
-	err = req.Storage.Delete(ctx, OperatorIdField(d).accountServerPath())
+	err = req.Storage.Delete(ctx, AccountServerIdField(d).configPath())
 	if err != nil {
 		return nil, err
 	}

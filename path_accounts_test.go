@@ -163,7 +163,7 @@ func TestBackend_Account_Config(t *testing.T) {
 			assert.NotNil(t, resp)
 
 			// delete config
-			resp, err = DeleteConfig(t, id)
+			resp, err = DeleteConfig(t, id, nil)
 			RequireNoRespError(t, resp, err)
 
 			// ensure nkey is deleted
@@ -177,6 +177,28 @@ func TestBackend_Account_Config(t *testing.T) {
 			assert.Nil(t, resp)
 		})
 	}
+}
+
+func TestBackend_Account_Claims(t *testing.T) {
+	t.Run("clear existing claims", func(_t *testing.T) {
+		t := testBackend(_t)
+
+		accId := AccountId("op1", "acc1")
+		SetupTestAccount(t, accId, map[string]any{
+			"claims": map[string]any{
+				"tags": []any{"test-tag"},
+			},
+		})
+
+		WriteConfig(t, accId, map[string]any{
+			"claims": nil,
+		})
+
+		resp, err := ReadConfigRaw(t, accId)
+		RequireNoRespError(t, resp, err)
+
+		assert.NotContains(t, resp.Data, "claims")
+	})
 }
 
 func TestBackend_Account_NonExistentOperator(_t *testing.T) {
@@ -325,12 +347,13 @@ func TestBackend_Account_Status(t *testing.T) {
 			defer nats.AssertNoLingering(_t)
 			t := testBackendWithNats(_t, nats)
 
-			id := OperatorId("op1")
-			SetupTestOperator(t, id, map[string]any{
+			id := AccountServerId("op1")
+			opId := id.operatorId()
+			SetupTestOperator(t, opId, map[string]any{
 				"create_system_account": true,
 			})
 
-			resp, err := WriteAccountServer(t, id, map[string]any{
+			resp, err := WriteConfig(t, id, map[string]any{
 				"servers":         []string{"nats://localhost:4222"},
 				"sync_now":        false,
 				"disable_lookups": true,
@@ -339,7 +362,7 @@ func TestBackend_Account_Status(t *testing.T) {
 
 			ExpectUpdateSync(t, nats, nil)
 
-			accId := id.accountId("acc1")
+			accId := opId.accountId("acc1")
 			SetupTestAccount(t, accId, nil)
 
 			resp, err = ReadConfigRaw(t, accId)
@@ -363,12 +386,13 @@ func TestBackend_Account_Status(t *testing.T) {
 			defer nats.AssertNoLingering(_t)
 			t := testBackendWithNats(_t, nats)
 
-			id := OperatorId("op1")
-			SetupTestOperator(t, id, map[string]any{
+			id := AccountServerId("op1")
+			opId := id.operatorId()
+			SetupTestOperator(t, opId, map[string]any{
 				"create_system_account": true,
 			})
 
-			resp, err := WriteAccountServer(t, id, map[string]any{
+			resp, err := WriteConfig(t, id, map[string]any{
 				"servers":         []string{"nats://localhost:4222"},
 				"sync_now":        false,
 				"disable_lookups": true,
@@ -378,7 +402,7 @@ func TestBackend_Account_Status(t *testing.T) {
 			expectedErr := fmt.Errorf("bad publish")
 			ExpectUpdateSyncErr(t, nats, expectedErr)
 
-			accId := id.accountId("acc1")
+			accId := opId.accountId("acc1")
 			SetupTestAccount(t, accId, nil)
 
 			resp, err = ReadConfigRaw(t, accId)

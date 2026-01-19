@@ -184,7 +184,7 @@ func TestBackend_EphemeralCreds_Read(t *testing.T) {
 			assert.NotEqual(t, seed, newSeed)
 
 			// delete user
-			resp, err = DeleteConfig(t, id)
+			resp, err = DeleteConfig(t, id, nil)
 			RequireNoRespError(t, resp, err)
 
 			// creds should be nil

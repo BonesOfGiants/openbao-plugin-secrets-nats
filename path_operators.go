@@ -1,6 +1,7 @@
 package natsbackend
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -84,10 +85,6 @@ func (id operatorId) generateServerConfigPath() string {
 	return operatorGenerateServerConfigPathPrefix + id.op
 }
 
-func (id operatorId) accountServerPath() string {
-	return accountServersPathPrefix + id.op
-}
-
 func (id operatorId) signingKeyPrefix() string {
 	return operatorSigningKeysPathPrefix + id.op + "/"
 }
@@ -102,6 +99,10 @@ func (id operatorId) accountsNkeyPrefix() string {
 
 func (id operatorId) accountsJwtPrefix() string {
 	return accountJwtsPathPrefix + id.op + "/"
+}
+
+func (id operatorId) accountServerId() accountServerId {
+	return AccountServerId(id.op)
 }
 
 func (id operatorId) accountId(acc string) accountId {
@@ -241,12 +242,10 @@ func (b *backend) pathOperatorCreateUpdate(ctx context.Context, req *logical.Req
 
 	oldCreateSystemAccount := operator.CreateSystemAccount
 	if createSystemAccount, ok := d.GetOk("create_system_account"); ok {
-		jwtDirty = jwtDirty || (operator.CreateSystemAccount != createSystemAccount)
 		operator.CreateSystemAccount = createSystemAccount.(bool)
 	}
 
 	if defaultSigningKey, ok := d.GetOk("default_signing_key"); ok {
-		jwtDirty = jwtDirty || (operator.DefaultSigningKey != defaultSigningKey)
 		operator.DefaultSigningKey = defaultSigningKey.(string)
 	}
 
@@ -262,15 +261,17 @@ func (b *backend) pathOperatorCreateUpdate(ctx context.Context, req *logical.Req
 	}
 
 	if claims, ok := d.GetOk("claims"); ok {
-		c, ok := claims.(map[string]any)
-		if !ok {
-			return logical.ErrorResponse("claims must be a map, got %T", claims), nil
+		if claims.(map[string]any) != nil {
+			rawClaims, err := json.Marshal(claims)
+			if err != nil {
+				return nil, err
+			}
+			jwtDirty = jwtDirty || !bytes.Equal(rawClaims, operator.RawClaims)
+			operator.RawClaims = rawClaims
+		} else {
+			jwtDirty = jwtDirty || operator.RawClaims != nil
+			operator.RawClaims = nil
 		}
-		rawClaims, err := json.Marshal(c)
-		if err != nil {
-			return nil, err
-		}
-		operator.RawClaims = rawClaims
 	}
 
 	err = storeInStorage(ctx, req.Storage, operator.configPath(), operator)
@@ -321,7 +322,7 @@ func (b *backend) pathOperatorCreateUpdate(ctx context.Context, req *logical.Req
 	}
 
 	// create new system account
-	if newOperator || systemAccountNameChanged {
+	if newOperator || systemAccountNameChanged || managedStatusChanged {
 		if operator.CreateSystemAccount {
 			accountId := id.accountId(operator.SysAccountName)
 			account, err := b.Account(ctx, req.Storage, accountId)
@@ -330,7 +331,7 @@ func (b *backend) pathOperatorCreateUpdate(ctx context.Context, req *logical.Req
 			}
 			if account != nil {
 				if !account.Status.IsManaged {
-					return logical.ErrorResponse("managed system account name %s clashes with existing account", operator.SysAccountName), nil
+					return logical.ErrorResponse("managed system account name %q clashes with existing account", operator.SysAccountName), nil
 				}
 			} else {
 				newAcc := NewAccountWithParams(accountId, DefaultSysAccountClaims)
@@ -368,10 +369,6 @@ func (b *backend) pathOperatorCreateUpdate(ctx context.Context, req *logical.Req
 	}
 
 	if jwtDirty {
-		if !newOperator {
-			resp.AddWarning(fmt.Sprintf("this operation resulted in operator %q reissuing its jwt", id.op))
-		}
-
 		warnings, err := b.issueAndSaveOperatorJWT(ctx, req.Storage, operator.operatorId)
 		if err != nil {
 			return logical.ErrorResponse("failed to encode operator jwt: %s", err.Error()), nil
@@ -380,15 +377,18 @@ func (b *backend) pathOperatorCreateUpdate(ctx context.Context, req *logical.Req
 		for _, v := range warnings {
 			resp.AddWarning(fmt.Sprintf("while reissuing jwt for operator %q: %s", id.op, v))
 		}
+
+		if !newOperator {
+			resp.AddWarning(fmt.Sprintf("this operation resulted in operator %q reissuing its jwt", id.op))
+			if err := b.suspendAccountServer(ctx, req.Storage, id.accountServerId()); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	if err := logical.EndTxStorage(ctx, req); err != nil {
 		return nil, err
 	}
-
-	// changes to which account is the system account should not be synced,
-	// since the nkey is passed in the operator jwt and requires a configuration update on the nats server
-	// Changes to the claims of the system account may be synced, however.
 
 	return resp, nil
 }
@@ -475,7 +475,7 @@ func (b *backend) pathOperatorDelete(ctx context.Context, req *logical.Request, 
 	}
 
 	// delete operator sync
-	err = req.Storage.Delete(ctx, id.accountServerPath())
+	err = req.Storage.Delete(ctx, id.accountServerId().configPath())
 	if err != nil {
 		return nil, err
 	}

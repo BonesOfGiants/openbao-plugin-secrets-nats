@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/shimtx"
-	"github.com/nats-io/jwt/v2"
 	"github.com/openbao/openbao/sdk/v2/framework"
 	"github.com/openbao/openbao/sdk/v2/logical"
 )
@@ -195,55 +194,20 @@ func (b *backend) pathEphemeralUserCreateUpdate(ctx context.Context, req *logica
 	}
 
 	if claims, ok := d.GetOk("claims"); ok {
-		c, ok := claims.(map[string]any)
-		if !ok {
-			return logical.ErrorResponse("claims must be a map, got %T", claims), nil
+		if claims.(map[string]any) != nil {
+			rawClaims, err := json.Marshal(claims.(map[string]any))
+			if err != nil {
+				return nil, err
+			}
+			user.RawClaims = rawClaims
+		} else {
+			user.RawClaims = nil
 		}
-		rawClaims, err := json.Marshal(c)
-		if err != nil {
-			return nil, err
-		}
-		user.RawClaims = rawClaims
 	}
 
-	resp := &logical.Response{}
-
-	if user.RawClaims != nil {
-		rawClaims := user.RawClaims
-
-		var claimsMap map[string]json.RawMessage
-		err = json.Unmarshal(rawClaims, &claimsMap)
-		if err != nil {
-			return nil, err
-		}
-
-		innerClaims, ok := claimsMap["nats"]
-		if ok {
-			// this is an old-style claims
-			rawClaims = innerClaims
-		}
-
-		var opClaims jwt.User
-		err = json.Unmarshal(rawClaims, &opClaims)
-		if err != nil {
-			return nil, err
-		}
-
-		// clear fields we don't want to validate
-		opClaims.IssuerAccount = "" // issuer account is overridden during cred generation
-
-		var vr jwt.ValidationResults
-		opClaims.Validate(&vr)
-
-		errors := vr.Errors()
-		if len(errors) > 0 {
-			errResp := logical.ErrorResponse("validation error: %s", sprintErrors(errors))
-			errResp.Warnings = append(errResp.Warnings, vr.Warnings()...)
-
-			return errResp, nil
-		} else {
-			resp.Warnings = append(resp.Warnings, vr.Warnings()...)
-		}
+	resp, err := b.validateUserClaims(user.RawClaims)
+	if err != nil {
+		return nil, err
 	}
 
 	err = storeInStorage(ctx, req.Storage, id.configPath(), user)

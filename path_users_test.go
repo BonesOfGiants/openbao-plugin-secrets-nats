@@ -171,7 +171,7 @@ func TestBackend_User_Config(_t *testing.T) {
 			assert.NotNil(t, resp)
 
 			// delete config
-			resp, err = DeleteConfig(t, id)
+			resp, err = DeleteConfig(t, id, nil)
 			RequireNoRespError(t, resp, err)
 
 			// ensure nkey is deleted
@@ -185,4 +185,61 @@ func TestBackend_User_Config(_t *testing.T) {
 			assert.Nil(t, resp)
 		})
 	}
+}
+
+func TestBackend_User_Claims(t *testing.T) {
+	t.Run("clear existing claims", func(_t *testing.T) {
+		t := testBackend(_t)
+
+		userId := UserId("op1", "acc1", "user1")
+		SetupTestUser(t, userId, map[string]any{
+			"claims": map[string]any{
+				"tags": []any{"test-tag"},
+			},
+		})
+
+		WriteConfig(t, userId, map[string]any{
+			"claims": nil,
+		})
+
+		resp, err := ReadConfigRaw(t, userId)
+		RequireNoRespError(t, resp, err)
+
+		assert.NotContains(t, resp.Data, "claims")
+	})
+}
+
+func TestBackend_User_Delete(t *testing.T) {
+	t.Run("revoke on delete", func(_t *testing.T) {
+		t := testBackend(_t)
+
+		userId := UserId("op1", "acc1", "user1")
+		SetupTestUser(t, userId, map[string]any{
+			"revoke_on_delete": true,
+		})
+
+		userPublicKey := ReadPublicKey(t, userId)
+
+		DeleteConfig(t, userId, nil)
+
+		accJwt := ReadAccountJwt(t, userId.accountId())
+
+		assert.Contains(t, accJwt.Revocations, userPublicKey)
+	})
+	t.Run("no revoke on delete", func(_t *testing.T) {
+		t := testBackend(_t)
+
+		userId := UserId("op1", "acc1", "user1")
+		SetupTestUser(t, userId, map[string]any{
+			"revoke_on_delete": false,
+		})
+
+		userPublicKey := ReadPublicKey(t, userId)
+
+		DeleteConfig(t, userId, nil)
+
+		accJwt := ReadAccountJwt(t, userId.accountId())
+
+		assert.NotContains(t, accJwt.Revocations, userPublicKey)
+	})
 }

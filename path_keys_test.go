@@ -29,7 +29,7 @@ func TestBackend_OperatorSigningKey_Config(t *testing.T) {
 		assert.Contains(t, opJwt.SigningKeys, pubKey)
 
 		// delete signing key
-		DeleteConfig(t, id)
+		DeleteConfig(t, id, nil)
 
 		// operator jwt should not contain the signing key
 		opJwt = ReadOperatorJwt(t, id.operatorId())
@@ -57,7 +57,7 @@ func TestBackend_OperatorSigningKey_Config(t *testing.T) {
 		assert.Contains(t, opJwt.SigningKeys, pubKey)
 
 		// delete signing key
-		DeleteConfig(t, id)
+		DeleteConfig(t, id, nil)
 
 		// operator jwt should not contain the signing key
 		opJwt = ReadOperatorJwt(t, id.operatorId())
@@ -66,8 +66,6 @@ func TestBackend_OperatorSigningKey_Config(t *testing.T) {
 }
 
 func TestBackend_AccountSigningKey_Config(t *testing.T) {
-	b := testBackend(t)
-
 	testCases := []struct {
 		name        string
 		scoped      bool
@@ -104,38 +102,39 @@ func TestBackend_AccountSigningKey_Config(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.name, func(_t *testing.T) {
+			t := testBackend(_t)
 			id := AccountSigningKeyId("op1", "acc1", "s1")
-			SetupTestAccount(b, id.accountId(), nil)
-			defer DeleteConfig(b, id.accountId())
+			SetupTestAccount(t, id.accountId(), nil)
+			defer DeleteConfig(t, id.accountId(), nil)
 
 			var templateMapping map[string]any
 			if tc.template != nil {
 				res, err := json.Marshal(tc.template)
-				require.NoError(b, err)
+				require.NoError(t, err)
 				err = json.Unmarshal(res, &templateMapping)
-				require.NoError(b, err)
+				require.NoError(t, err)
 			} else {
 				templateMapping = nil
 			}
 
 			// create the signing key
-			resp, err := WriteConfig(b, id, map[string]any{
+			resp, err := WriteConfig(t, id, map[string]any{
 				"scoped":              tc.scoped,
 				"description":         tc.description,
 				"permission_template": templateMapping,
 			})
-			RequireNoRespError(b, resp, err)
+			RequireNoRespError(t, resp, err)
 
-			pubKey := ReadPublicKey(b, id)
+			pubKey := ReadPublicKey(t, id)
 
-			accJwt := ReadAccountJwt(b, id.accountId())
-			assert.Contains(b, accJwt.SigningKeys, pubKey)
+			accJwt := ReadAccountJwt(t, id.accountId())
+			assert.Contains(t, accJwt.SigningKeys, pubKey)
 
 			scope := accJwt.SigningKeys[pubKey]
 
 			if tc.scoped {
-				assert.IsType(b, &jwt.UserScope{}, scope)
+				assert.IsType(t, &jwt.UserScope{}, scope)
 				userScope := scope.(*jwt.UserScope)
 
 				// jwt has some special handling for default permissions
@@ -146,20 +145,20 @@ func TestBackend_AccountSigningKey_Config(t *testing.T) {
 					template = *tc.template
 				}
 
-				assert.Equal(b, jwt.UserScopeType, userScope.Kind)
-				assert.Equal(b, id.name, userScope.Role)
-				assert.Equal(b, tc.description, userScope.Description)
-				assert.Equal(b, template, userScope.Template)
+				assert.Equal(t, jwt.UserScopeType, userScope.Kind)
+				assert.Equal(t, id.name, userScope.Role)
+				assert.Equal(t, tc.description, userScope.Description)
+				assert.Equal(t, template, userScope.Template)
 			} else {
-				assert.Nil(b, scope)
+				assert.Nil(t, scope)
 			}
 
 			// delete signing key
-			DeleteConfig(b, id)
+			DeleteConfig(t, id, nil)
 
 			// jwt should not contain signing key
-			accJwt = ReadAccountJwt(b, id.accountId())
-			assert.NotContains(b, accJwt.SigningKeys, pubKey)
+			accJwt = ReadAccountJwt(t, id.accountId())
+			assert.NotContains(t, accJwt.SigningKeys, pubKey)
 		})
 	}
 }

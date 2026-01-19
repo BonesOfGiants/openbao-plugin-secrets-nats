@@ -42,7 +42,7 @@ func pathJWT(b *backend) []*framework.Path {
 					Callback: b.pathReadAccountJWT,
 				},
 			},
-			HelpSynopsis: `Manages account JWTs.`,
+			HelpSynopsis: `Reads account JWTs.`,
 		},
 		{
 			Pattern: accountJwtsPathPrefix + operatorRegex + "/?$",
@@ -53,23 +53,23 @@ func pathJWT(b *backend) []*framework.Path {
 			},
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.ListOperation: &framework.PathOperation{
-					Callback: b.pathListAccountJWT,
+					Callback: b.pathAccountList,
 				},
 			},
-			HelpSynopsis: `List account JWTs.`,
+			HelpSynopsis: `Lists account JWTs.`,
 		},
 		{
 			Pattern: operatorJwtsPathPrefix + operatorRegex + "$",
 			Fields: map[string]*framework.FieldSchema{
 				"operator": operatorField,
 			},
-			ExistenceCheck: b.pathOperatorJwtExistenceCheck,
+			ExistenceCheck: b.pathOperatorExistenceCheck,
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.ReadOperation: &framework.PathOperation{
 					Callback: b.pathOperatorJwtRead,
 				},
 			},
-			HelpSynopsis: `Manages operator JWT.`,
+			HelpSynopsis: `Reads operator JWTs.`,
 		},
 		{
 			Pattern: operatorJwtsPathPrefix + "/?$",
@@ -79,10 +79,10 @@ func pathJWT(b *backend) []*framework.Path {
 			},
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.ListOperation: &framework.PathOperation{
-					Callback: b.pathOperatorJwtList,
+					Callback: b.pathOperatorList,
 				},
 			},
-			HelpSynopsis: "List operator JWTs.",
+			HelpSynopsis: "Lists operator JWTs.",
 		},
 	}
 }
@@ -124,21 +124,6 @@ func (b *backend) pathOperatorJwtExistenceCheck(ctx context.Context, req *logica
 	return jwt != nil, nil
 }
 
-func (b *backend) pathOperatorJwtList(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {
-	after := d.Get("after").(string)
-	limit := d.Get("limit").(int)
-	if limit <= 0 {
-		limit = -1
-	}
-
-	entries, err := req.Storage.ListPage(ctx, operatorJwtsPathPrefix, after, limit)
-	if err != nil {
-		return nil, err
-	}
-
-	return logical.ListResponse(entries), nil
-}
-
 func (b *backend) pathReadAccountJWT(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {
 	jwt, err := b.Jwt(ctx, req.Storage, AccountIdField(d))
 	if err != nil {
@@ -164,23 +149,6 @@ func (b *backend) pathAccountJWTExistenceCheck(ctx context.Context, req *logical
 	}
 
 	return jwt != nil, nil
-}
-
-func (b *backend) pathListAccountJWT(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {
-	after := d.Get("after").(string)
-	limit := d.Get("limit").(int)
-	if limit <= 0 {
-		limit = -1
-	}
-
-	id := OperatorIdField(d)
-
-	entries, err := req.Storage.ListPage(ctx, id.accountsJwtPrefix(), after, limit)
-	if err != nil {
-		return nil, err
-	}
-
-	return logical.ListResponse(entries), nil
 }
 
 type jwtWarnings []string

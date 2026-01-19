@@ -173,17 +173,8 @@ func (b *backend) pathRotateOperator(ctx context.Context, req *logical.Request, 
 		}
 	}
 
-	// suspend sync
-	sync, err := b.AccountServer(ctx, req.Storage, id)
-	if err != nil {
+	if err := b.suspendAccountServer(ctx, req.Storage, id.accountServerId()); err != nil {
 		return nil, err
-	}
-	if sync != nil {
-		sync.Suspend = true
-		err := storeInStorage(ctx, req.Storage, sync.configPath(), sync)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	if err := logical.EndTxStorage(ctx, req); err != nil {
@@ -264,17 +255,8 @@ func (b *backend) pathRotateOperatorSigningKey(ctx context.Context, req *logical
 		}
 	}
 
-	// suspend sync
-	sync, err := b.AccountServer(ctx, req.Storage, id.operatorId())
-	if err != nil {
+	if err := b.suspendAccountServer(ctx, req.Storage, opId.accountServerId()); err != nil {
 		return nil, err
-	}
-	if sync != nil {
-		sync.Suspend = true
-		err := storeInStorage(ctx, req.Storage, sync.configPath(), sync)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	if err := logical.EndTxStorage(ctx, req); err != nil {

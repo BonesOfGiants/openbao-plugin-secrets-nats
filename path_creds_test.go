@@ -181,7 +181,7 @@ func TestBackend_Creds_Read(t *testing.T) {
 			assert.Equal(t, expectedExpires.Unix(), userClaims.ClaimsData.Expires)
 
 			// delete user
-			resp, err = DeleteConfig(t, id)
+			resp, err = DeleteConfig(t, id, nil)
 			RequireNoRespError(t, resp, err)
 
 			// creds should be nil

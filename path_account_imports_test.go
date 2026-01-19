@@ -140,7 +140,7 @@ func TestBackend_AccountImport_Config(t *testing.T) {
 			}
 
 			// delete config
-			resp, err = DeleteConfig(t, impId)
+			resp, err = DeleteConfig(t, impId, nil)
 			RequireNoRespError(t, resp, err)
 
 			// read config
@@ -350,9 +350,9 @@ func TestBackend_AccountImport_List(ts *testing.T) {
 
 	assert.Equal(t, []string{"imp1", "imp2", "imp3"}, resp.Data["keys"])
 
-	DeleteConfig(t, accId.importId("imp1"))
-	DeleteConfig(t, accId.importId("imp2"))
-	DeleteConfig(t, accId.importId("imp3"))
+	DeleteConfig(t, accId.importId("imp1"), nil)
+	DeleteConfig(t, accId.importId("imp2"), nil)
+	DeleteConfig(t, accId.importId("imp3"), nil)
 
 	req = &logical.Request{
 		Operation: logical.ListOperation,
@@ -375,7 +375,7 @@ func TestBackend_AccountImport_Sync(t *testing.T) {
 		accId := AccountId("op1", "acc1")
 		SetupTestAccount(t, accId, nil)
 
-		resp, err := WriteAccountServer(t, accId.operatorId(), map[string]any{
+		resp, err := WriteConfig(t, accId.operatorId().accountServerId(), map[string]any{
 			"servers":         []string{"nats://localhost:4222"},
 			"sync_now":        false,
 			"disable_lookups": true,
@@ -412,7 +412,7 @@ func TestBackend_AccountImport_Sync(t *testing.T) {
 		accId := AccountId("op1", "acc1")
 		SetupTestAccount(t, accId, nil)
 
-		resp, err := WriteAccountServer(t, accId.operatorId(), map[string]any{
+		resp, err := WriteConfig(t, accId.operatorId().accountServerId(), map[string]any{
 			"servers":         []string{"nats://localhost:4222"},
 			"suspend":         true,
 			"sync_now":        false,
@@ -428,7 +428,7 @@ func TestBackend_AccountImport_Sync(t *testing.T) {
 		}
 		WriteConfig(t, accId.importId("test-import"), expected)
 
-		resp, err = WriteAccountServer(t, accId.operatorId(), map[string]any{
+		resp, err = WriteConfig(t, accId.operatorId().accountServerId(), map[string]any{
 			"suspend":  false,
 			"sync_now": false,
 		})
@@ -437,7 +437,7 @@ func TestBackend_AccountImport_Sync(t *testing.T) {
 		var receivedJwt string
 		ExpectUpdateSync(t, nats, &receivedJwt)
 
-		resp, err = DeleteConfig(t, accId.importId("test-import"))
+		resp, err = DeleteConfig(t, accId.importId("test-import"), nil)
 		RequireNoRespError(t, resp, err)
 
 		claims, err := jwt.DecodeAccountClaims(receivedJwt)

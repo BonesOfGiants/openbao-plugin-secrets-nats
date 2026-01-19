@@ -33,7 +33,7 @@ func TestBackend_Revocation_Config(t *testing.T) {
 		assert.True(t, ok, "revocations do not contain user id")
 		assert.Equal(t, time.Now().Unix(), entry)
 
-		DeleteConfig(t, accId.revocationId("U123"))
+		DeleteConfig(t, accId.revocationId("U123"), nil)
 
 		// the revocation should be removed from the jwt
 		accJwt = ReadAccountJwt(t, accId)
@@ -71,9 +71,9 @@ func TestBackend_Revocation_List(_t *testing.T) {
 
 	assert.Equal(t, []string{"U123", "U234", "U345"}, resp.Data["keys"])
 
-	DeleteConfig(t, accId.revocationId("U123"))
-	DeleteConfig(t, accId.revocationId("U234"))
-	DeleteConfig(t, accId.revocationId("U345"))
+	DeleteConfig(t, accId.revocationId("U123"), nil)
+	DeleteConfig(t, accId.revocationId("U234"), nil)
+	DeleteConfig(t, accId.revocationId("U345"), nil)
 
 	req = &logical.Request{
 		Operation: logical.ListOperation,
@@ -135,7 +135,7 @@ func TestBackend_Revocation_Sync(t *testing.T) {
 		accId := AccountId("op1", "acc1")
 		SetupTestAccount(t, accId, nil)
 
-		resp, err := WriteAccountServer(t, accId.operatorId(), map[string]any{
+		resp, err := WriteConfig(t, accId.operatorId().accountServerId(), map[string]any{
 			"servers":         []string{"nats://localhost:4222"},
 			"sync_now":        false,
 			"disable_lookups": true,
@@ -163,7 +163,7 @@ func TestBackend_Revocation_Sync(t *testing.T) {
 		accId := AccountId("op1", "acc1")
 		SetupTestAccount(t, accId, nil)
 
-		resp, err := WriteAccountServer(t, accId.operatorId(), map[string]any{
+		resp, err := WriteConfig(t, accId.operatorId().accountServerId(), map[string]any{
 			"servers":         []string{"nats://localhost:4222"},
 			"suspend":         true,
 			"sync_now":        false,
@@ -176,7 +176,7 @@ func TestBackend_Revocation_Sync(t *testing.T) {
 			"ttl": "10s",
 		})
 
-		resp, err = WriteAccountServer(t, accId.operatorId(), map[string]any{
+		resp, err = WriteConfig(t, accId.operatorId().accountServerId(), map[string]any{
 			"suspend":  false,
 			"sync_now": false,
 		})
@@ -185,7 +185,7 @@ func TestBackend_Revocation_Sync(t *testing.T) {
 		var receivedJwt string
 		ExpectUpdateSync(t, nats, &receivedJwt)
 
-		resp, err = DeleteConfig(t, accId.revocationId(userId))
+		resp, err = DeleteConfig(t, accId.revocationId(userId), nil)
 		RequireNoRespError(t, resp, err)
 
 		claims, err := jwt.DecodeAccountClaims(receivedJwt)
@@ -202,7 +202,7 @@ func TestBackend_Revocation_Sync(t *testing.T) {
 			accId := AccountId("op1", "acc1")
 			SetupTestAccount(t, accId, nil)
 
-			resp, err := WriteAccountServer(t, accId.operatorId(), map[string]any{
+			resp, err := WriteConfig(t, accId.operatorId().accountServerId(), map[string]any{
 				"servers":         []string{"nats://localhost:4222"},
 				"suspend":         true,
 				"sync_now":        false,
@@ -215,7 +215,7 @@ func TestBackend_Revocation_Sync(t *testing.T) {
 				"ttl": "10s",
 			})
 
-			resp, err = WriteAccountServer(t, accId.operatorId(), map[string]any{
+			resp, err = WriteConfig(t, accId.operatorId().accountServerId(), map[string]any{
 				"suspend":  false,
 				"sync_now": false,
 			})

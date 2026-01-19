@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/abstractnats"
 	"github.com/nats-io/jwt/v2"
 	"github.com/openbao/openbao/sdk/v2/logical"
 	"github.com/stretchr/testify/assert"
@@ -11,7 +12,7 @@ import (
 )
 
 func TestBackend_Operator_Rotation(t *testing.T) {
-	t.Run("singing key does not exist", func(t *testing.T) {
+	t.Run("signing key does not exist", func(t *testing.T) {
 		b := testBackend(t)
 
 		id := OperatorId("op1")
@@ -67,7 +68,7 @@ func TestBackend_Operator_Rotation(t *testing.T) {
 }
 
 func TestBackend_Operator_SigningKey_Rotation(t *testing.T) {
-	t.Run("singing key does not exist", func(t *testing.T) {
+	t.Run("signing key does not exist", func(t *testing.T) {
 		b := testBackend(t)
 
 		id := OperatorSigningKeyId("op1", "sk1")
@@ -132,6 +133,59 @@ func TestBackend_Operator_SigningKey_Rotation(t *testing.T) {
 	})
 }
 
+func TestBackend_Operator_Rotation_Suspend(t *testing.T) {
+	t.Run("suspend account server on identity key rotate", func(_t *testing.T) {
+		nats := abstractnats.NewMock(_t)
+		defer nats.AssertNoLingering(_t)
+		t := testBackendWithNats(_t, nats)
+
+		opId := OperatorId("op1")
+		SetupTestOperator(t, opId, nil)
+
+		resp, err := WriteConfig(t, opId.accountServerId(), map[string]any{
+			"servers":         []string{"nats://localhost:4222"},
+			"sync_now":        false,
+			"disable_lookups": true,
+		})
+		RequireNoRespError(t, resp, err)
+
+		resp, err = RotateKey(t, opId, nil)
+		RequireNoRespError(t, resp, err)
+
+		resp, err = ReadConfigRaw(t, opId.accountServerId())
+		RequireNoRespError(t, resp, err)
+
+		assert.Equal(t, true, resp.Data["suspend"])
+	})
+	t.Run("suspend account server on signing key rotate", func(_t *testing.T) {
+		nats := abstractnats.NewMock(_t)
+		defer nats.AssertNoLingering(_t)
+		t := testBackendWithNats(_t, nats)
+
+		id := OperatorSigningKeyId("op1", "sk1")
+		SetupTestOperator(t, id.operatorId(), nil)
+
+		// create the signing key
+		resp, err := WriteConfig(t, id, nil)
+		RequireNoRespError(t, resp, err)
+
+		resp, err = WriteConfig(t, id.operatorId().accountServerId(), map[string]any{
+			"servers":         []string{"nats://localhost:4222"},
+			"sync_now":        false,
+			"disable_lookups": true,
+		})
+		RequireNoRespError(t, resp, err)
+
+		resp, err = RotateKey(t, id, nil)
+		RequireNoRespError(t, resp, err)
+
+		resp, err = ReadConfigRaw(t, id.operatorId().accountServerId())
+		RequireNoRespError(t, resp, err)
+
+		assert.Equal(t, true, resp.Data["suspend"])
+	})
+}
+
 func TestBackend_Account_Rotation(_t *testing.T) {
 	t := testBackend(_t)
 
@@ -160,7 +214,7 @@ func TestBackend_Account_Rotation(_t *testing.T) {
 }
 
 func TestBackend_Account_SigningKey_Rotation(t *testing.T) {
-	t.Run("singing key does not exist", func(_t *testing.T) {
+	t.Run("signing key does not exist", func(_t *testing.T) {
 		t := testBackend(_t)
 
 		id := AccountSigningKeyId("op1", "acc1", "sk1")
@@ -222,6 +276,71 @@ func TestBackend_Account_SigningKey_Rotation(t *testing.T) {
 		accJwt = ReadAccountJwt(t, id.accountId())
 		assert.NotContains(t, accJwt.SigningKeys, oldNkey)
 		assert.Contains(t, accJwt.SigningKeys, newNkey)
+	})
+}
+
+func TestBackend_Account_Rotation_Sync(t *testing.T) {
+	t.Run("sync on identity key rotate", func(_t *testing.T) {
+		nats := abstractnats.NewMock(_t)
+		defer nats.AssertNoLingering(_t)
+		t := testBackendWithNats(_t, nats)
+
+		accId := AccountId("op1", "acc1")
+		SetupTestAccount(t, accId, nil)
+
+		resp, err := WriteConfig(t, accId.operatorId().accountServerId(), map[string]any{
+			"servers":         []string{"nats://localhost:4222"},
+			"sync_now":        false,
+			"disable_lookups": true,
+		})
+		RequireNoRespError(t, resp, err)
+
+		var receivedJwt string
+		ExpectUpdateSync(t, nats, &receivedJwt)
+
+		opPublicKey := ReadPublicKey(t, accId.operatorId())
+		accPublicKey := ReadPublicKey(t, accId)
+		ExpectDeleteSync(t, nats, opPublicKey, accPublicKey)
+
+		resp, err = RotateKey(t, accId, nil)
+		RequireNoRespError(t, resp, err)
+
+		accJwt := ReadJwtString(t, accId)
+		assert.Equal(t, accJwt, receivedJwt)
+	})
+	t.Run("sync on signing key rotate", func(_t *testing.T) {
+		nats := abstractnats.NewMock(_t)
+		defer nats.AssertNoLingering(_t)
+		t := testBackendWithNats(_t, nats)
+
+		id := AccountSigningKeyId("op1", "acc1", "sk1")
+		SetupTestAccount(t, id.accountId(), nil)
+
+		// create the signing key
+		resp, err := WriteConfig(t, id, nil)
+		RequireNoRespError(t, resp, err)
+
+		oldSkPublicKey := ReadPublicKey(t, id)
+
+		resp, err = WriteConfig(t, id.operatorId().accountServerId(), map[string]any{
+			"servers":         []string{"nats://localhost:4222"},
+			"sync_now":        false,
+			"disable_lookups": true,
+		})
+		RequireNoRespError(t, resp, err)
+
+		var receivedJwt string
+		ExpectUpdateSync(t, nats, &receivedJwt)
+
+		resp, err = RotateKey(t, id, nil)
+		RequireNoRespError(t, resp, err)
+
+		receivedClaims, err := jwt.DecodeAccountClaims(receivedJwt)
+		require.NoError(t, err)
+
+		skPublicKey := ReadPublicKey(t, id)
+		assert.Contains(t, receivedClaims.SigningKeys, skPublicKey)
+		assert.NotContains(t, receivedClaims.SigningKeys, oldSkPublicKey)
 	})
 }
 

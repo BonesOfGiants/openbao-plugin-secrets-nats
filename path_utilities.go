@@ -58,20 +58,12 @@ func (b *backend) pathGenerateServerConfig(ctx context.Context, req *logical.Req
 
 	includePreload := false
 	if includePreloadRaw, ok := d.GetOk("include_resolver_preload"); ok {
-		ip, ok := includePreloadRaw.(bool)
-		if !ok {
-			return logical.ErrorResponse("include_resolver_preload must be a bool, got %T", includePreloadRaw), nil
-		}
-
-		includePreload = ip
+		includePreload = includePreloadRaw.(bool)
 	}
 
 	format := ServerConfigFormatJson
 	if formatRaw, ok := d.GetOk("format"); ok {
-		formatStr, ok := formatRaw.(string)
-		if !ok {
-			return logical.ErrorResponse("format must be a string, got %T", formatRaw), nil
-		}
+		formatStr := formatRaw.(string)
 
 		switch formatStr {
 		case "json":
@@ -79,7 +71,7 @@ func (b *backend) pathGenerateServerConfig(ctx context.Context, req *logical.Req
 		case "nats":
 			format = ServerConfigFormatNats
 		default:
-			return nil, fmt.Errorf("unsupported format %q", format)
+			return logical.ErrorResponse("unsupported format %q", formatStr), nil
 		}
 	}
 
@@ -88,7 +80,7 @@ func (b *backend) pathGenerateServerConfig(ctx context.Context, req *logical.Req
 		return nil, err
 	}
 	if operator == nil {
-		return nil, fmt.Errorf("operator %q does not exist", opId.op)
+		return logical.ErrorResponse("operator %q does not exist", opId.op), nil
 	}
 
 	opJwt, err := b.Jwt(ctx, req.Storage, opId)

@@ -34,14 +34,6 @@ func NewAccountImport(id accountImportId) *accountImportEntry {
 	}
 }
 
-func NewAccountImportWithParams(id accountImportId, imports jwt.Imports) *accountImportEntry {
-	return &accountImportEntry{
-		accountImportId: id,
-
-		Imports: imports,
-	}
-}
-
 func AccountImportId(op, acc, name string) accountImportId {
 	return accountImportId{
 		op:   op,
@@ -204,10 +196,7 @@ func (b *backend) pathAccountImportCreateUpdate(ctx context.Context, req *logica
 	}
 
 	if importsRaw, ok := d.GetOk("imports"); ok {
-		importsRaw, ok := importsRaw.([]any)
-		if !ok {
-			return logical.ErrorResponse("imports must be an array, got %T", importsRaw), nil
-		}
+		importsRaw := importsRaw.([]any)
 
 		for v := range d.Raw {
 			if slices.Contains(rootParamsKeys, v) {

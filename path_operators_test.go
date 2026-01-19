@@ -29,8 +29,6 @@ var (
 )
 
 func TestBackend_Operator_Config(_t *testing.T) {
-	b := testBackend(_t)
-
 	testCases := []struct {
 		name     string
 		data     map[string]any
@@ -149,12 +147,14 @@ func TestBackend_Operator_Config(_t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		_t.Run(tc.name, func(t *testing.T) {
+		_t.Run(tc.name, func(_t *testing.T) {
+			t := testBackend(_t)
+
 			id := OperatorId("op1")
 			req := &logical.Request{
 				Operation: logical.CreateOperation,
 				Path:      id.configPath(),
-				Storage:   b,
+				Storage:   t,
 				Data:      tc.data,
 			}
 
@@ -162,282 +162,403 @@ func TestBackend_Operator_Config(_t *testing.T) {
 			defer func() {
 				req.Operation = logical.DeleteOperation
 				req.Path = id.configPath()
-				b.HandleRequest(context.Background(), req)
+				t.HandleRequest(context.Background(), req)
 			}()
 			// create config
-			resp, err := b.HandleRequest(context.Background(), req)
+			resp, err := t.HandleRequest(context.Background(), req)
 			if err != nil || (resp != nil && resp.IsError()) {
 				if tc.err == nil {
-					t.Fatalf("err: %s; resp: %#v\n", err, resp)
+					_t.Fatalf("err: %s; resp: %#v\n", err, resp)
 				} else if err != nil && err.Error() == tc.err.Error() {
 					return
 				} else if err == nil && resp.Error().Error() == tc.err.Error() {
 					return
 				} else {
-					t.Fatalf("expected err message: %q, got %q, response error: %q", tc.err, err, resp.Error())
+					_t.Fatalf("expected err message: %q, got %q, response error: %q", tc.err, err, resp.Error())
 				}
 			}
 
 			if tc.err != nil {
 				if resp == nil || !resp.IsError() {
-					t.Fatalf("expected err, got none")
+					_t.Fatalf("expected err, got none")
 				}
 			}
 
 			// read config
-			checkFound, exists, err := ExistenceCheckConfig(b, id)
-			assert.True(b, checkFound)
-			assert.True(b, exists)
+			checkFound, exists, err := ExistenceCheckConfig(t, id)
+			assert.True(t, checkFound)
+			assert.True(t, exists)
 
-			resp, err = ReadConfigRaw(b, id)
-			RequireNoRespError(b, resp, err)
+			resp, err = ReadConfigRaw(t, id)
+			RequireNoRespError(t, resp, err)
 
-			assert.EqualValues(b, tc.expected, resp.Data)
+			assert.EqualValues(t, tc.expected, resp.Data)
 
 			// ensure nkey exists
-			resp, err = ReadNkeyRaw(b, id)
-			RequireNoRespError(b, resp, err)
-			assert.NotNil(b, resp)
+			resp, err = ReadNkeyRaw(t, id)
+			RequireNoRespError(t, resp, err)
+			assert.NotNil(t, resp)
 
 			// ensure jwt exists
-			resp, err = ReadJwtRaw(b, id)
-			RequireNoRespError(b, resp, err)
-			assert.NotNil(b, resp)
+			resp, err = ReadJwtRaw(t, id)
+			RequireNoRespError(t, resp, err)
+			assert.NotNil(t, resp)
 
 			// delete config
-			resp, err = DeleteConfig(b, id)
-			RequireNoRespError(b, resp, err)
+			resp, err = DeleteConfig(t, id, nil)
+			RequireNoRespError(t, resp, err)
 
 			// ensure nkey is deleted
-			resp, err = ReadNkeyRaw(b, id)
-			RequireNoRespError(b, resp, err)
-			assert.Nil(b, resp)
+			resp, err = ReadNkeyRaw(t, id)
+			RequireNoRespError(t, resp, err)
+			assert.Nil(t, resp)
 
 			// ensure jwt is deleted
-			resp, err = ReadJwtRaw(b, id)
-			RequireNoRespError(b, resp, err)
-			assert.Nil(b, resp)
+			resp, err = ReadJwtRaw(t, id)
+			RequireNoRespError(t, resp, err)
+			assert.Nil(t, resp)
 		})
 	}
 }
 
-func TestBackend_Operator_SystemAccount(t *testing.T) {
-	t.Run("no system account", func(t *testing.T) {
-		b := testBackend(t)
+func TestBackend_Operator_Claims(t *testing.T) {
+	t.Run("clear existing claims", func(_t *testing.T) {
+		t := testBackend(_t)
 
 		opId := OperatorId("op1")
-		SetupTestOperator(b, opId, map[string]any{
+		SetupTestOperator(t, opId, map[string]any{
+			"claims": map[string]any{
+				"tags": []any{"test-tag"},
+			},
+		})
+
+		WriteConfig(t, opId, map[string]any{
+			"claims": nil,
+		})
+
+		resp, err := ReadConfigRaw(t, opId)
+		RequireNoRespError(t, resp, err)
+
+		assert.NotContains(t, resp.Data, "claims")
+	})
+}
+
+func TestBackend_Operator_SystemAccount(t *testing.T) {
+	t.Run("no system account", func(_t *testing.T) {
+		t := testBackend(_t)
+
+		opId := OperatorId("op1")
+		SetupTestOperator(t, opId, map[string]any{
 			"create_system_account": false,
-			"system_account_name":   "",
 		})
 
 		sysId := opId.accountId(DefaultSysAccountName)
-		resp, err := ReadConfigRaw(b, sysId)
-		RequireNoRespError(b, resp, err)
-		require.Nil(b, resp)
+		resp, err := ReadConfigRaw(t, sysId)
+		RequireNoRespError(t, resp, err)
+		require.Nil(t, resp)
 
-		claims := ReadJwt[*jwt.OperatorClaims](b, opId)
-		assert.Equal(b, "", claims.SystemAccount)
+		claims := ReadJwt[*jwt.OperatorClaims](t, opId)
+		assert.Equal(t, "", claims.SystemAccount)
 	})
 
-	t.Run("create default system account", func(t *testing.T) {
-		b := testBackend(t)
+	t.Run("create default system account", func(_t *testing.T) {
+		t := testBackend(_t)
 
 		opId := OperatorId("op1")
-		SetupTestOperator(b, opId, map[string]any{
+		SetupTestOperator(t, opId, map[string]any{
 			"create_system_account": true,
 		})
 
 		sysId := opId.accountId(DefaultSysAccountName)
 
 		// check sys account
-		sysConf := ReadConfig[*accountEntry](b, sysId)
-		assert.True(b, sysConf.Status.IsManaged)
-		assert.True(b, sysConf.Status.IsSystemAccount)
-		assert.Equal(b, unmarshalToMap(DefaultSysAccountClaims), unmarshalToMap(sysConf.RawClaims))
+		sysConf := ReadConfig[*accountEntry](t, sysId)
+		assert.True(t, sysConf.Status.IsManaged)
+		assert.True(t, sysConf.Status.IsSystemAccount)
+		assert.Equal(t, unmarshalToMap(DefaultSysAccountClaims), unmarshalToMap(sysConf.RawClaims))
 
 		// check jwt
-		opClaims := ReadJwt[*jwt.OperatorClaims](b, opId)
-		sysPublicKey := ReadPublicKey(b, sysId)
-		assert.Equal(b, sysPublicKey, opClaims.SystemAccount)
+		opClaims := ReadJwt[*jwt.OperatorClaims](t, opId)
+		sysPublicKey := ReadPublicKey(t, sysId)
+		assert.Equal(t, sysPublicKey, opClaims.SystemAccount)
 	})
 
-	t.Run("system account created before operator", func(t *testing.T) {
-		b := testBackend(t)
+	t.Run("system account created before operator", func(_t *testing.T) {
+		t := testBackend(_t)
 
 		opId := OperatorId("op1")
-		resp := SetupTestOperator(b, opId, map[string]any{
+		resp := SetupTestOperator(t, opId, map[string]any{
 			"create_system_account": false,
 		})
-		assert.Contains(b, resp.Warnings,
+		assert.Contains(t, resp.Warnings,
 			`while reissuing jwt for operator "op1": system account "SYS" does not exist, so it was not added to the claims`)
 
 		// check the jwt
-		opClaims := ReadJwt[*jwt.OperatorClaims](b, opId)
-		assert.Equal(b, "", opClaims.SystemAccount)
+		opClaims := ReadJwt[*jwt.OperatorClaims](t, opId)
+		assert.Equal(t, "", opClaims.SystemAccount)
 
 		// create sys account
 		sysId := opId.accountId("custom_sys")
-		resp, err := WriteConfig(b, sysId, nil)
-		RequireNoRespError(b, resp, err)
-		assert.Empty(b, resp.Warnings)
+		resp, err := WriteConfig(t, sysId, nil)
+		RequireNoRespError(t, resp, err)
+		assert.Empty(t, resp.Warnings)
 
 		// check sys account status
-		account := ReadConfig[*accountEntry](b, sysId)
-		assert.False(b, account.Status.IsManaged)
-		assert.False(b, account.Status.IsSystemAccount)
+		account := ReadConfig[*accountEntry](t, sysId)
+		assert.False(t, account.Status.IsManaged)
+		assert.False(t, account.Status.IsSystemAccount)
 
 		// update sys account name
-		resp, err = UpdateConfig(b, opId, map[string]any{
+		resp, err = UpdateConfig(t, opId, map[string]any{
 			"system_account_name": "custom_sys",
 		})
-		RequireNoRespError(b, resp, err)
-		assert.Contains(b, resp.Warnings, `this operation resulted in operator "op1" reissuing its jwt`)
+		RequireNoRespError(t, resp, err)
+		assert.Contains(t, resp.Warnings, `this operation resulted in operator "op1" reissuing its jwt`)
 
 		// check sys account status
-		account = ReadConfig[*accountEntry](b, sysId)
-		assert.False(b, account.Status.IsManaged)
-		assert.True(b, account.Status.IsSystemAccount)
+		account = ReadConfig[*accountEntry](t, sysId)
+		assert.False(t, account.Status.IsManaged)
+		assert.True(t, account.Status.IsSystemAccount)
 
 		// sys account is now assigned
-		sysPublicKey := ReadPublicKey(b, sysId)
-		opClaims = ReadJwt[*jwt.OperatorClaims](b, opId)
-		assert.Equal(b, sysPublicKey, opClaims.SystemAccount)
+		sysPublicKey := ReadPublicKey(t, sysId)
+		opClaims = ReadJwt[*jwt.OperatorClaims](t, opId)
+		assert.Equal(t, sysPublicKey, opClaims.SystemAccount)
 	})
 
-	t.Run("custom system account created after operator", func(t *testing.T) {
-		b := testBackend(t)
+	t.Run("custom system account created after operator", func(_t *testing.T) {
+		t := testBackend(_t)
 
 		opId := OperatorId("op1")
-		resp := SetupTestOperator(b, opId, map[string]any{
+		resp := SetupTestOperator(t, opId, map[string]any{
 			"create_system_account": false,
 			"system_account_name":   "custom_sys",
 		})
 
 		// first, the account is skipped because it doesn't exist
-		assert.Contains(b, resp.Warnings, `while reissuing jwt for operator "op1": system account "custom_sys" does not exist, so it was not added to the claims`)
+		assert.Contains(t, resp.Warnings, `while reissuing jwt for operator "op1": system account "custom_sys" does not exist, so it was not added to the claims`)
 
 		// check the jwt
-		opClaims := ReadJwt[*jwt.OperatorClaims](b, opId)
-		assert.Equal(b, "", opClaims.SystemAccount)
+		opClaims := ReadJwt[*jwt.OperatorClaims](t, opId)
+		assert.Equal(t, "", opClaims.SystemAccount)
 
 		// create sys account
 		sysId := opId.accountId("custom_sys")
-		resp, err := WriteConfig(b, sysId, nil)
-		RequireNoRespError(b, resp, err)
-		assert.Contains(b, resp.Warnings, `this operation resulted in operator "op1" reissuing its jwt`)
+		resp, err := WriteConfig(t, sysId, nil)
+		RequireNoRespError(t, resp, err)
+		assert.Contains(t, resp.Warnings, `this operation resulted in operator "op1" reissuing its jwt`)
 
 		// check sys account status
-		account := ReadConfig[*accountEntry](b, sysId)
-		assert.False(b, account.Status.IsManaged)
-		assert.True(b, account.Status.IsSystemAccount)
+		account := ReadConfig[*accountEntry](t, sysId)
+		assert.False(t, account.Status.IsManaged)
+		assert.True(t, account.Status.IsSystemAccount)
 
 		// sys account is now assigned
-		sysPublicKey := ReadPublicKey(b, sysId)
-		opClaims = ReadJwt[*jwt.OperatorClaims](b, opId)
-		assert.Equal(b, sysPublicKey, opClaims.SystemAccount)
+		sysPublicKey := ReadPublicKey(t, sysId)
+		opClaims = ReadJwt[*jwt.OperatorClaims](t, opId)
+		assert.Equal(t, sysPublicKey, opClaims.SystemAccount)
 	})
 
-	t.Run("recreate managed system account", func(t *testing.T) {
-		b := testBackend(t)
+	t.Run("recreate managed system account", func(_t *testing.T) {
+		t := testBackend(_t)
 
 		opId := OperatorId("op1")
-		resp := SetupTestOperator(b, opId, map[string]any{
+		resp := SetupTestOperator(t, opId, map[string]any{
 			"create_system_account": true,
 			"system_account_name":   "SYS",
 		})
-		assert.Empty(b, resp.Warnings)
+		assert.Empty(t, resp.Warnings)
 
-		resp, err := UpdateConfig(b, opId, map[string]any{
+		resp, err := UpdateConfig(t, opId, map[string]any{
 			"system_account_name": "custom_sys",
 		})
-		RequireNoRespError(b, resp, err)
+		RequireNoRespError(t, resp, err)
 
-		assert.Contains(b, resp.Warnings, `this operation resulted in operator "op1" reissuing its jwt`)
+		assert.Contains(t, resp.Warnings, `this operation resulted in operator "op1" reissuing its jwt`)
 
 		// old account is deleted
-		resp, err = ReadConfigRaw(b, opId.accountId("SYS"))
-		RequireNoRespError(b, resp, err)
-		assert.Nil(b, resp)
+		resp, err = ReadConfigRaw(t, opId.accountId("SYS"))
+		RequireNoRespError(t, resp, err)
+		assert.Nil(t, resp)
 
 		// new account is created
-		account := ReadConfig[*accountEntry](b, opId.accountId("custom_sys"))
-		assert.True(b, account.Status.IsManaged)
-		assert.True(b, account.Status.IsSystemAccount)
+		account := ReadConfig[*accountEntry](t, opId.accountId("custom_sys"))
+		assert.True(t, account.Status.IsManaged)
+		assert.True(t, account.Status.IsSystemAccount)
 	})
 
-	t.Run("move from custom to managed system account", func(t *testing.T) {
-		b := testBackend(t)
+	t.Run("move from custom to managed system account", func(_t *testing.T) {
+		t := testBackend(_t)
 
 		opId := OperatorId("op1")
-		resp := SetupTestOperator(b, opId, map[string]any{
+		resp := SetupTestOperator(t, opId, map[string]any{
 			"create_system_account": false,
 			"system_account_name":   "SYS",
 		})
 
 		// create sys account
-		resp, err := WriteConfig(b, opId.accountId("SYS"), nil)
-		RequireNoRespError(b, resp, err)
+		resp, err := WriteConfig(t, opId.accountId("SYS"), nil)
+		RequireNoRespError(t, resp, err)
 
 		// check account status
-		account := ReadConfig[*accountEntry](b, opId.accountId("SYS"))
-		assert.False(b, account.Status.IsManaged)
-		assert.True(b, account.Status.IsSystemAccount)
+		account := ReadConfig[*accountEntry](t, opId.accountId("SYS"))
+		assert.False(t, account.Status.IsManaged)
+		assert.True(t, account.Status.IsSystemAccount)
 
 		// move to a managed system account
-		resp, err = UpdateConfig(b, opId, map[string]any{
+		resp, err = UpdateConfig(t, opId, map[string]any{
 			"create_system_account": true,
 			"system_account_name":   "managed_sys",
 		})
-		RequireNoRespError(b, resp, err)
-		assert.Contains(b, resp.Warnings, `this operation resulted in operator "op1" reissuing its jwt`)
+		RequireNoRespError(t, resp, err)
+		assert.Contains(t, resp.Warnings, `this operation resulted in operator "op1" reissuing its jwt`)
 
 		// check sys account status
-		account = ReadConfig[*accountEntry](b, opId.accountId("managed_sys"))
-		assert.True(b, account.Status.IsManaged)
-		assert.True(b, account.Status.IsSystemAccount)
+		account = ReadConfig[*accountEntry](t, opId.accountId("managed_sys"))
+		assert.True(t, account.Status.IsManaged)
+		assert.True(t, account.Status.IsSystemAccount)
 
 		// check operator claim
-		publicKey := ReadPublicKey(b, opId.accountId("managed_sys"))
-		claims := ReadJwt[*jwt.OperatorClaims](b, opId)
-		assert.Equal(b, publicKey, claims.SystemAccount)
+		publicKey := ReadPublicKey(t, opId.accountId("managed_sys"))
+		claims := ReadJwt[*jwt.OperatorClaims](t, opId)
+		assert.Equal(t, publicKey, claims.SystemAccount)
 	})
 
-	t.Run("move from managed to custom system account", func(t *testing.T) {
-		b := testBackend(t)
+	t.Run("move from managed to custom system account", func(_t *testing.T) {
+		t := testBackend(_t)
 
 		opId := OperatorId("op1")
-		resp := SetupTestOperator(b, opId, map[string]any{
+		resp := SetupTestOperator(t, opId, map[string]any{
 			"create_system_account": true,
 			"system_account_name":   "SYS",
 		})
 
 		// create sys account
-		resp, err := WriteConfig(b, opId.accountId("custom_sys"), nil)
-		RequireNoRespError(b, resp, err)
+		resp, err := WriteConfig(t, opId.accountId("custom_sys"), nil)
+		RequireNoRespError(t, resp, err)
 
 		// move to a custom system account
-		resp, err = UpdateConfig(b, opId, map[string]any{
+		resp, err = UpdateConfig(t, opId, map[string]any{
 			"create_system_account": false,
 			"system_account_name":   "custom_sys",
 		})
-		RequireNoRespError(b, resp, err)
-		assert.Contains(b, resp.Warnings, `this operation resulted in operator "op1" reissuing its jwt`)
+		RequireNoRespError(t, resp, err)
+		assert.Contains(t, resp.Warnings, `this operation resulted in operator "op1" reissuing its jwt`)
 
 		// check sys account status
-		account := ReadConfig[*accountEntry](b, opId.accountId("custom_sys"))
-		assert.False(b, account.Status.IsManaged)
-		assert.True(b, account.Status.IsSystemAccount)
+		account := ReadConfig[*accountEntry](t, opId.accountId("custom_sys"))
+		assert.False(t, account.Status.IsManaged)
+		assert.True(t, account.Status.IsSystemAccount)
 
 		// managed sys should be deleted
-		resp, err = ReadConfigRaw(b, opId.accountId("SYS"))
-		RequireNoRespError(b, resp, err)
-		assert.Nil(b, resp)
+		resp, err = ReadConfigRaw(t, opId.accountId("SYS"))
+		RequireNoRespError(t, resp, err)
+		assert.Nil(t, resp)
 
 		// check operator claim
-		publicKey := ReadPublicKey(b, opId.accountId("custom_sys"))
-		claims := ReadJwt[*jwt.OperatorClaims](b, opId)
-		assert.Equal(b, publicKey, claims.SystemAccount)
+		publicKey := ReadPublicKey(t, opId.accountId("custom_sys"))
+		claims := ReadJwt[*jwt.OperatorClaims](t, opId)
+		assert.Equal(t, publicKey, claims.SystemAccount)
+	})
+
+	t.Run("managed name clashes with existing account", func(_t *testing.T) {
+		t := testBackend(_t)
+
+		opId := OperatorId("op1")
+		resp := SetupTestOperator(t, opId, map[string]any{
+			"create_system_account": false,
+			"system_account_name":   "SYS",
+		})
+
+		// create sys account
+		resp, err := WriteConfig(t, opId.accountId("SYS"), nil)
+		RequireNoRespError(t, resp, err)
+
+		// try to create the system account
+		resp, err = UpdateConfig(t, opId, map[string]any{
+			"create_system_account": true,
+		})
+		assert.NoError(_t, err)
+		assert.ErrorContains(_t, resp.Error(), "managed system account name \"SYS\" clashes with existing account")
+	})
+}
+
+func TestBackend_Operator_Claims_Suspend(t *testing.T) {
+	t.Run("suspend account server on claims change", func(_t *testing.T) {
+		nats := abstractnats.NewMock(_t)
+		defer nats.AssertNoLingering(_t)
+		t := testBackendWithNats(_t, nats)
+
+		opId := OperatorId("op1")
+		SetupTestOperator(t, opId, nil)
+
+		resp, err := WriteConfig(t, opId.accountServerId(), map[string]any{
+			"servers":         []string{"nats://localhost:4222"},
+			"sync_now":        false,
+			"disable_lookups": true,
+		})
+		RequireNoRespError(t, resp, err)
+
+		WriteConfig(t, opId, map[string]any{
+			"claims": map[string]any{
+				"tags": []any{"test-tag"},
+			},
+		})
+
+		resp, err = ReadConfigRaw(t, opId.accountServerId())
+		RequireNoRespError(t, resp, err)
+
+		assert.Equal(t, true, resp.Data["suspend"])
+	})
+
+	t.Run("suspend account server on server account change", func(_t *testing.T) {
+		nats := abstractnats.NewMock(_t)
+		defer nats.AssertNoLingering(_t)
+		t := testBackendWithNats(_t, nats)
+
+		opId := OperatorId("op1")
+		SetupTestOperator(t, opId, nil)
+
+		resp, err := WriteConfig(t, opId.accountServerId(), map[string]any{
+			"servers":         []string{"nats://localhost:4222"},
+			"sync_now":        false,
+			"disable_lookups": true,
+		})
+		RequireNoRespError(t, resp, err)
+
+		WriteConfig(t, opId, map[string]any{
+			"system_account_name": "test_account",
+		})
+
+		resp, err = ReadConfigRaw(t, opId.accountServerId())
+		RequireNoRespError(t, resp, err)
+
+		assert.Equal(t, true, resp.Data["suspend"])
+	})
+
+	t.Run("noop if claims are not changed", func(_t *testing.T) {
+		nats := abstractnats.NewMock(_t)
+		defer nats.AssertNoLingering(_t)
+		t := testBackendWithNats(_t, nats)
+
+		opId := OperatorId("op1")
+		SetupTestOperator(t, opId, nil)
+
+		resp, err := WriteConfig(t, opId.accountServerId(), map[string]any{
+			"servers":         []string{"nats://localhost:4222"},
+			"sync_now":        false,
+			"disable_lookups": true,
+		})
+		RequireNoRespError(t, resp, err)
+
+		WriteConfig(t, opId, map[string]any{
+			"default_signing_key": "sk1",
+		})
+
+		resp, err = ReadConfigRaw(t, opId.accountServerId())
+		RequireNoRespError(t, resp, err)
+
+		assert.NotContains(t, resp.Data, "suspend")
 	})
 }
 
@@ -496,7 +617,7 @@ func TestBackend_Cascading_Delete(_t *testing.T) {
 	// operator
 	SetupTestOperator(t, opId, nil)
 	// operator account server
-	WriteAccountServer(t, opId, map[string]any{
+	WriteConfig(t, opId.accountServerId(), map[string]any{
 		"servers": []string{"nats://localhost:4222"},
 		"suspend": true,
 	})
@@ -530,12 +651,12 @@ func TestBackend_Cascading_Delete(_t *testing.T) {
 	SetupTestUser(t, ephUserId, nil)
 
 	// delete operator
-	DeleteConfig(t, opId)
+	DeleteConfig(t, opId, nil)
 
 	// operator
 	AssertConfigDeleted(t, opId)
 	// operator account server
-	resp, err := ReadAccountServerRaw(t, opId)
+	resp, err := ReadConfigRaw(t, opId.accountServerId())
 	RequireNoRespError(t, resp, err)
 	assert.Nil(t, resp)
 	// operator signing key

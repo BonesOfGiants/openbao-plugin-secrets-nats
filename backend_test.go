@@ -18,9 +18,6 @@ import (
 /*
 todo: list of things that still need tests:
 - operator jwt change resulting in account server being suspended + warning
-- account server status updates
-	- [x] account server itself
-	- [ ] account statuses
 - managed name clashes with existing account
 - test partial updates
 	- [ ] operator
@@ -30,8 +27,10 @@ todo: list of things that still need tests:
 	- [ ] user
 	- [ ] eph user
 - all the variations of things that cause account server updates
-	- [ ] operator rotate
-	- [ ] operator signing key rotate
+	- [x] operator claims update (suspend)
+	- [x] operator server account change (suspend)
+	- [x] operator key rotate (suspend)
+	- [x] operator signing key rotate (suspend)
 	- [x] account import create/update/delete
 	- [x] revocation create/update/delete
 	- [ ] user delete resulting in revocation
@@ -338,43 +337,6 @@ func WriteConfig(t testContext, id configPather, data map[string]any) (*logical.
 	})
 }
 
-func WriteAccountServer(t testContext, id operatorId, data map[string]any) (*logical.Response, error) {
-	t.Helper()
-
-	if data == nil {
-		data = map[string]any{}
-	}
-
-	return t.HandleRequest(context.Background(), &logical.Request{
-		Path:      id.accountServerPath(),
-		Operation: logical.CreateOperation,
-		Storage:   t,
-		Data:      data,
-	})
-}
-
-func ReadAccountServerRaw(t testContext, id operatorId) (*logical.Response, error) {
-	t.Helper()
-
-	return t.HandleRequest(context.Background(), &logical.Request{
-		Path:      id.accountServerPath(),
-		Operation: logical.ReadOperation,
-		Storage:   t,
-		Data:      map[string]any{},
-	})
-}
-
-func DeleteAccountServer(t testContext, id operatorId) (*logical.Response, error) {
-	t.Helper()
-
-	return t.HandleRequest(context.Background(), &logical.Request{
-		Path:      id.accountServerPath(),
-		Operation: logical.DeleteOperation,
-		Storage:   t,
-		Data:      map[string]any{},
-	})
-}
-
 func ReadConfig[T configPather](t testContext, id configPather) T {
 	t.Helper()
 
@@ -434,8 +396,12 @@ func ReadConfigRaw(t testContext, id configPather) (*logical.Response, error) {
 	})
 }
 
-func DeleteConfig(t testContext, id configPather) (*logical.Response, error) {
+func DeleteConfig(t testContext, id configPather, data map[string]any) (*logical.Response, error) {
 	t.Helper()
+
+	if data == nil {
+		data = map[string]any{}
+	}
 
 	return t.HandleRequest(context.Background(), &logical.Request{
 		Path:      id.configPath(),
@@ -577,7 +543,7 @@ func ExpectDeleteSync(t testContext, m abstractnats.MockNatsConnection, operator
 	})
 }
 
-func ReadServerConfig(t testContext, id operatorId, data map[string]any) string {
+func ReadServerConfigRaw(t testContext, id operatorId, data map[string]any) (*logical.Response, error) {
 	t.Helper()
 
 	if data == nil {
@@ -590,6 +556,13 @@ func ReadServerConfig(t testContext, id operatorId, data map[string]any) string 
 		Storage:   t,
 		Data:      data,
 	})
+	return resp, err
+}
+
+func ReadServerConfig(t testContext, id operatorId, data map[string]any) string {
+	t.Helper()
+
+	resp, err := ReadServerConfigRaw(t, id, data)
 	RequireNoRespError(t, resp, err)
 
 	conf, ok := resp.Data["config"]

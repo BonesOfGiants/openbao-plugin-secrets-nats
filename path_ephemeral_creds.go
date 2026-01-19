@@ -128,12 +128,7 @@ func (b *backend) pathEphemeralUserCredsRead(ctx context.Context, req *logical.R
 
 	nbf := int64(0)
 	if nbfRaw, ok := d.GetOk("not_before"); ok {
-		nbfTime, ok := nbfRaw.(time.Time)
-		if !ok {
-			return nil, fmt.Errorf("failed to parse not_before; got %T", nbfRaw)
-		}
-
-		nbf = nbfTime.Unix()
+		nbf = nbfRaw.(time.Time).Unix()
 	}
 
 	idKey, err := nkeys.CreateUser()

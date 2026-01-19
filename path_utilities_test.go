@@ -37,6 +37,27 @@ func Test_ServerConfigGenerator(t *testing.T) {
 		assert.Contains(b, config, fmt.Sprintf("system_account: %s\n", ReadPublicKey(b, opId.accountId(DefaultSysAccountName))))
 	})
 
+	t.Run("invalid format", func(t *testing.T) {
+		b := testBackend(t)
+		opId := OperatorId("op1")
+		SetupTestOperator(b, opId, nil)
+
+		resp, err := ReadServerConfigRaw(b, opId, map[string]any{
+			"format": "invalid",
+		})
+		assert.NoError(t, err)
+		assert.ErrorContains(t, resp.Error(), "unsupported format \"invalid\"")
+	})
+
+	t.Run("invalid operator", func(t *testing.T) {
+		b := testBackend(t)
+		opId := OperatorId("op1")
+
+		resp, err := ReadServerConfigRaw(b, opId, nil)
+		assert.NoError(t, err)
+		assert.ErrorContains(t, resp.Error(), "operator \"op1\" does not exist")
+	})
+
 	t.Run("json with preload", func(t *testing.T) {
 		b := testBackend(t)
 		opId := OperatorId("op1")

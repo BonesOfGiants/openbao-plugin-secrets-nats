@@ -293,6 +293,7 @@ This endpoint creates or updates an operator.
 - `claims` `(map: nil)` - Override default claims in the JWT issued for this operator. 
   See [nats-io/jwt](https://pkg.go.dev/github.com/nats-io/jwt/v2#Operator) for available fields. See [the guide](/docs/Home.md#operator-claims) for details and an example of all available fields.
   Claims are **not** merged. If the claims parameter is present it will overwrite any previous claims.
+  Passing an explicit `null` to this field will clear the existing claims.
 
 ### Sample payload
 
@@ -339,7 +340,7 @@ $ curl \
 ### Response parameters
 
 - `create_system_account` `(bool)` - Whether a managed system account has been created for this operator.
-- `system_account_name` `(string)` - The name of account designated as the system account for this operator.
+- `system_account_name` `(string)` - The name of the account designated as the system account for this operator.
 - `default_signing_key` `(string: <optional>)` - The default signing key used when signing account JWTs.
 - `claims` `(map: <optional>)` - Default claims used in the JWT issued for this operator.
 
@@ -791,6 +792,7 @@ This endpoint create an account configuration under the specified operator.
 - `claims` `(map: {})` - Override default claims in the JWT issued for this operator. See [nats-io/jwt](https://pkg.go.dev/github.com/nats-io/jwt/v2#Account) 
   for available fields. See [the guide](./Home.md#account-claims) for details and an example of all available fields.
   Claims are **not** merged. If the claims parameter is present it will overwrite any previous claims.
+  Passing an explicit `null` to this field will clear the existing claims.
 
 ### Sample payload
 
@@ -1199,6 +1201,7 @@ When creating a `scoped` signing key, the signing key name will be used as the r
 - `permission_template` `(map: {})` - Default permissions that will apply to users issued under this key if `scoped` is `true`.
   The permissions specified here may use [template functions](https://docs.nats.io/using-nats/nats-tools/nsc/signing_keys#template-functions) 
   in subjects.
+  Passing an explicit `null` to this field will clear the existing template.
 
 ### Sample request
 
@@ -1345,6 +1348,7 @@ This endpoint create a user configuration under the specified operator and accou
 - `claims` `(map: nil)` - Provide claims to be used in the credentials generated for this user. 
   See [nats-io/jwt](https://pkg.go.dev/github.com/nats-io/jwt/v2#User) for available fields. See [the guide](./Home.md#user-claims) for details and an example of all available fields.
   Claims are **not** merged. If the claims parameter is present it will overwrite any previous claims.
+  Passing an explicit `null` to this field will clear the existing claims.
 
 ### Sample payload
 
@@ -1560,6 +1564,7 @@ by ensuring that user identity keys are never reused.
 - `claims` `(map: nil)` - Provide claims to be used in the credentials generated for this user. 
   See [nats-io/jwt](https://pkg.go.dev/github.com/nats-io/jwt/v2#User) for available fields. See [the guide](./Home.md#user-claims) for details and an example of all available fields.
   Claims are **not** merged. If the claims parameter is present it will overwrite any previous claims.
+  Passing an explicit `null` to this field will clear the existing claims.
 
 ### Sample payload
 

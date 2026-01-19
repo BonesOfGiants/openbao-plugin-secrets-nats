@@ -281,7 +281,7 @@ func (b *backend) initialize(ctx context.Context, req *logical.InitializationReq
 
 		id := OperatorId(op)
 
-		if _, err := b.startAccountServer(ctx, id, false); err != nil {
+		if _, err := b.startAccountServer(ctx, id.accountServerId(), false); err != nil {
 			b.Logger().Warn("initialize: failed to start account server", "error", err)
 		}
 	}
@@ -375,7 +375,7 @@ func (b *backend) periodicFunc(ctx context.Context, req *logical.Request) error 
 
 		id := OperatorId(op)
 
-		if _, err := b.startAccountServer(ctx, id, false); err != nil {
+		if _, err := b.startAccountServer(ctx, id.accountServerId(), false); err != nil {
 			b.Logger().Warn("periodic: failed to ensure account server", "error", err)
 		}
 
@@ -416,7 +416,7 @@ func (b *backend) periodicPruneAccountRevocations(ctx context.Context, storage l
 	return dirty, nil
 }
 
-func (b *backend) createAuthCallback(opId operatorId) (nats.Option, error) {
+func (b *backend) createAuthCallback(id accountServerId) (nats.Option, error) {
 	idKey, err := nkeys.CreateUser()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create identity key: %w", err)
@@ -428,7 +428,7 @@ func (b *backend) createAuthCallback(opId operatorId) (nats.Option, error) {
 
 	return nats.UserJWT(
 		func() (string, error) {
-			operator, err := b.Operator(context.TODO(), b.s, opId)
+			operator, err := b.Operator(context.TODO(), b.s, id.operatorId())
 			if err != nil {
 				return "", fmt.Errorf("failed to read operator: %w", err)
 			}
@@ -436,7 +436,7 @@ func (b *backend) createAuthCallback(opId operatorId) (nats.Option, error) {
 				return "", fmt.Errorf("operator does not exist: %w", err)
 			}
 
-			accountServer, err := b.AccountServer(context.TODO(), b.s, opId)
+			accountServer, err := b.AccountServer(context.TODO(), b.s, id)
 			if err != nil {
 				return "", fmt.Errorf("failed to read account server: %w", err)
 			}
@@ -478,7 +478,7 @@ func (b *backend) createAuthCallback(opId operatorId) (nats.Option, error) {
 			}
 
 			signingKey, enrichWarnings, err := b.enrichUserClaims(context.TODO(), b.s, enrichUserParams{
-				op:     opId.op,
+				op:     id.op,
 				acc:    operator.SysAccountName,
 				user:   accountServer.AccountServerClientName,
 				claims: claims,
@@ -499,7 +499,7 @@ func (b *backend) createAuthCallback(opId operatorId) (nats.Option, error) {
 			return result.jwt, nil
 		},
 		func(nonce []byte) ([]byte, error) {
-			operator, err := b.Operator(context.TODO(), b.s, opId)
+			operator, err := b.Operator(context.TODO(), b.s, id.operatorId())
 			if err != nil {
 				return nil, fmt.Errorf("failed to read operator: %w", err)
 			}
@@ -507,7 +507,7 @@ func (b *backend) createAuthCallback(opId operatorId) (nats.Option, error) {
 				return nil, fmt.Errorf("operator does not exist: %w", err)
 			}
 
-			accountServer, err := b.AccountServer(context.TODO(), b.s, opId)
+			accountServer, err := b.AccountServer(context.TODO(), b.s, id)
 			if err != nil {
 				return nil, fmt.Errorf("failed to read account server config: %w", err)
 			}
@@ -523,7 +523,7 @@ func (b *backend) createAuthCallback(opId operatorId) (nats.Option, error) {
 // startAccountServer creates an AccountServer for the given account server configuration
 // or returns an existing connection. Pass true to reconnect if you want to
 // ignore the cache and force a new connection.
-func (b *backend) startAccountServer(ctx context.Context, id operatorId, reconnect bool) (*accountserver.AccountServer, error) {
+func (b *backend) startAccountServer(ctx context.Context, id accountServerId, reconnect bool) (*accountserver.AccountServer, error) {
 	accountServer, err := b.AccountServer(ctx, b.s, id)
 	if err != nil {
 		return nil, err
@@ -531,7 +531,7 @@ func (b *backend) startAccountServer(ctx context.Context, id operatorId, reconne
 	if accountServer == nil {
 		return nil, nil
 	}
-	if accountServer.Suspend {
+	if accountServer.Suspended() {
 		return nil, nil
 	}
 
@@ -577,10 +577,12 @@ func (b *backend) startAccountServer(ctx context.Context, id operatorId, reconne
 
 		newSrv, err := accountserver.NewAccountServer(
 			accountserver.Config{
-				Operator:            id.op,
-				EnableAccountLookup: !accountServer.DisableAccountLookup,
+				Operator:             id.op,
+				EnableAccountLookups: !accountServer.DisableAccountLookup,
+				EnableAccountUpdates: !accountServer.DisableAccountUpdate,
+				EnableAccountDeletes: !accountServer.DisableAccountDelete,
 			},
-			b.accountJwtLookupFunc(id),
+			b.accountJwtLookupFunc(id.operatorId()),
 			b.Logger(),
 			nc,
 		)
@@ -619,13 +621,34 @@ update_status:
 	}
 
 	if syncDirty {
-		err = storeInStorage(ctx, b.s, id.accountServerPath(), accountServer)
+		err = storeInStorage(ctx, b.s, accountServer.configPath(), accountServer)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	return srv, nil
+}
+
+func (b *backend) suspendAccountServer(ctx context.Context, s logical.Storage, id accountServerId) error {
+	accountServer, err := b.AccountServer(ctx, s, id)
+	if err != nil {
+		return err
+	}
+	if accountServer != nil {
+		accountServer.Suspend = true
+		err := storeInStorage(ctx, s, accountServer.configPath(), accountServer)
+		if err != nil {
+			return err
+		}
+	}
+
+	srv := b.popAccountServer(id.op)
+	if srv != nil {
+		srv.CloseConnection()
+	}
+
+	return nil
 }
 
 func (b *backend) periodicRefreshAccounts(ctx context.Context, s logical.Storage, opId operatorId) error {

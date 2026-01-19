@@ -171,7 +171,7 @@ func TestBackend_EphemeralUser_Config(_t *testing.T) {
 			assert.NotNil(t, resp)
 
 			// delete config
-			resp, err = DeleteConfig(t, id)
+			resp, err = DeleteConfig(t, id, nil)
 			RequireNoRespError(t, resp, err)
 
 			// ensure nkey is deleted
@@ -185,4 +185,26 @@ func TestBackend_EphemeralUser_Config(_t *testing.T) {
 			assert.Nil(t, resp)
 		})
 	}
+}
+
+func TestBackend_EphemeralUser_Claims(t *testing.T) {
+	t.Run("clear existing claims", func(_t *testing.T) {
+		t := testBackend(_t)
+
+		userId := EphemeralUserId("op1", "acc1", "user1")
+		SetupTestUser(t, userId, map[string]any{
+			"claims": map[string]any{
+				"tags": []any{"test-tag"},
+			},
+		})
+
+		WriteConfig(t, userId, map[string]any{
+			"claims": nil,
+		})
+
+		resp, err := ReadConfigRaw(t, userId)
+		RequireNoRespError(t, resp, err)
+
+		assert.NotContains(t, resp.Data, "claims")
+	})
 }

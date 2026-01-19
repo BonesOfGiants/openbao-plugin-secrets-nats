@@ -287,17 +287,17 @@ func (b *backend) pathAccountCreateUpdate(ctx context.Context, req *logical.Requ
 	}
 
 	if claims, ok := d.GetOk("claims"); ok {
-		c, ok := claims.(map[string]any)
-		if !ok {
-			return logical.ErrorResponse("claims must be a map, got %T", claims), nil
+		if claims.(map[string]any) != nil {
+			rawClaims, err := json.Marshal(claims)
+			if err != nil {
+				return nil, err
+			}
+			jwtDirty = jwtDirty || !bytes.Equal(account.RawClaims, rawClaims)
+			account.RawClaims = rawClaims
+		} else {
+			jwtDirty = jwtDirty || account.RawClaims != nil
+			account.RawClaims = nil
 		}
-
-		rawClaims, err := json.Marshal(c)
-		if err != nil {
-			return nil, err
-		}
-		jwtDirty = jwtDirty || !bytes.Equal(account.RawClaims, rawClaims)
-		account.RawClaims = rawClaims
 	}
 
 	if signingKeyName, ok := d.GetOk("signing_key"); ok {
@@ -649,7 +649,7 @@ func (b *backend) syncAccountUpdate(
 ) error {
 	var syncErr error = nil
 
-	srv, err := b.startAccountServer(ctx, id.operatorId(), false)
+	srv, err := b.startAccountServer(ctx, id.operatorId().accountServerId(), false)
 	if err != nil {
 		syncErr = err
 	} else if srv == nil {
@@ -723,7 +723,7 @@ func (b *backend) syncAccountDelete(
 ) error {
 	var syncErr error = nil
 
-	srv, err := b.startAccountServer(ctx, id.operatorId(), false)
+	srv, err := b.startAccountServer(ctx, id.operatorId().accountServerId(), false)
 	if err != nil {
 		syncErr = err
 	} else if srv == nil {
@@ -774,7 +774,7 @@ func (b *backend) syncAccountRotate(
 ) error {
 	var syncErr error = nil
 
-	srv, err := b.startAccountServer(ctx, id.operatorId(), false)
+	srv, err := b.startAccountServer(ctx, id.operatorId().accountServerId(), false)
 	if err != nil {
 		syncErr = err
 	} else if srv == nil {

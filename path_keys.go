@@ -271,7 +271,7 @@ func pathNkey(b *backend) []*framework.Path {
 					Callback: b.pathOperatorSigningNkeyList,
 				},
 			},
-			HelpSynopsis: "List all signing keys for an operator.",
+			HelpSynopsis: "Lists operator signing keys.",
 		},
 		{
 			Pattern: accountSigningKeysPathPrefix + operatorRegex + "/" + accountRegex + "/?$",
@@ -286,7 +286,7 @@ func pathNkey(b *backend) []*framework.Path {
 					Callback: b.pathAccountSigningNkeyList,
 				},
 			},
-			HelpSynopsis: "List account signing keys.",
+			HelpSynopsis: "Lists account signing keys.",
 		},
 		{
 			Pattern: userKeysPathPrefix + operatorRegex + "/" + accountRegex + "/?$",
@@ -298,10 +298,10 @@ func pathNkey(b *backend) []*framework.Path {
 			},
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.ListOperation: &framework.PathOperation{
-					Callback: b.pathUserNkeyList,
+					Callback: b.pathUserList,
 				},
 			},
-			HelpSynopsis: "List all user keys for an account.",
+			HelpSynopsis: "Lists user keys.",
 		},
 		{
 			Pattern: accountKeysPathPrefix + operatorRegex + "/?$",
@@ -312,10 +312,10 @@ func pathNkey(b *backend) []*framework.Path {
 			},
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.ListOperation: &framework.PathOperation{
-					Callback: b.pathAccountNkeyList,
+					Callback: b.pathAccountList,
 				},
 			},
-			HelpSynopsis: "List all account keys.",
+			HelpSynopsis: "Lists account keys.",
 		},
 		{
 			Pattern: operatorKeysPathPrefix + "/?$",
@@ -325,10 +325,10 @@ func pathNkey(b *backend) []*framework.Path {
 			},
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.ListOperation: &framework.PathOperation{
-					Callback: b.pathOperatorNkeyList,
+					Callback: b.pathOperatorList,
 				},
 			},
-			HelpSynopsis: "List all operator keys.",
+			HelpSynopsis: "Lists operator keys.",
 		},
 	}
 }
@@ -367,21 +367,6 @@ func (b *backend) pathOperatorNkeyExistenceCheck(ctx context.Context, req *logic
 	}
 
 	return nkey != nil, nil
-}
-
-func (b *backend) pathOperatorNkeyList(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {
-	after := d.Get("after").(string)
-	limit := d.Get("limit").(int)
-	if limit <= 0 {
-		limit = -1
-	}
-
-	entries, err := req.Storage.ListPage(ctx, operatorKeysPathPrefix, after, limit)
-	if err != nil {
-		return nil, err
-	}
-
-	return logical.ListResponse(entries), nil
 }
 
 // operator-signing-key
@@ -634,21 +619,6 @@ func (b *backend) pathAccountNkeyExistenceCheck(ctx context.Context, req *logica
 	return nkey != nil, err
 }
 
-func (b *backend) pathAccountNkeyList(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {
-	after := d.Get("after").(string)
-	limit := d.Get("limit").(int)
-	if limit <= 0 {
-		limit = -1
-	}
-
-	entries, err := req.Storage.ListPage(ctx, OperatorIdField(d).accountsNkeyPrefix(), after, limit)
-	if err != nil {
-		return nil, err
-	}
-
-	return logical.ListResponse(entries), nil
-}
-
 // account-signing-key
 
 func (b *backend) pathAccountSigningNkeyCreateUpdate(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {
@@ -685,17 +655,16 @@ func (b *backend) pathAccountSigningNkeyCreateUpdate(ctx context.Context, req *l
 	}
 
 	if template, ok := d.GetOk("permission_template"); ok {
-		t, ok := template.(map[string]any)
-		if !ok {
-			return logical.ErrorResponse("permission_template must be a map, got %T", template), nil
-		}
-		if t != nil {
+		if template.(map[string]any) != nil {
 			rawTemplate, err := json.Marshal(template)
 			if err != nil {
 				return nil, err
 			}
-			jwtDirty = jwtDirty || (nkey.Scoped && bytes.Equal(rawTemplate, nkey.UserScope.Template))
+			jwtDirty = jwtDirty || (nkey.Scoped && !bytes.Equal(rawTemplate, nkey.UserScope.Template))
 			nkey.UserScope.Template = rawTemplate
+		} else {
+			jwtDirty = jwtDirty || (nkey.Scoped && nkey.UserScope.Template != nil)
+			nkey.UserScope.Template = nil
 		}
 	}
 
@@ -921,21 +890,6 @@ func (b *backend) pathUserNkeyExistenceCheck(ctx context.Context, req *logical.R
 	}
 
 	return nkey != nil, nil
-}
-
-func (b *backend) pathUserNkeyList(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	after := data.Get("after").(string)
-	limit := data.Get("limit").(int)
-	if limit <= 0 {
-		limit = -1
-	}
-
-	entries, err := req.Storage.ListPage(ctx, AccountIdField(data).userNkeyPrefix(), after, limit)
-	if err != nil {
-		return nil, err
-	}
-
-	return logical.ListResponse(entries), nil
 }
 
 func createNkeyResponse(nkey *nkeyEntry) (*logical.Response, error) {

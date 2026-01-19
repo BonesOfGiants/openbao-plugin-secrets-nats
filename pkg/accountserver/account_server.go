@@ -21,8 +21,10 @@ const (
 )
 
 type Config struct {
-	Operator            string
-	EnableAccountLookup bool
+	Operator             string
+	EnableAccountLookups bool
+	EnableAccountUpdates bool
+	EnableAccountDeletes bool
 }
 
 type JwtLookupFunc func(id string) (string, error)
@@ -42,7 +44,7 @@ func NewAccountServer(cfg Config, lookupFunc JwtLookupFunc, logger hclog.Logger,
 		nc:     nc,
 	}
 
-	if cfg.EnableAccountLookup {
+	if cfg.EnableAccountLookups {
 		_, err := nc.Subscribe(SysAccountClaimsLookupSubject, server.accountLookupRequest)
 		if err != nil {
 			return nil, err
@@ -126,6 +128,10 @@ func (r *AccountServer) claimUpdateRequest(subject string, data []byte, timeout 
 }
 
 func (r *AccountServer) DeleteAccount(accKey nkeys.KeyPair, signingKey nkeys.KeyPair) error {
+	if !r.EnableAccountDeletes {
+		return nil
+	}
+
 	subject, err := signingKey.PublicKey()
 	if err != nil {
 		return err
@@ -153,6 +159,10 @@ func (r *AccountServer) DeleteAccount(accKey nkeys.KeyPair, signingKey nkeys.Key
 }
 
 func (r *AccountServer) UpdateAccount(token string) error {
+	if !r.EnableAccountUpdates {
+		return nil
+	}
+
 	err := r.claimUpdateRequest(SysClaimsUpdateSubject, []byte(token), 1*time.Second)
 	if err != nil {
 		return err

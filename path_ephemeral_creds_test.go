@@ -173,8 +173,8 @@ func TestBackend_EphemeralCreds_Read(t *testing.T) {
 			assert.Equal(t, parsedClaims.UserPermissionLimits, userClaims.User.UserPermissionLimits)
 
 			// test system sets a 24hr default lease ttl
-			expectedExpires := time.Now().Add(24 * time.Hour)
-			assert.Equal(t, expectedExpires.Unix(), userClaims.ClaimsData.Expires)
+			expectedExpires := time.Now().Add(24 * time.Hour).Unix()
+			assert.Equal(t, expectedExpires, userClaims.ClaimsData.Expires)
 
 			// new creds should have a different seed
 			resp, err = ReadEphemeralCreds(t, id, "test", nil)
@@ -211,13 +211,12 @@ func TestBackend_EphemeralCreds_Ttl(t *testing.T) {
 			userJwt := resp.Data["jwt"]
 			expiresAt := resp.Data["expires_at"]
 
-			expectedExpiry := time.Now().Add(10 * time.Minute)
-
 			claims, err := jwt.DecodeUserClaims(userJwt.(string))
 			require.NoError(t, err)
 
-			assert.Equal(t, expectedExpiry.Unix(), claims.Expires)
-			assert.Equal(t, expectedExpiry.Unix(), expiresAt)
+			expectedExpiry := time.Now().Add(10 * time.Minute).Unix()
+			assert.Equal(t, expectedExpiry, claims.Expires)
+			assert.Equal(t, expectedExpiry, expiresAt)
 		})
 	})
 
@@ -237,13 +236,12 @@ func TestBackend_EphemeralCreds_Ttl(t *testing.T) {
 			userJwt := resp.Data["jwt"]
 			expiresAt := resp.Data["expires_at"]
 
-			expectedExpiry := time.Now().Add(10 * time.Minute)
-
 			claims, err := jwt.DecodeUserClaims(userJwt.(string))
 			require.NoError(t, err)
 
-			assert.Equal(t, expectedExpiry.Unix(), claims.Expires)
-			assert.Equal(t, expectedExpiry.Unix(), expiresAt)
+			expectedExpiry := time.Now().Add(10 * time.Minute).Unix()
+			assert.Equal(t, expectedExpiry, claims.Expires)
+			assert.Equal(t, expectedExpiry, expiresAt)
 		})
 	})
 
@@ -264,13 +262,36 @@ func TestBackend_EphemeralCreds_Ttl(t *testing.T) {
 			userJwt := resp.Data["jwt"]
 			expiresAt := resp.Data["expires_at"]
 
-			expectedExpiry := time.Now().Add(10 * time.Minute)
+			claims, err := jwt.DecodeUserClaims(userJwt.(string))
+			require.NoError(t, err)
+
+			expectedExpiry := time.Now().Add(10 * time.Minute).Unix()
+			assert.Equal(t, expectedExpiry, claims.Expires)
+			assert.Equal(t, expectedExpiry, expiresAt)
+		})
+	})
+
+	t.Run("zero ttl uses system default", func(t *testing.T) {
+		synctest.Test(t, func(_t *testing.T) {
+			t := testBackend(_t)
+
+			id := EphemeralUserId("op1", "acc1", "user1")
+			SetupTestUser(t, id, nil)
+
+			resp, err := ReadEphemeralCreds(t, id, "test", map[string]any{
+				"ttl": 0,
+			})
+			RequireNoRespError(t, resp, err)
+
+			userJwt := resp.Data["jwt"]
+			expiresAt := resp.Data["expires_at"]
 
 			claims, err := jwt.DecodeUserClaims(userJwt.(string))
 			require.NoError(t, err)
 
-			assert.Equal(t, expectedExpiry.Unix(), claims.Expires)
-			assert.Equal(t, expectedExpiry.Unix(), expiresAt)
+			expectedExpiry := time.Now().Add(t.Backend.System().MaxLeaseTTL()).Unix()
+			assert.Equal(t, expectedExpiry, claims.Expires)
+			assert.Equal(t, expectedExpiry, expiresAt)
 		})
 	})
 
@@ -291,13 +312,12 @@ func TestBackend_EphemeralCreds_Ttl(t *testing.T) {
 			userJwt := resp.Data["jwt"]
 			expiresAt := resp.Data["expires_at"]
 
-			expectedExpiry := time.Now().Add(10 * time.Minute)
-
 			claims, err := jwt.DecodeUserClaims(userJwt.(string))
 			require.NoError(t, err)
 
-			assert.Equal(t, expectedExpiry.Unix(), claims.Expires)
-			assert.Equal(t, expectedExpiry.Unix(), expiresAt)
+			expectedExpiry := time.Now().Add(10 * time.Minute).Unix()
+			assert.Equal(t, expectedExpiry, claims.Expires)
+			assert.Equal(t, expectedExpiry, expiresAt)
 		})
 	})
 }

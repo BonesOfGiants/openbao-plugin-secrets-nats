@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestBackend_EphemeralUser_Config(_t *testing.T) {
+func TestBackend_EphemeralUser_Config(t *testing.T) {
 
 	testCases := []struct {
 		name     string
@@ -129,7 +129,7 @@ func TestBackend_EphemeralUser_Config(_t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		_t.Run(tc.name, func(_t *testing.T) {
+		t.Run(tc.name, func(_t *testing.T) {
 			t := testBackend(_t)
 
 			// create config
@@ -160,7 +160,7 @@ func TestBackend_EphemeralUser_Config(_t *testing.T) {
 			assert.True(t, checkFound)
 			assert.True(t, exists)
 
-			resp, err = ReadConfigRaw(t, id)
+			resp, err = ReadConfig(t, id)
 			RequireNoRespError(t, resp, err)
 
 			assert.EqualValues(t, tc.expected, resp.Data)
@@ -180,11 +180,47 @@ func TestBackend_EphemeralUser_Config(_t *testing.T) {
 			assert.Nil(t, resp)
 
 			// ensure config is deleted
-			resp, err = ReadConfigRaw(t, id)
+			resp, err = ReadConfig(t, id)
 			RequireNoRespError(t, resp, err)
 			assert.Nil(t, resp)
 		})
 	}
+
+	t.Run("list", func(_t *testing.T) {
+		t := testBackend(_t)
+
+		accId := AccountId("op1", "acc1")
+		SetupTestAccount(t, accId, nil)
+
+		uid1 := accId.ephemeralUserId("user1")
+		uid2 := accId.ephemeralUserId("user2")
+		uid3 := accId.ephemeralUserId("user3")
+
+		resp, err := WriteConfig(t, uid1, nil)
+		RequireNoRespError(t, resp, err)
+		resp, err = WriteConfig(t, uid2, nil)
+		RequireNoRespError(t, resp, err)
+		resp, err = WriteConfig(t, uid3, nil)
+		RequireNoRespError(t, resp, err)
+
+		// config
+		resp, err = ListPath(t, accId.ephemeralUserConfigPrefix())
+		RequireNoRespError(t, resp, err)
+
+		assert.ElementsMatch(t, []string{"user1", "user2", "user3"}, resp.Data["keys"])
+	})
+
+	t.Run("existence check", func(_t *testing.T) {
+		t := testBackend(_t)
+
+		id := EphemeralUserId("op1", "acc1", "user1")
+		SetupTestUser(t, id, nil)
+
+		hasCheck, found, err := ExistenceCheckConfig(t, id)
+		assert.NoError(t, err)
+		assert.True(t, hasCheck, "existence check not found")
+		assert.True(t, found, "item not found")
+	})
 }
 
 func TestBackend_EphemeralUser_Claims(t *testing.T) {
@@ -202,7 +238,7 @@ func TestBackend_EphemeralUser_Claims(t *testing.T) {
 			"claims": nil,
 		})
 
-		resp, err := ReadConfigRaw(t, userId)
+		resp, err := ReadConfig(t, userId)
 		RequireNoRespError(t, resp, err)
 
 		assert.NotContains(t, resp.Data, "claims")

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"slices"
 	"strings"
 
@@ -26,7 +27,7 @@ func pathUtilities(b *backend) []*framework.Path {
 				"operator": operatorField,
 				"include_resolver_preload": {
 					Type:        framework.TypeBool,
-					Description: "Whether to include a resolver_preload block with all accounts under this operator.",
+					Description: "Whether to include a `resolver_preload` map in the generated config. This is only supported for NATS and MEMORY resolvers. The map will contain the current public key and JWT of all accounts under the operator.",
 					Required:    false,
 				},
 				"format": {
@@ -40,6 +41,18 @@ func pathUtilities(b *backend) []*framework.Path {
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.ReadOperation: &framework.PathOperation{
 					Callback: b.pathGenerateServerConfig,
+					Responses: map[int][]framework.Response{
+						http.StatusOK: {{
+							Description: "OK",
+							Fields: map[string]*framework.FieldSchema{
+								"config": {
+									Type:        framework.TypeString,
+									Description: "The rendered configuration file.",
+									Required:    true,
+								},
+							},
+						}},
+					},
 				},
 			},
 			HelpSynopsis: `Utility to generate a valid NATS server configuration for an account.`,

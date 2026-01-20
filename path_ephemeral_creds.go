@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/openbao/openbao/sdk/v2/framework"
@@ -11,10 +12,6 @@ import (
 
 	"github.com/nats-io/jwt/v2"
 	"github.com/nats-io/nkeys"
-)
-
-const (
-	ephemeralUserSystemDefaultTtl = 5 * time.Minute
 )
 
 func pathEphemeralUserCreds(b *backend) []*framework.Path {
@@ -25,43 +22,121 @@ func pathEphemeralUserCreds(b *backend) []*framework.Path {
 				"operator": operatorField,
 				"account":  accountField,
 				"user": {
-					Type:        framework.TypeString,
+					Type:        framework.TypeNameString,
 					Description: "Name of the ephemeral user.",
 					Required:    true,
 				},
 				"session": {
-					Type:        framework.TypeString,
-					Description: "Id for this session.",
+					Type:        framework.TypeNameString,
+					Description: "A name for this session. Included in the path.",
 					Required:    true,
+				},
+				"signing_key": {
+					Type:        framework.TypeString,
+					Description: "Specify the name of an account signing key to use when signing these credentials. If empty or not set, the signing key will be the first non-empty value from the user's `default_signing_key`, account's `default_signing_key`, or the account identity key.",
+					Required:    false,
+				},
+				"ttl": {
+					Type:        framework.TypeDurationSecond,
+					Description: "Specify the TTL of the generated credentials, specified in seconds or as a Go duration format string, e.g. `\"1h\"`. If empty or not set, the ttl of the generated credentials will be based on the user's `creds_default_ttl` value. This value will be clamped by the `creds_max_ttl` or the system's max TTL.",
+					Required:    false,
+				},
+				"not_before": {
+					Type:        framework.TypeTime,
+					Description: "Specify a Unix timestamp or valid RFC3339 timestamp to use as the `nbf` time of the generated creds. The TTL of the creds is always calculated from the current time, not from the `not_before` time.",
+					Required:    false,
 				},
 				"tags": {
 					Type:        framework.TypeStringSlice,
 					Description: "Additional tags to add to the user claims.",
 					Required:    false,
 				},
-				"not_before": {
-					Type:        framework.TypeTime,
-					Description: "Specify a nbf timestamp for the generated jwt.",
-					Required:    false,
-				},
-				"ttl": {
-					Type:        framework.TypeDurationSecond,
-					Description: "The TTL of the generated credentials",
-					Required:    false,
-				},
-				"signing_key": {
-					Type:        framework.TypeString,
-					Description: "Specify a signing key to use for these creds.",
-					Required:    false,
-				},
 			},
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.ReadOperation: &framework.PathOperation{
 					Callback: b.pathEphemeralUserCredsRead,
+					Responses: map[int][]framework.Response{
+						http.StatusOK: {{
+							Description: "OK",
+							Fields: map[string]*framework.FieldSchema{
+								"operator": {
+									Type:        framework.TypeString,
+									Description: "The name of the operator.",
+									Required:    true,
+								},
+								"account": {
+									Type:        framework.TypeString,
+									Description: "The name of the account.",
+									Required:    true,
+								},
+								"user": {
+									Type:        framework.TypeString,
+									Description: "The name of the user.",
+									Required:    true,
+								},
+								"session": {
+									Type:        framework.TypeString,
+									Description: "The name of the session.",
+									Required:    true,
+								},
+								"creds": {
+									Type:        framework.TypeString,
+									Description: "The decorated credentials including the JWT and seed string.",
+									Required:    true,
+								},
+								"jwt": {
+									Type:        framework.TypeString,
+									Description: "The undecorated JWT.",
+									Required:    true,
+								},
+								"seed": {
+									Type:        framework.TypeString,
+									Description: "The undecorated seed string.",
+									Required:    true,
+								},
+								"signing_key": {
+									Type:        framework.TypeString,
+									Description: "The name of the signing key used to sign these creds. If the creds were signed by the account identity key, this field is empty.",
+									Required:    true,
+								},
+								"expires_at": {
+									Type:        framework.TypeTime,
+									Description: "The expiration time for these creds, formatted as a Unix timestamp.",
+									Required:    true,
+								},
+							},
+						}},
+					},
 				},
 			},
 			HelpSynopsis:    `Generates fresh user credentials on-demand.`,
 			HelpDescription: `Reads the user template and generates a fresh JWT with current timestamp and provided parameters, then returns complete NATS credentials.`,
+		},
+		{
+			HelpSynopsis: "Lists ephemeral users.",
+			Pattern:      ephemeralCredsPathPrefix + operatorRegex + "/" + accountRegex + "/?$",
+			Fields: map[string]*framework.FieldSchema{
+				"operator": operatorField,
+				"account":  accountField,
+				"after":    afterField,
+				"limit":    limitField,
+			},
+			Operations: map[logical.Operation]framework.OperationHandler{
+				logical.ListOperation: &framework.PathOperation{
+					Callback: b.pathEphemeralUserList,
+					Responses: map[int][]framework.Response{
+						http.StatusOK: {{
+							Description: "OK",
+							Fields: map[string]*framework.FieldSchema{
+								"keys": {
+									Type:     framework.TypeStringSlice,
+									Required: true,
+								},
+							},
+						}},
+					},
+				},
+			},
 		},
 	}
 }
@@ -101,8 +176,7 @@ func (b *backend) pathEphemeralUserCredsRead(ctx context.Context, req *logical.R
 	}
 
 	if ttl <= 0 {
-		warnings = append(warnings, fmt.Sprintf("ephemeral users are not allowed to have an infinite ttl; using system default %s", ephemeralUserSystemDefaultTtl.String()))
-		ttl = ephemeralUserSystemDefaultTtl
+		ttl = maxTtl
 	}
 
 	var tags []string = nil

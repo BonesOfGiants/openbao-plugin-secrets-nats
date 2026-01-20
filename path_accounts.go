@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"iter"
-	"strings"
+	"net/http"
 	"time"
 
 	"github.com/nats-io/nkeys"
@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	deleteAccountWALKey = "deleteAccountWALKey"
+// deleteAccountWALKey = "deleteAccountWALKey"
 )
 
 type accountEntry struct {
@@ -38,11 +38,11 @@ func (a *accountEntry) AccountId() accountId {
 	return a.accountId
 }
 
-// WAL entry used for the rollback account deletions
-type deleteAccountWAL struct {
-	Operator string
-	Account  string
-}
+// // WAL entry used for the rollback account deletions
+// type deleteAccountWAL struct {
+// 	Operator string
+// 	Account  string
+// }
 
 type accountId struct {
 	op  string
@@ -162,6 +162,17 @@ type AccountReader interface {
 }
 
 func pathConfigAccount(b *backend) []*framework.Path {
+	responseOK := map[int][]framework.Response{
+		http.StatusOK: {{
+			Description: "OK",
+		}},
+	}
+	responseNoContent := map[int][]framework.Response{
+		http.StatusNoContent: {{
+			Description: "No Content",
+		}},
+	}
+
 	return []*framework.Path{
 		{
 			Pattern: accountsPathPrefix + operatorRegex + "/" + accountRegex + "$",
@@ -170,31 +181,57 @@ func pathConfigAccount(b *backend) []*framework.Path {
 				"account":  accountField,
 				"claims": {
 					Type:        framework.TypeMap,
-					Description: "Override default claims in the issued JWT for this account. See https://pkg.go.dev/github.com/nats-io/jwt/v2#AccountClaims for available fields.",
+					Description: "Override default claims in the issued JWT for this account. See https://pkg.go.dev/github.com/nats-io/jwt/v2#AccountClaims for available fields. Claims are not merged; if claims parameter is present it will overwrite any previous claims. Passing an explicit `null` to this field will clear the existing claims.",
 					Required:    false,
 				},
 				"signing_key": {
 					Type:        framework.TypeString,
-					Description: "Specify which operator signing key to use when generating this account's JWT. If not set, will use the operator's default signing key.",
+					Description: "Optionally specify the name of an operator signing key to use when signing this account's JWT. If not set, the operator's `default_signing_key` or the operator identity key will be used.",
 				},
 				"default_signing_key": {
 					Type:        framework.TypeString,
-					Description: "Specify which account signing key to use when signing user JWTs. If not set, will default to the account's identity key.",
+					Description: "Specify which account signing key to use by default when signing user and ephemeral user creds. By setting this field, users and ephemeral users of this account will be unable to be signed using the account identity key. If empty or not set, users and ephemeral users will be signed using the account's identity key. This field may be overridden by the `users`/`ephemeral-users` `default_signing_key` or the `creds`/`ephemeral-creds` `signing_key` parameter. If the specified signing key does not exist, an error will be raised when generating user or ephemeral user credentials.",
 				},
 			},
 			ExistenceCheck: b.pathAccountExistenceCheck,
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.CreateOperation: &framework.PathOperation{
-					Callback: b.pathAccountCreateUpdate,
+					Callback:  b.pathAccountCreateUpdate,
+					Responses: responseOK,
 				},
 				logical.UpdateOperation: &framework.PathOperation{
-					Callback: b.pathAccountCreateUpdate,
+					Callback:  b.pathAccountCreateUpdate,
+					Responses: responseOK,
 				},
 				logical.ReadOperation: &framework.PathOperation{
 					Callback: b.pathAccountRead,
+					Responses: map[int][]framework.Response{
+						http.StatusOK: {{
+							Description: "OK",
+							Fields: map[string]*framework.FieldSchema{
+								"claims": {
+									Type:        framework.TypeMap,
+									Description: "Custom claims used in the JWT issued for this account.",
+								},
+								"signing_key": {
+									Type:        framework.TypeString,
+									Description: "The operator signing key specified to sign this account's JWT.",
+								},
+								"default_signing_key": {
+									Type:        framework.TypeString,
+									Description: "The default account signing key used when signing user or ephemeral user credentials.",
+								},
+								"status": {
+									Type:        framework.TypeMap,
+									Description: "Information about this account's status.",
+								},
+							},
+						}},
+					},
 				},
 				logical.DeleteOperation: &framework.PathOperation{
-					Callback: b.pathAccountDelete,
+					Callback:  b.pathAccountDelete,
+					Responses: responseNoContent,
 				},
 			},
 			HelpSynopsis: `Manages accounts.`,
@@ -209,6 +246,17 @@ func pathConfigAccount(b *backend) []*framework.Path {
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.ListOperation: &framework.PathOperation{
 					Callback: b.pathAccountList,
+					Responses: map[int][]framework.Response{
+						http.StatusOK: {{
+							Description: "OK",
+							Fields: map[string]*framework.FieldSchema{
+								"keys": {
+									Type:     framework.TypeStringSlice,
+									Required: true,
+								},
+							},
+						}},
+					},
 				},
 			},
 			HelpSynopsis: "List accounts.",
@@ -485,10 +533,11 @@ func (b *backend) pathAccountDelete(ctx context.Context, req *logical.Request, d
 		return nil, fmt.Errorf("failed to delete account in nats server: %w", err)
 	}
 
-	walID, err := framework.PutWAL(ctx, req.Storage, deleteAccountWALKey, &deleteAccountWAL{
-		Operator: account.op,
-		Account:  account.acc,
-	})
+	// disable for now, exploring other robustness options
+	// walID, err := framework.PutWAL(ctx, req.Storage, deleteAccountWALKey, &deleteAccountWAL{
+	// 	Operator: account.op,
+	// 	Account:  account.acc,
+	// })
 
 	// reissue operator if this was the account specified as the system account
 	if account.Status.IsSystemAccount {
@@ -509,16 +558,17 @@ func (b *backend) pathAccountDelete(ctx context.Context, req *logical.Request, d
 		return nil, err
 	}
 
-	err = framework.DeleteWAL(ctx, req.Storage, walID)
-	if err != nil {
-		b.Logger().Warn("unable to delete WAL", "error", err, "WAL ID", walID)
-	}
+	// disable for now, exploring other robustness options
+	// err = framework.DeleteWAL(ctx, req.Storage, walID)
+	// if err != nil {
+	// 	b.Logger().Warn("unable to delete WAL", "error", err, "WAL ID", walID)
+	// }
 
 	if err := logical.EndTxStorage(ctx, req); err != nil {
 		return nil, err
 	}
 
-	return nil, nil
+	return resp, nil
 }
 
 func (b *backend) createAccountNkeyAndJwt(ctx context.Context, s logical.Storage, id accountId) (jwtWarnings, error) {
@@ -823,9 +873,4 @@ update_status:
 	}
 
 	return nil
-}
-
-func IsNatsUrl(url string) bool {
-	url = strings.ToLower(strings.TrimSpace(url))
-	return strings.HasPrefix(url, "nats://") || strings.HasPrefix(url, ",nats://")
 }

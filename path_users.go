@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/shimtx"
@@ -80,6 +81,17 @@ func (id userId) rotatePath() string {
 }
 
 func pathConfigUser(b *backend) []*framework.Path {
+	responseOK := map[int][]framework.Response{
+		http.StatusOK: {{
+			Description: "OK",
+		}},
+	}
+	responseNoContent := map[int][]framework.Response{
+		http.StatusNoContent: {{
+			Description: "No Content",
+		}},
+	}
+
 	return []*framework.Path{
 		{
 			Pattern: usersPathPrefix + operatorRegex + "/" + accountRegex + "/" + userRegex + "$",
@@ -89,43 +101,73 @@ func pathConfigUser(b *backend) []*framework.Path {
 				"user":     userField,
 				"claims": {
 					Type:        framework.TypeMap,
-					Description: "Override default claims in the generated credentials for this user. See https://pkg.go.dev/github.com/nats-io/jwt/v2#UserClaims for available fields. Fields may be replaced with bracketed template variables that may be provided when requesting creds.",
+					Description: "Specify default claims for the credentials generated for this user. See https://pkg.go.dev/github.com/nats-io/jwt/v2#UserClaims for available fields. Claims are not merged; if the claims parameter is present it will overwrite any previous claims. Passing an explicit `null` to this field will clear the existing claims.",
 					Required:    false,
 				},
 				"creds_default_ttl": {
 					Type:        framework.TypeDurationSecond,
-					Description: "If greater than 0, credentials created by this user will have the specified ttl. Otherwise, credentials created by this user will have no expiration time.",
+					Description: "The default TTL for generated credentials, specified in seconds or as a Go duration format string, e.g. `\"1h\"`. If not set or 0, the system default will be used.",
 					Default:     0,
 				},
 				"creds_max_ttl": {
 					Type:        framework.TypeDurationSecond,
-					Description: "If greater than 0, credentials created by this user will have the specified ttl. Otherwise, credentials created by this user will have no expiration time.",
+					Description: "The maximum TTL for generated credentials, specified in seconds or as a Go duration format string, e.g. `\"1h\"`. If not set or 0, the system default will be used.",
 					Default:     0,
 				},
 				"revoke_on_delete": {
 					Type:        framework.TypeBool,
-					Description: "If set, the user subject is added to its account's revocation list upon deletion. The ttl of the revocation is set to the creds_ttl. Defaults to false.",
+					Description: "Whether this user's identity key should be added to the account revocation list upon deletion.",
 					Default:     false,
 				},
 				"default_signing_key": {
 					Type:        framework.TypeString,
-					Description: "If set, the specified signing key name will be used to sign generated credentials. Otherwise, the account key will be used.",
+					Description: "Specify the name of an account signing key to use by default when generating credentials. If empty or not set, the user will be signed using the account's default signing key. This may be overridden by the creds `signing_key` parameter. The signing key need not exist when creating the user, but generating credentials will fail if the signing key doesn't exist.",
 					Required:    false,
 				},
 			},
 			ExistenceCheck: b.pathUserExistenceCheck,
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.CreateOperation: &framework.PathOperation{
-					Callback: b.pathUserCreateUpdate,
+					Callback:  b.pathUserCreateUpdate,
+					Responses: responseOK,
 				},
 				logical.UpdateOperation: &framework.PathOperation{
-					Callback: b.pathUserCreateUpdate,
+					Callback:  b.pathUserCreateUpdate,
+					Responses: responseOK,
 				},
 				logical.ReadOperation: &framework.PathOperation{
 					Callback: b.pathUserRead,
+					Responses: map[int][]framework.Response{
+						http.StatusOK: {{
+							Description: "OK",
+							Fields: map[string]*framework.FieldSchema{
+								"claims": {
+									Type:        framework.TypeMap,
+									Description: "Custom claims used in the credentials issued for this user.",
+								},
+								"creds_default_ttl": {
+									Type:        framework.TypeInt,
+									Description: "The default TTL for generated credentials in seconds.",
+								},
+								"creds_max_ttl": {
+									Type:        framework.TypeInt,
+									Description: "The maximum TTL for generated credentials in seconds.",
+								},
+								"revoke_on_delete": {
+									Type:        framework.TypeBool,
+									Description: "Whether this user's identity key will be added to the account revocation list upon deletion.",
+								},
+								"default_signing_key": {
+									Type:        framework.TypeString,
+									Description: "The name of the specified account signing key used by default when generating credentials.",
+								},
+							},
+						}},
+					},
 				},
 				logical.DeleteOperation: &framework.PathOperation{
-					Callback: b.pathDeleteUserIssue,
+					Callback:  b.pathDeleteUserIssue,
+					Responses: responseNoContent,
 				},
 			},
 			HelpSynopsis:    `Manages user templates for dynamic credential generation.`,
@@ -142,6 +184,17 @@ func pathConfigUser(b *backend) []*framework.Path {
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.ListOperation: &framework.PathOperation{
 					Callback: b.pathUserList,
+					Responses: map[int][]framework.Response{
+						http.StatusOK: {{
+							Description: "OK",
+							Fields: map[string]*framework.FieldSchema{
+								"keys": {
+									Type:     framework.TypeStringSlice,
+									Required: true,
+								},
+							},
+						}},
+					},
 				},
 			},
 			HelpSynopsis: "List users.",
@@ -321,7 +374,8 @@ func (b *backend) pathDeleteUserIssue(ctx context.Context, req *logical.Request,
 		return nil, nil
 	}
 
-	jwtDirty, err := b.deleteUser(ctx, req.Storage, id, user.RevokeOnDelete, user.CredsMaxTtl)
+	revokeTtl := max(user.CredsMaxTtl, b.System().MaxLeaseTTL())
+	jwtDirty, err := b.deleteUser(ctx, req.Storage, id, user.RevokeOnDelete, revokeTtl)
 	if err != nil {
 		return nil, err
 	}
@@ -339,7 +393,7 @@ func (b *backend) pathDeleteUserIssue(ctx context.Context, req *logical.Request,
 			resp.AddWarning(fmt.Sprintf("failed to reissue jwt for account %q: %s", id.acc, err.Error()))
 		} else {
 			for _, v := range warnings {
-				resp.AddWarning(fmt.Sprintf("while reissueing jwt for account %q: %s", id.acc, v))
+				resp.AddWarning(fmt.Sprintf("while reissuing jwt for account %q: %s", id.acc, v))
 			}
 
 			err = b.syncAccountUpdate(ctx, id.accountId())

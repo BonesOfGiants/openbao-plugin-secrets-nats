@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"iter"
+	"net/http"
 	"slices"
 
 	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/shimtx"
@@ -63,20 +64,32 @@ func (id accountImportId) configPath() string {
 }
 
 func pathConfigAccountImport(b *backend) []*framework.Path {
+	responseOK := map[int][]framework.Response{
+		http.StatusOK: {{
+			Description: "OK",
+		}},
+	}
+	responseNoContent := map[int][]framework.Response{
+		http.StatusNoContent: {{
+			Description: "No Content",
+		}},
+	}
+
 	return []*framework.Path{
 		{
-			Pattern: accountImportsPathPrefix + operatorRegex + "/" + framework.GenericNameRegex("import_account") + "/" + framework.GenericNameRegex("import_name") + "$",
+			HelpSynopsis: `Manages declarative imports for accounts.`,
+			Pattern:      accountImportsPathPrefix + operatorRegex + "/" + framework.GenericNameRegex("import_account") + "/" + framework.GenericNameRegex("import_name") + "$",
 			Fields: map[string]*framework.FieldSchema{
 				"operator":       operatorField,
 				"import_account": accountField,
 				"import_name": {
-					Type:        framework.TypeString,
+					Type:        framework.TypeNameString,
 					Description: `The name given to this collection of imports.`,
 					Required:    true,
 				},
 				"imports": {
 					Type:        framework.TypeSlice,
-					Description: "A list of import definitions to define on the account. At least one import must be specified.",
+					Description: "A list of import definitions to define on the account. Imports are not merged; all imports will be overwritten.",
 					Required:    false,
 				},
 				"name": {
@@ -91,7 +104,7 @@ func pathConfigAccountImport(b *backend) []*framework.Path {
 				},
 				"account": {
 					Type:        framework.TypeString,
-					Description: "The subject being imported.",
+					Description: "The account id to import from. This must be an account public key (`A123...`), not an account name.",
 					Required:    false,
 				},
 				"token": {
@@ -124,23 +137,37 @@ func pathConfigAccountImport(b *backend) []*framework.Path {
 			ExistenceCheck: b.pathAccountImportExistenceCheck,
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.CreateOperation: &framework.PathOperation{
-					Callback: b.pathAccountImportCreateUpdate,
+					Callback:  b.pathAccountImportCreateUpdate,
+					Responses: responseOK,
 				},
 				logical.UpdateOperation: &framework.PathOperation{
-					Callback: b.pathAccountImportCreateUpdate,
+					Callback:  b.pathAccountImportCreateUpdate,
+					Responses: responseOK,
 				},
 				logical.ReadOperation: &framework.PathOperation{
 					Callback: b.pathAccountImportRead,
+					Responses: map[int][]framework.Response{
+						http.StatusOK: {{
+							Description: "OK",
+							Fields: map[string]*framework.FieldSchema{
+								"imports": {
+									Type:        framework.TypeSlice,
+									Description: "The array of import claims.",
+									Required:    true,
+								},
+							},
+						}},
+					},
 				},
 				logical.DeleteOperation: &framework.PathOperation{
-					Callback: b.pathAccountImportDelete,
+					Callback:  b.pathAccountImportDelete,
+					Responses: responseNoContent,
 				},
 			},
-			HelpSynopsis:    `Manages externally defined imports for accounts.`,
-			HelpDescription: `Create and manage imports that will be appended to account claims when generating account jwts.`,
 		},
 		{
-			Pattern: accountImportsPathPrefix + operatorRegex + "/" + accountRegex + "/?$",
+			HelpSynopsis: "List account import configs.",
+			Pattern:      accountImportsPathPrefix + operatorRegex + "/" + accountRegex + "/?$",
 			Fields: map[string]*framework.FieldSchema{
 				"operator": operatorField,
 				"account":  accountField,
@@ -150,9 +177,19 @@ func pathConfigAccountImport(b *backend) []*framework.Path {
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.ListOperation: &framework.PathOperation{
 					Callback: b.pathAccountImportList,
+					Responses: map[int][]framework.Response{
+						http.StatusOK: {{
+							Description: "OK",
+							Fields: map[string]*framework.FieldSchema{
+								"keys": {
+									Type:     framework.TypeStringSlice,
+									Required: true,
+								},
+							},
+						}},
+					},
 				},
 			},
-			HelpSynopsis: "List account import configs.",
 		},
 	}
 }
@@ -497,11 +534,11 @@ func updateImportParams(params map[string]any, imp *jwt.Import) (bool, bool, err
 		imp.Token = token
 	}
 
-	if localSubjectRaw, ok := params["localSubject"]; ok {
+	if localSubjectRaw, ok := params["local_subject"]; ok {
 		hasParams = true
 		localSubject, ok := localSubjectRaw.(string)
 		if !ok {
-			return false, false, fmt.Errorf("localSubject must be a string, got %T", params["localSubject"])
+			return false, false, fmt.Errorf("local_subject must be a string, got %T", params["local_subject"])
 		}
 		sub := jwt.RenamingSubject(localSubject)
 		dirty = dirty || (sub != imp.LocalSubject)

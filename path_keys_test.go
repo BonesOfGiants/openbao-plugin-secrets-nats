@@ -35,6 +35,7 @@ func TestBackend_OperatorSigningKey_Config(t *testing.T) {
 		opJwt = ReadOperatorJwt(t, id.operatorId())
 		assert.NotContains(t, opJwt.SigningKeys, pubKey)
 	})
+
 	t.Run("reissue jwts when signing key is created", func(_t *testing.T) {
 		t := testBackend(_t)
 
@@ -63,15 +64,60 @@ func TestBackend_OperatorSigningKey_Config(t *testing.T) {
 		opJwt = ReadOperatorJwt(t, id.operatorId())
 		assert.NotContains(t, opJwt.SigningKeys, pubKey)
 	})
+
+	t.Run("existence check", func(_t *testing.T) {
+		t := testBackend(_t)
+
+		id := OperatorSigningKeyId("op1", "sk1")
+		SetupTestOperator(t, id.operatorId(), nil)
+
+		resp, err := WriteConfig(t, id, nil)
+		RequireNoRespError(t, resp, err)
+
+		hasCheck, found, err := ExistenceCheckConfig(t, id)
+		assert.NoError(t, err)
+		assert.True(t, hasCheck, "existence check not found")
+		assert.True(t, found, "item not found")
+	})
+
+	t.Run("list", func(_t *testing.T) {
+		t := testBackend(_t)
+
+		opId := OperatorId("op1")
+		SetupTestOperator(t, opId, nil)
+
+		sk1Id := opId.signingKeyId("sk1")
+		resp, err := WriteConfig(t, sk1Id, nil)
+		RequireNoRespError(t, resp, err)
+
+		sk2Id := opId.signingKeyId("sk2")
+		resp, err = WriteConfig(t, sk2Id, nil)
+		RequireNoRespError(t, resp, err)
+
+		sk3Id := opId.signingKeyId("sk3")
+		resp, err = WriteConfig(t, sk3Id, nil)
+		RequireNoRespError(t, resp, err)
+
+		req := &logical.Request{
+			Operation: logical.ListOperation,
+			Path:      opId.signingKeyPrefix(),
+			Storage:   t,
+			Data:      map[string]any{},
+		}
+		resp, err = t.HandleRequest(context.Background(), req)
+		RequireNoRespError(t, resp, err)
+
+		assert.ElementsMatch(t, []string{"sk1", "sk2", "sk3"}, resp.Data["keys"])
+	})
 }
 
 func TestBackend_AccountSigningKey_Config(t *testing.T) {
 	testCases := []struct {
-		name        string
-		scoped      bool
-		description string
-		template    *jwt.UserPermissionLimits
-		err         error
+		name               string
+		scoped             bool
+		description        string
+		permissionTemplate *jwt.UserPermissionLimits
+		err                error
 	}{
 		{
 			name:   "basic",
@@ -85,7 +131,7 @@ func TestBackend_AccountSigningKey_Config(t *testing.T) {
 			name:        "custom scope params",
 			scoped:      true,
 			description: "test-description",
-			template: &jwt.UserPermissionLimits{
+			permissionTemplate: &jwt.UserPermissionLimits{
 				Limits: jwt.Limits{
 					UserLimits: jwt.UserLimits{
 						Src: jwt.CIDRList{"192.0.2.0/24"},
@@ -108,21 +154,21 @@ func TestBackend_AccountSigningKey_Config(t *testing.T) {
 			SetupTestAccount(t, id.accountId(), nil)
 			defer DeleteConfig(t, id.accountId(), nil)
 
-			var templateMapping map[string]any
-			if tc.template != nil {
-				res, err := json.Marshal(tc.template)
+			var template map[string]any
+			if tc.permissionTemplate != nil {
+				res, err := json.Marshal(tc.permissionTemplate)
 				require.NoError(t, err)
-				err = json.Unmarshal(res, &templateMapping)
+				err = json.Unmarshal(res, &template)
 				require.NoError(t, err)
 			} else {
-				templateMapping = nil
+				template = nil
 			}
 
 			// create the signing key
 			resp, err := WriteConfig(t, id, map[string]any{
 				"scoped":              tc.scoped,
 				"description":         tc.description,
-				"permission_template": templateMapping,
+				"permission_template": template,
 			})
 			RequireNoRespError(t, resp, err)
 
@@ -139,10 +185,10 @@ func TestBackend_AccountSigningKey_Config(t *testing.T) {
 
 				// jwt has some special handling for default permissions
 				var template jwt.UserPermissionLimits
-				if tc.template == nil {
+				if tc.permissionTemplate == nil {
 					template = jwt.NewUserScope().Template
 				} else {
-					template = *tc.template
+					template = *tc.permissionTemplate
 				}
 
 				assert.Equal(t, jwt.UserScopeType, userScope.Kind)
@@ -161,64 +207,121 @@ func TestBackend_AccountSigningKey_Config(t *testing.T) {
 			assert.NotContains(t, accJwt.SigningKeys, pubKey)
 		})
 	}
+
+	t.Run("existence check", func(_t *testing.T) {
+		t := testBackend(_t)
+
+		id := AccountSigningKeyId("op1", "acc1", "sk1")
+		SetupTestAccount(t, id.accountId(), nil)
+
+		resp, err := WriteConfig(t, id, nil)
+		RequireNoRespError(t, resp, err)
+
+		hasCheck, found, err := ExistenceCheckConfig(t, id)
+		assert.NoError(t, err)
+		assert.True(t, hasCheck, "existence check not found")
+		assert.True(t, found, "item not found")
+	})
+
+	t.Run("list", func(_t *testing.T) {
+		t := testBackend(_t)
+
+		accId := AccountId("op1", "acc1")
+		SetupTestAccount(t, accId, nil)
+
+		sk1Id := accId.signingKeyId("sk1")
+		resp, err := WriteConfig(t, sk1Id, nil)
+		RequireNoRespError(t, resp, err)
+
+		sk2Id := accId.signingKeyId("sk2")
+		resp, err = WriteConfig(t, sk2Id, nil)
+		RequireNoRespError(t, resp, err)
+
+		sk3Id := accId.signingKeyId("sk3")
+		resp, err = WriteConfig(t, sk3Id, nil)
+		RequireNoRespError(t, resp, err)
+
+		req := &logical.Request{
+			Operation: logical.ListOperation,
+			Path:      accId.signingKeyPrefix(),
+			Storage:   t,
+			Data:      map[string]any{},
+		}
+		resp, err = t.HandleRequest(context.Background(), req)
+		RequireNoRespError(t, resp, err)
+
+		assert.ElementsMatch(t, []string{"sk1", "sk2", "sk3"}, resp.Data["keys"])
+	})
 }
 
-func TestBackend_OperatorSigningKey_List(_t *testing.T) {
-	t := testBackend(_t)
+func TestBackend_OperatorSigningKey_Defaults(t *testing.T) {
+	t.Run("deleting/creating sk resigns accounts with operator key", func(_t *testing.T) {
+		t := testBackend(_t)
 
-	opId := OperatorId("op1")
-	SetupTestOperator(t, opId, nil)
+		id := OperatorSigningKeyId("op1", "sk1")
+		SetupTestOperator(t, id.operatorId(), nil)
 
-	sk1Id := opId.signingKeyId("sk1")
-	resp, err := WriteConfig(t, sk1Id, nil)
-	RequireNoRespError(t, resp, err)
+		resp, err := WriteConfig(t, id, nil)
+		RequireNoRespError(t, resp, err)
 
-	sk2Id := opId.signingKeyId("sk2")
-	resp, err = WriteConfig(t, sk2Id, nil)
-	RequireNoRespError(t, resp, err)
+		accId := id.operatorId().accountId("acc1")
+		SetupTestAccount(t, accId, map[string]any{
+			"signing_key": id.name,
+		})
 
-	sk3Id := opId.signingKeyId("sk3")
-	resp, err = WriteConfig(t, sk3Id, nil)
-	RequireNoRespError(t, resp, err)
+		// delete signing key
+		resp, err = DeleteConfig(t, id, nil)
+		RequireNoRespError(t, resp, err)
 
-	req := &logical.Request{
-		Operation: logical.ListOperation,
-		Path:      opId.signingKeyPrefix(),
-		Storage:   t,
-		Data:      map[string]any{},
-	}
-	resp, err = t.HandleRequest(context.Background(), req)
-	RequireNoRespError(t, resp, err)
+		assert.Contains(t, resp.Warnings, "reissued jwt for account \"acc1\" as it was signed with signing key \"sk1\"")
+		assert.Contains(t, resp.Warnings, "while reissuing jwt for account \"acc1\": could not use signing key \"sk1\" (from account definition) as it does not exist; defaulting to operator identity key")
 
-	assert.Equal(t, []string{"sk1", "sk2", "sk3"}, resp.Data["keys"])
-}
+		// recreate signing key
+		resp, err = WriteConfig(t, id, nil)
+		RequireNoRespError(t, resp, err)
 
-func TestBackend_AccountSigningKey_List(_t *testing.T) {
-	t := testBackend(_t)
+		assert.Contains(t, resp.Warnings, "reissued jwt for account \"acc1\" as it wants to be signed with signing key \"sk1\"")
+	})
 
-	accId := AccountId("op1", "acc1")
-	SetupTestAccount(t, accId, nil)
+	t.Run("modifying default sk resigns accounts with default sk", func(_t *testing.T) {
+		t := testBackend(_t)
 
-	sk1Id := accId.signingKeyId("sk1")
-	resp, err := WriteConfig(t, sk1Id, nil)
-	RequireNoRespError(t, resp, err)
+		opId := OperatorId("op1")
+		id := opId.signingKeyId("sk1")
+		id2 := opId.signingKeyId("sk2")
 
-	sk2Id := accId.signingKeyId("sk2")
-	resp, err = WriteConfig(t, sk2Id, nil)
-	RequireNoRespError(t, resp, err)
+		SetupTestOperator(t, opId, nil)
 
-	sk3Id := accId.signingKeyId("sk3")
-	resp, err = WriteConfig(t, sk3Id, nil)
-	RequireNoRespError(t, resp, err)
+		// create signing key
+		resp, err := WriteConfig(t, id, nil)
+		RequireNoRespError(t, resp, err)
 
-	req := &logical.Request{
-		Operation: logical.ListOperation,
-		Path:      accId.signingKeyPrefix(),
-		Storage:   t,
-		Data:      map[string]any{},
-	}
-	resp, err = t.HandleRequest(context.Background(), req)
-	RequireNoRespError(t, resp, err)
+		accId := opId.accountId("acc1")
+		resp, err = WriteConfig(t, accId, nil)
+		RequireNoRespError(t, resp, err)
 
-	assert.Equal(t, []string{"sk1", "sk2", "sk3"}, resp.Data["keys"])
+		// add default signing key
+		resp, err = WriteConfig(t, opId, map[string]any{
+			"default_signing_key": id.name,
+		})
+		RequireNoRespError(t, resp, err)
+
+		assert.Contains(t, resp.Warnings, "reissued jwt for account \"acc1\" as it is signed with the default key")
+
+		// modify default signing key
+		resp, err = WriteConfig(t, opId, map[string]any{
+			"default_signing_key": id2.name,
+		})
+		RequireNoRespError(t, resp, err)
+
+		assert.Contains(t, resp.Warnings, "reissued jwt for account \"acc1\" as it is signed with the default key")
+
+		// remove default signing key
+		resp, err = WriteConfig(t, opId, map[string]any{
+			"default_signing_key": "",
+		})
+		RequireNoRespError(t, resp, err)
+
+		assert.Contains(t, resp.Warnings, "reissued jwt for account \"acc1\" as it is signed with the default key")
+	})
 }

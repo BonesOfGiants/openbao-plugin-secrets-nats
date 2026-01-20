@@ -10,7 +10,6 @@ import (
 
 	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/abstractnats"
 	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/accountserver"
-	"github.com/go-viper/mapstructure/v2"
 	"github.com/nats-io/jwt/v2"
 	nats "github.com/nats-io/nats.go"
 	"github.com/nats-io/nkeys"
@@ -55,23 +54,23 @@ const (
 
 var (
 	operatorField = &framework.FieldSchema{
-		Type:        framework.TypeString,
-		Description: "Name of the operator.",
+		Type:        framework.TypeNameString,
+		Description: "The name of the operator.",
 		Required:    true,
 	}
 	accountField = &framework.FieldSchema{
-		Type:        framework.TypeString,
-		Description: "Name of the account.",
+		Type:        framework.TypeNameString,
+		Description: "The name of the account.",
 		Required:    true,
 	}
 	userField = &framework.FieldSchema{
-		Type:        framework.TypeString,
-		Description: "Name of the user.",
+		Type:        framework.TypeNameString,
+		Description: "The name of the user.",
 		Required:    true,
 	}
 	afterField = &framework.FieldSchema{
 		Type:        framework.TypeString,
-		Description: "Optional entry to list begin listing after, not required to exist.",
+		Description: "Optional entry to begin listing after, not required to exist.",
 		Required:    false,
 	}
 	limitField = &framework.FieldSchema{
@@ -85,7 +84,7 @@ var (
 	nameRegex     = framework.GenericNameRegex("name")
 	userRegex     = framework.GenericNameRegex("user")
 	sessionRegex  = framework.GenericNameRegex("session")
-	subRegex      = framework.GenericNameRegex("sub")
+	subjectRegex  = framework.GenericNameRegex("subject")
 
 	// PluginVersion is set at build time via -ldflags
 	PluginVersion string
@@ -162,9 +161,9 @@ func Backend() *backend {
 		Secrets: []*framework.Secret{
 			b.userCredsSecretType(),
 		},
-		InitializeFunc:    b.initialize,
-		BackendType:       logical.TypeLogical,
-		WALRollback:       b.walRollback,
+		InitializeFunc: b.initialize,
+		BackendType:    logical.TypeLogical,
+		// WALRollback:       b.walRollback,
 		WALRollbackMinAge: minRollbackAge,
 		PeriodicFunc:      b.periodicFunc,
 		Clean:             b.clean,
@@ -480,7 +479,7 @@ func (b *backend) createAuthCallback(id accountServerId) (nats.Option, error) {
 			signingKey, enrichWarnings, err := b.enrichUserClaims(context.TODO(), b.s, enrichUserParams{
 				op:     id.op,
 				acc:    operator.SysAccountName,
-				user:   accountServer.AccountServerClientName,
+				user:   accountServer.ClientName,
 				claims: claims,
 			})
 			if err != nil {
@@ -550,7 +549,7 @@ func (b *backend) startAccountServer(ctx context.Context, id accountServerId, re
 
 		nc, err := b.NatsConnectionFunc(
 			accountServer.Servers,
-			nats.Name(accountServer.AccountServerClientName),
+			nats.Name(accountServer.ClientName),
 			authCb,
 			nats.Timeout(accountServer.ConnectTimeout),
 			nats.ReconnectWait(accountServer.ReconnectWait),
@@ -712,35 +711,35 @@ func (b *backend) clean(_ context.Context) {
 	}
 }
 
-func (b *backend) walRollback(ctx context.Context, req *logical.Request, kind string, data any) error {
-	if kind != deleteAccountWALKey {
-		return fmt.Errorf("unknown type of rollback %q", kind)
-	}
+// func (b *backend) walRollback(ctx context.Context, req *logical.Request, kind string, data any) error {
+// 	if kind != deleteAccountWALKey {
+// 		return fmt.Errorf("unknown type of rollback %q", kind)
+// 	}
 
-	var rollbackData deleteAccountWAL
-	if err := mapstructure.Decode(data, &rollbackData); err != nil {
-		return err
-	}
+// 	var rollbackData deleteAccountWAL
+// 	if err := mapstructure.Decode(data, &rollbackData); err != nil {
+// 		return err
+// 	}
 
-	id := AccountId(rollbackData.Operator, rollbackData.Account)
+// 	id := AccountId(rollbackData.Operator, rollbackData.Account)
 
-	account, err := b.Account(ctx, req.Storage, id)
-	if err != nil {
-		return err
-	}
-	if account == nil {
-		// the account was deleted successfully, nothing to do here
-		return nil
-	}
+// 	account, err := b.Account(ctx, req.Storage, id)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	if account == nil {
+// 		// the account was deleted successfully, nothing to do here
+// 		return nil
+// 	}
 
-	// restore the account on the endpoint
-	err = b.syncAccountUpdate(ctx, id)
-	if err != nil {
-		return err
-	}
+// 	// restore the account on the endpoint
+// 	err = b.syncAccountUpdate(ctx, id)
+// 	if err != nil {
+// 		return err
+// 	}
 
-	return nil
-}
+// 	return nil
+// }
 
 func sprintErrors(errors []error) string {
 	errs := []string{}

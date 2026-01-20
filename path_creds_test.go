@@ -177,8 +177,8 @@ func TestBackend_Creds_Read(t *testing.T) {
 			assert.Equal(t, expected.UserPermissionLimits, userClaims.User.UserPermissionLimits)
 
 			// test system sets a 24hr default lease ttl
-			expectedExpires := time.Now().Add(24 * time.Hour)
-			assert.Equal(t, expectedExpires.Unix(), userClaims.ClaimsData.Expires)
+			expectedExpires := time.Now().Add(24 * time.Hour).Unix()
+			assert.Equal(t, expectedExpires, userClaims.ClaimsData.Expires)
 
 			// delete user
 			resp, err = DeleteConfig(t, id, nil)
@@ -207,6 +207,18 @@ func TestBackend_Creds_Read(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.EqualValues(t, time, userClaims.NotBefore)
+	})
+
+	t.Run("existence check", func(_t *testing.T) {
+		t := testBackend(_t)
+
+		id := UserId("op1", "acc1", "user1")
+		SetupTestUser(t, id, nil)
+
+		hasCheck, found, err := ExistenceCheckPath(t, id.credsPath())
+		assert.NoError(t, err)
+		assert.True(t, hasCheck, "existence check not found")
+		assert.True(t, found, "item not found")
 	})
 }
 
@@ -338,13 +350,13 @@ func TestBackend_Creds_Ttl(t *testing.T) {
 			userJwt := resp.Data["jwt"]
 			expiresAt := resp.Data["expires_at"]
 
-			expectedExpiry := time.Now().Add(10 * time.Minute)
+			expectedExpiry := time.Now().Add(10 * time.Minute).Unix()
 
 			claims, err := jwt.DecodeUserClaims(userJwt.(string))
 			require.NoError(t, err)
 
-			assert.Equal(t, expectedExpiry.Unix(), claims.Expires)
-			assert.Equal(t, expectedExpiry.Unix(), expiresAt)
+			assert.Equal(t, expectedExpiry, claims.Expires)
+			assert.Equal(t, expectedExpiry, expiresAt)
 		})
 	})
 
@@ -364,13 +376,13 @@ func TestBackend_Creds_Ttl(t *testing.T) {
 			userJwt := resp.Data["jwt"]
 			expiresAt := resp.Data["expires_at"]
 
-			expectedExpiry := time.Now().Add(10 * time.Minute)
+			expectedExpiry := time.Now().Add(10 * time.Minute).Unix()
 
 			claims, err := jwt.DecodeUserClaims(userJwt.(string))
 			require.NoError(t, err)
 
-			assert.Equal(t, expectedExpiry.Unix(), claims.Expires)
-			assert.Equal(t, expectedExpiry.Unix(), expiresAt)
+			assert.Equal(t, expectedExpiry, claims.Expires)
+			assert.Equal(t, expectedExpiry, expiresAt)
 		})
 	})
 
@@ -391,13 +403,13 @@ func TestBackend_Creds_Ttl(t *testing.T) {
 			userJwt := resp.Data["jwt"]
 			expiresAt := resp.Data["expires_at"]
 
-			expectedExpiry := time.Now().Add(10 * time.Minute)
+			expectedExpiry := time.Now().Add(10 * time.Minute).Unix()
 
 			claims, err := jwt.DecodeUserClaims(userJwt.(string))
 			require.NoError(t, err)
 
-			assert.Equal(t, expectedExpiry.Unix(), claims.Expires)
-			assert.Equal(t, expectedExpiry.Unix(), expiresAt)
+			assert.Equal(t, expectedExpiry, claims.Expires)
+			assert.Equal(t, expectedExpiry, expiresAt)
 		})
 	})
 
@@ -418,13 +430,13 @@ func TestBackend_Creds_Ttl(t *testing.T) {
 			userJwt := resp.Data["jwt"]
 			expiresAt := resp.Data["expires_at"]
 
-			expectedExpiry := time.Now().Add(10 * time.Minute)
+			expectedExpiry := time.Now().Add(10 * time.Minute).Unix()
 
 			claims, err := jwt.DecodeUserClaims(userJwt.(string))
 			require.NoError(t, err)
 
-			assert.Equal(t, expectedExpiry.Unix(), claims.Expires)
-			assert.Equal(t, expectedExpiry.Unix(), expiresAt)
+			assert.Equal(t, expectedExpiry, claims.Expires)
+			assert.Equal(t, expectedExpiry, expiresAt)
 		})
 	})
 }
@@ -526,7 +538,7 @@ func TestBackend_Creds_SigningKeys(t *testing.T) {
 			"signing_key": "sk1",
 		})
 		require.NoError(t, err)
-		assert.ErrorContains(t, resp.Error(), "failed to generate user creds: invalid signing key \"sk1\" specified")
+		assert.ErrorContains(t, resp.Error(), "failed to generate user creds: invalid signing key \"sk1\"")
 	})
 	t.Run("non-existent user default fails", func(_t *testing.T) {
 		t := testBackend(_t)
@@ -538,7 +550,7 @@ func TestBackend_Creds_SigningKeys(t *testing.T) {
 
 		resp, err := ReadCreds(t, id, nil)
 		require.NoError(t, err)
-		assert.ErrorContains(t, resp.Error(), "failed to generate user creds: invalid signing key \"sk1\" specified")
+		assert.ErrorContains(t, resp.Error(), "failed to generate user creds: invalid signing key \"sk1\"")
 	})
 	t.Run("non-existent account default fails", func(_t *testing.T) {
 		t := testBackend(_t)
@@ -551,7 +563,7 @@ func TestBackend_Creds_SigningKeys(t *testing.T) {
 
 		resp, err := ReadCreds(t, id, nil)
 		require.NoError(t, err)
-		assert.ErrorContains(t, resp.Error(), "failed to generate user creds: invalid signing key \"sk1\" specified")
+		assert.ErrorContains(t, resp.Error(), "failed to generate user creds: invalid signing key \"sk1\"")
 	})
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"net/http"
 	"slices"
 	"time"
 
@@ -25,7 +26,7 @@ type accountServerEntry struct {
 	MaxReconnects  int           `json:"max_reconnects"`
 	ReconnectWait  time.Duration `json:"reconnect_wait"`
 
-	AccountServerClientName string `json:"client_name"`
+	ClientName string `json:"client_name"`
 
 	// Whether to disable account lookup request support
 	DisableAccountLookup bool `json:"disable_lookups"`
@@ -84,6 +85,17 @@ var (
 )
 
 func pathConfigAccountServer(b *backend) []*framework.Path {
+	responseOK := map[int][]framework.Response{
+		http.StatusOK: {{
+			Description: "OK",
+		}},
+	}
+	responseNoContent := map[int][]framework.Response{
+		http.StatusNoContent: {{
+			Description: "No Content",
+		}},
+	}
+
 	return []*framework.Path{
 		{
 			Pattern: accountServersPathPrefix + operatorRegex + "$",
@@ -91,33 +103,34 @@ func pathConfigAccountServer(b *backend) []*framework.Path {
 				"operator": operatorField,
 				"servers": {
 					Type:        framework.TypeStringSlice,
-					Description: "A list of nats servers to connect to.",
+					Description: "One or more target cluster URLs. May be any url that the NATS client accepts.",
 					Required:    false,
 				},
 				"suspend": {
 					Type:        framework.TypeBool,
-					Description: "Whether to temporarily disabled the syncing of accounts.",
+					Description: "Whether all account server operations should be paused.",
 					Required:    false,
 				},
 				"connect_timeout": {
 					Type:        framework.TypeDurationSecond,
-					Description: "Connection timeout for the nats connection.",
+					Description: "Connection timeout for the NATS connection, specified in seconds or as a Go duration format string, e.g. `\"1h\"`. If not set or set to 0, the default NATS value will be used.",
 					Required:    false,
 				},
 				"max_reconnects": {
 					Type:        framework.TypeInt,
-					Description: "Maximum reconnects for the nats connection.",
+					Description: "Maximum reconnects for the NATS connection. If not set or set to 0, the default NATS value will be used.",
 					Required:    false,
 				},
 				"reconnect_wait": {
 					Type:        framework.TypeDurationSecond,
-					Description: "Reconnect wait for the nats connection.",
+					Description: "Reconnect wait for the NATS connection, specified in seconds or as a Go duration format string, e.g. `\"1h\"`. If not set or set to 0, the default NATS value will be used.",
 					Required:    false,
 				},
 				"client_name": {
 					Type:        framework.TypeString,
-					Description: "The name to use for sync operations. Defaults to '" + DefaultAccountServerClientName + "'.",
+					Description: "The connection name for the account server NATS client.",
 					Default:     DefaultAccountServerClientName,
+					Required:    false,
 				},
 				"disable_lookups": {
 					Type:        framework.TypeBool,
@@ -143,19 +156,104 @@ func pathConfigAccountServer(b *backend) []*framework.Path {
 			ExistenceCheck: b.pathAccountServerExistenceCheck,
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.CreateOperation: &framework.PathOperation{
-					Callback: b.pathAccountServerCreateUpdate,
+					Callback:  b.pathAccountServerCreateUpdate,
+					Responses: responseOK,
 				},
 				logical.UpdateOperation: &framework.PathOperation{
-					Callback: b.pathAccountServerCreateUpdate,
+					Callback:  b.pathAccountServerCreateUpdate,
+					Responses: responseOK,
 				},
 				logical.ReadOperation: &framework.PathOperation{
 					Callback: b.pathAccountServerRead,
+					Responses: map[int][]framework.Response{
+						http.StatusOK: {{
+							Description: "OK",
+							Fields: map[string]*framework.FieldSchema{
+								"servers": {
+									Type:        framework.TypeStringSlice,
+									Description: "The target cluster URLs.",
+									Required:    true,
+								},
+								"suspend": {
+									Type:        framework.TypeBool,
+									Description: "Whether all account server operations are paused.",
+									Required:    false,
+								},
+								"connect_timeout": {
+									Type:        framework.TypeInt,
+									Description: "Connection timeout for the NATS connection in seconds.",
+									Required:    false,
+								},
+								"max_reconnects": {
+									Type:        framework.TypeInt,
+									Description: "Maximum reconnects for the NATS connection.",
+									Required:    false,
+								},
+								"reconnect_wait": {
+									Type:        framework.TypeDurationSecond,
+									Description: "Reconnect wait for the NATS connection in seconds.",
+									Required:    false,
+								},
+								"client_name": {
+									Type:        framework.TypeString,
+									Description: "The connection name for the account server NATS client.",
+									Default:     DefaultAccountServerClientName,
+									Required:    true,
+								},
+								"disable_lookups": {
+									Type:        framework.TypeBool,
+									Description: "Whether responding to account lookup requests from the NATS cluster is disabled.",
+									Default:     false,
+								},
+								"disable_updates": {
+									Type:        framework.TypeBool,
+									Description: "Whether sending account updates to the NATS cluster is disabled.",
+									Default:     false,
+								},
+								"disable_deletes": {
+									Type:        framework.TypeBool,
+									Description: "Whether sending account deletes to the NATS cluster is disabled.",
+									Default:     false,
+								},
+								"status": {
+									Type:        framework.TypeMap,
+									Description: "Information about the current sync status.",
+									Required:    true,
+								},
+							},
+						}},
+					},
 				},
 				logical.DeleteOperation: &framework.PathOperation{
-					Callback: b.pathAccountServerDelete,
+					Callback:  b.pathAccountServerDelete,
+					Responses: responseNoContent,
 				},
 			},
-			HelpSynopsis: "Manage configuration for the account server for an operator.",
+			HelpSynopsis: "Manage configuration for an account server.",
+		},
+		{
+			Pattern: operatorsPathPrefix + "/?$",
+			Fields: map[string]*framework.FieldSchema{
+				"after": afterField,
+				"limit": limitField,
+			},
+			Operations: map[logical.Operation]framework.OperationHandler{
+				logical.ListOperation: &framework.PathOperation{
+					Callback: b.pathAccountServerList,
+					Responses: map[int][]framework.Response{
+						http.StatusOK: {{
+							Description: "OK",
+							Fields: map[string]*framework.FieldSchema{
+								"keys": {
+									Type:     framework.TypeStringSlice,
+									Required: true,
+								},
+							},
+						}},
+					},
+				},
+			},
+			HelpSynopsis: "List account servers.",
 		},
 	}
 }
@@ -171,8 +269,7 @@ func (b *backend) AccountServer(ctx context.Context, s logical.Storage, id accou
 
 func NewAccountServer(id accountServerId) *accountServerEntry {
 	return &accountServerEntry{
-		accountServerId:         id,
-		AccountServerClientName: DefaultAccountServerClientName,
+		accountServerId: id,
 		Status: accountServerStatus{
 			Status: AccountServerStatusCreated,
 		},
@@ -262,10 +359,14 @@ func (b *backend) pathAccountServerCreateUpdate(ctx context.Context, req *logica
 		sync.DisableAccountDelete = disableAccountDelete.(bool)
 	}
 
-	oldSyncUserName := sync.AccountServerClientName
+	oldSyncUserName := sync.ClientName
 	if syncUserName, ok := d.GetOk("client_name"); ok {
 		syncDirty = syncDirty || (oldSyncUserName != syncUserName)
-		sync.AccountServerClientName = syncUserName.(string)
+		sync.ClientName = syncUserName.(string)
+	}
+
+	if sync.ClientName == "" {
+		sync.ClientName = DefaultAccountServerClientName
 	}
 
 	syncNow := d.Get("sync_now").(bool)
@@ -332,7 +433,7 @@ func (b *backend) pathAccountServerRead(ctx context.Context, req *logical.Reques
 	}
 
 	if sync.Status.LastStatusChange != (time.Time{}) {
-		status["last_status_change"] = sync.Status.LastStatusChange
+		status["last_status_change"] = sync.Status.LastStatusChange.Unix()
 	}
 
 	if sync.Status.Error != "" {
@@ -341,8 +442,12 @@ func (b *backend) pathAccountServerRead(ctx context.Context, req *logical.Reques
 
 	data := map[string]any{
 		"servers":     sync.Servers,
-		"client_name": sync.AccountServerClientName,
+		"client_name": sync.ClientName,
 		"status":      status,
+	}
+
+	if sync.Suspend {
+		data["suspend"] = sync.Suspend
 	}
 
 	if sync.ConnectTimeout > 0 {
@@ -369,10 +474,6 @@ func (b *backend) pathAccountServerRead(ctx context.Context, req *logical.Reques
 		data["disable_deletes"] = sync.DisableAccountDelete
 	}
 
-	if sync.Suspend {
-		data["suspend"] = sync.Suspend
-	}
-
 	return &logical.Response{Data: data}, nil
 }
 
@@ -383,6 +484,21 @@ func (b *backend) pathAccountServerExistenceCheck(ctx context.Context, req *logi
 	}
 
 	return sync != nil, nil
+}
+
+func (b *backend) pathAccountServerList(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	after := data.Get("after").(string)
+	limit := data.Get("limit").(int)
+	if limit <= 0 {
+		limit = -1
+	}
+
+	entries, err := req.Storage.ListPage(ctx, accountServersPathPrefix, after, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	return logical.ListResponse(entries), nil
 }
 
 func (b *backend) pathAccountServerDelete(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {

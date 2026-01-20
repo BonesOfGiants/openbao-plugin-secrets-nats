@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"net/http"
 	"strings"
 	"time"
 
@@ -29,9 +30,22 @@ func NewJwt(token string, issuer string) *jwtEntry {
 }
 
 func pathJWT(b *backend) []*framework.Path {
+	responseList := map[int][]framework.Response{
+		http.StatusOK: {{
+			Description: "OK",
+			Fields: map[string]*framework.FieldSchema{
+				"keys": {
+					Type:     framework.TypeStringSlice,
+					Required: true,
+				},
+			},
+		}},
+	}
+
 	return []*framework.Path{
 		{
-			Pattern: accountJwtsPathPrefix + operatorRegex + "/" + accountRegex + "$",
+			HelpSynopsis: `Reads account JWTs.`,
+			Pattern:      accountJwtsPathPrefix + operatorRegex + "/" + accountRegex + "$",
 			Fields: map[string]*framework.FieldSchema{
 				"operator": operatorField,
 				"account":  accountField,
@@ -40,12 +54,24 @@ func pathJWT(b *backend) []*framework.Path {
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.ReadOperation: &framework.PathOperation{
 					Callback: b.pathReadAccountJWT,
+					Responses: map[int][]framework.Response{
+						http.StatusOK: {{
+							Description: "OK",
+							Fields: map[string]*framework.FieldSchema{
+								"jwt": {
+									Type:        framework.TypeString,
+									Description: "The account JWT.",
+									Required:    true,
+								},
+							},
+						}},
+					},
 				},
 			},
-			HelpSynopsis: `Reads account JWTs.`,
 		},
 		{
-			Pattern: accountJwtsPathPrefix + operatorRegex + "/?$",
+			HelpSynopsis: `Lists account JWTs.`,
+			Pattern:      accountJwtsPathPrefix + operatorRegex + "/?$",
 			Fields: map[string]*framework.FieldSchema{
 				"operator": operatorField,
 				"after":    afterField,
@@ -53,13 +79,14 @@ func pathJWT(b *backend) []*framework.Path {
 			},
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.ListOperation: &framework.PathOperation{
-					Callback: b.pathAccountList,
+					Callback:  b.pathAccountList,
+					Responses: responseList,
 				},
 			},
-			HelpSynopsis: `Lists account JWTs.`,
 		},
 		{
-			Pattern: operatorJwtsPathPrefix + operatorRegex + "$",
+			HelpSynopsis: `Reads operator JWTs.`,
+			Pattern:      operatorJwtsPathPrefix + operatorRegex + "$",
 			Fields: map[string]*framework.FieldSchema{
 				"operator": operatorField,
 			},
@@ -67,22 +94,34 @@ func pathJWT(b *backend) []*framework.Path {
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.ReadOperation: &framework.PathOperation{
 					Callback: b.pathOperatorJwtRead,
+					Responses: map[int][]framework.Response{
+						http.StatusOK: {{
+							Description: "OK",
+							Fields: map[string]*framework.FieldSchema{
+								"jwt": {
+									Type:        framework.TypeString,
+									Description: "The operator JWT.",
+									Required:    true,
+								},
+							},
+						}},
+					},
 				},
 			},
-			HelpSynopsis: `Reads operator JWTs.`,
 		},
 		{
-			Pattern: operatorJwtsPathPrefix + "/?$",
+			HelpSynopsis: "Lists operator JWTs.",
+			Pattern:      operatorJwtsPathPrefix + "/?$",
 			Fields: map[string]*framework.FieldSchema{
 				"after": afterField,
 				"limit": limitField,
 			},
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.ListOperation: &framework.PathOperation{
-					Callback: b.pathOperatorList,
+					Callback:  b.pathOperatorList,
+					Responses: responseList,
 				},
 			},
-			HelpSynopsis: "Lists operator JWTs.",
 		},
 	}
 }
@@ -113,15 +152,6 @@ func (b *backend) pathOperatorJwtRead(ctx context.Context, req *logical.Request,
 	return &logical.Response{
 		Data: data,
 	}, nil
-}
-
-func (b *backend) pathOperatorJwtExistenceCheck(ctx context.Context, req *logical.Request, d *framework.FieldData) (bool, error) {
-	jwt, err := b.Jwt(ctx, req.Storage, OperatorIdField(d))
-	if err != nil {
-		return false, err
-	}
-
-	return jwt != nil, nil
 }
 
 func (b *backend) pathReadAccountJWT(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {
@@ -782,10 +812,6 @@ func (b *backend) enrichUserClaims(ctx context.Context, s logical.Storage, p enr
 			claims.Limits.Payload = -1
 		}
 	}
-
-	// if p.session != "" {
-	// 	claims.Tags = append(claims.Tags, "parent:"+p.user)
-	// }
 
 	{
 		// merge + deduplicate tags

@@ -10,6 +10,7 @@ import (
 
 	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/abstractnats"
 	"github.com/nats-io/jwt/v2"
+	"github.com/nats-io/nkeys"
 	"github.com/openbao/openbao/sdk/v2/logical"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -147,7 +148,7 @@ func TestBackend_Account_Config(t *testing.T) {
 			assert.True(t, checkFound)
 			assert.True(t, exists)
 
-			resp, err = ReadConfigRaw(t, id)
+			resp, err = ReadConfig(t, id)
 			RequireNoRespError(t, resp, err)
 
 			assert.EqualValues(t, tc.expected, resp.Data)
@@ -177,9 +178,7 @@ func TestBackend_Account_Config(t *testing.T) {
 			assert.Nil(t, resp)
 		})
 	}
-}
 
-func TestBackend_Account_Claims(t *testing.T) {
 	t.Run("clear existing claims", func(_t *testing.T) {
 		t := testBackend(_t)
 
@@ -194,63 +193,75 @@ func TestBackend_Account_Claims(t *testing.T) {
 			"claims": nil,
 		})
 
-		resp, err := ReadConfigRaw(t, accId)
+		resp, err := ReadConfig(t, accId)
 		RequireNoRespError(t, resp, err)
 
 		assert.NotContains(t, resp.Data, "claims")
 	})
-}
 
-func TestBackend_Account_NonExistentOperator(_t *testing.T) {
-	t := testBackend(_t)
+	t.Run("non-existent operator", func(_t *testing.T) {
+		t := testBackend(_t)
 
-	id := AccountId("op1", "acc1")
-	resp, err := WriteConfig(t, id, nil)
-	assert.NoError(t, err)
-	assert.ErrorContains(t, resp.Error(), "operator \"op1\" does not exist")
-}
-
-func TestBackend_Account_List(_t *testing.T) {
-	t := testBackend(_t)
-
-	opId := OperatorId("op1")
-	SetupTestOperator(t, opId, map[string]any{
-		"create_system_account": false,
+		id := AccountId("op1", "acc1")
+		resp, err := WriteConfig(t, id, nil)
+		assert.NoError(t, err)
+		assert.ErrorContains(t, resp.Error(), "operator \"op1\" does not exist")
 	})
 
-	accId1 := opId.accountId("acc1")
-	SetupTestAccount(t, accId1, nil)
+	t.Run("list", func(_t *testing.T) {
+		t := testBackend(_t)
 
-	accId2 := opId.accountId("acc2")
-	SetupTestAccount(t, accId2, nil)
+		opId := OperatorId("op1")
+		SetupTestOperator(t, opId, map[string]any{
+			"create_system_account": false,
+		})
 
-	accId3 := opId.accountId("acc3")
-	SetupTestAccount(t, accId3, nil)
+		accId1 := opId.accountId("acc1")
+		SetupTestAccount(t, accId1, nil)
 
-	req := &logical.Request{
-		Operation: logical.ListOperation,
-		Path:      opId.accountsConfigPrefix(),
-		Storage:   t,
-		Data:      map[string]any{},
-	}
-	resp, err := t.HandleRequest(context.Background(), req)
-	RequireNoRespError(t, resp, err)
+		accId2 := opId.accountId("acc2")
+		SetupTestAccount(t, accId2, nil)
 
-	assert.Equal(t, []string{"acc1", "acc2", "acc3"}, resp.Data["keys"])
+		accId3 := opId.accountId("acc3")
+		SetupTestAccount(t, accId3, nil)
 
-	// jwts
-	req.Path = opId.accountsJwtPrefix()
-	resp, err = t.HandleRequest(context.Background(), req)
-	RequireNoRespError(t, resp, err)
+		req := &logical.Request{
+			Operation: logical.ListOperation,
+			Path:      opId.accountsConfigPrefix(),
+			Storage:   t,
+			Data:      map[string]any{},
+		}
+		resp, err := t.HandleRequest(context.Background(), req)
+		RequireNoRespError(t, resp, err)
 
-	assert.Equal(t, []string{"acc1", "acc2", "acc3"}, resp.Data["keys"])
+		assert.ElementsMatch(t, []string{"acc1", "acc2", "acc3"}, resp.Data["keys"])
 
-	// keys
-	req.Path = opId.accountsNkeyPrefix()
-	resp, err = t.HandleRequest(context.Background(), req)
-	RequireNoRespError(t, resp, err)
+		// jwts
+		req.Path = opId.accountsJwtPrefix()
+		resp, err = t.HandleRequest(context.Background(), req)
+		RequireNoRespError(t, resp, err)
 
-	assert.Equal(t, []string{"acc1", "acc2", "acc3"}, resp.Data["keys"])
+		assert.ElementsMatch(t, []string{"acc1", "acc2", "acc3"}, resp.Data["keys"])
+
+		// keys
+		req.Path = opId.accountsNkeyPrefix()
+		resp, err = t.HandleRequest(context.Background(), req)
+		RequireNoRespError(t, resp, err)
+
+		assert.ElementsMatch(t, []string{"acc1", "acc2", "acc3"}, resp.Data["keys"])
+	})
+
+	t.Run("existence check", func(_t *testing.T) {
+		t := testBackend(_t)
+
+		id := AccountId("op1", "acc1")
+		SetupTestAccount(t, id, nil)
+
+		hasCheck, found, err := ExistenceCheckConfig(t, id)
+		assert.NoError(t, err)
+		assert.True(t, hasCheck, "existence check not found")
+		assert.True(t, found, "item not found")
+	})
 }
 
 func TestBackend_Account_SigningKeys(t *testing.T) {
@@ -340,8 +351,36 @@ func TestBackend_Account_SigningKeys(t *testing.T) {
 	})
 }
 
-func TestBackend_Account_Status(t *testing.T) {
-	t.Run("synced", func(t *testing.T) {
+func TestBackend_Account_Sync(t *testing.T) {
+	t.Run("claims modification sync", func(_t *testing.T) {
+		nats := abstractnats.NewMock(_t)
+		defer nats.AssertNoLingering(_t)
+		t := testBackendWithNats(_t, nats)
+
+		id := AccountServerId("op1")
+		opId := id.operatorId()
+		SetupTestOperator(t, opId, nil)
+
+		accId := opId.accountId("acc1")
+		SetupTestAccount(t, accId, nil)
+
+		resp, err := WriteConfig(t, id, map[string]any{
+			"servers":         []string{"nats://localhost:4222"},
+			"sync_now":        false,
+			"disable_lookups": true,
+		})
+		RequireNoRespError(t, resp, err)
+
+		ExpectUpdateSync(t, nats, nil)
+
+		WriteConfig(t, accId, map[string]any{
+			"claims": map[string]any{
+				"tags": []any{"test-tag"},
+			},
+		})
+	})
+
+	t.Run("status synced", func(t *testing.T) {
 		synctest.Test(t, func(_t *testing.T) {
 			nats := abstractnats.NewMock(_t)
 			defer nats.AssertNoLingering(_t)
@@ -349,9 +388,7 @@ func TestBackend_Account_Status(t *testing.T) {
 
 			id := AccountServerId("op1")
 			opId := id.operatorId()
-			SetupTestOperator(t, opId, map[string]any{
-				"create_system_account": true,
-			})
+			SetupTestOperator(t, opId, nil)
 
 			resp, err := WriteConfig(t, id, map[string]any{
 				"servers":         []string{"nats://localhost:4222"},
@@ -365,7 +402,7 @@ func TestBackend_Account_Status(t *testing.T) {
 			accId := opId.accountId("acc1")
 			SetupTestAccount(t, accId, nil)
 
-			resp, err = ReadConfigRaw(t, accId)
+			resp, err = ReadConfig(t, accId)
 			RequireNoRespError(t, resp, err)
 
 			require.Contains(t, resp.Data, "status")
@@ -380,7 +417,7 @@ func TestBackend_Account_Status(t *testing.T) {
 		})
 	})
 
-	t.Run("sync error", func(t *testing.T) {
+	t.Run("status sync error", func(t *testing.T) {
 		synctest.Test(t, func(_t *testing.T) {
 			nats := abstractnats.NewMock(_t)
 			defer nats.AssertNoLingering(_t)
@@ -388,9 +425,7 @@ func TestBackend_Account_Status(t *testing.T) {
 
 			id := AccountServerId("op1")
 			opId := id.operatorId()
-			SetupTestOperator(t, opId, map[string]any{
-				"create_system_account": true,
-			})
+			SetupTestOperator(t, opId, nil)
 
 			resp, err := WriteConfig(t, id, map[string]any{
 				"servers":         []string{"nats://localhost:4222"},
@@ -405,7 +440,7 @@ func TestBackend_Account_Status(t *testing.T) {
 			accId := opId.accountId("acc1")
 			SetupTestAccount(t, accId, nil)
 
-			resp, err = ReadConfigRaw(t, accId)
+			resp, err = ReadConfig(t, accId)
 			RequireNoRespError(t, resp, err)
 
 			require.Contains(t, resp.Data, "status")
@@ -419,4 +454,72 @@ func TestBackend_Account_Status(t *testing.T) {
 			}, resp.Data["status"].(map[string]any)["sync"])
 		})
 	})
+}
+
+// build a complex tree of objects and delete the operator
+// all objects below it should also be deleted
+func TestBackend_Account_CascadingDelete(_t *testing.T) {
+	t := testBackend(_t)
+
+	opId := OperatorId("op1")
+
+	accId := opId.accountId("acc1")
+	accImpId := accId.importId("imp1")
+	accRevId := accId.revocationId("U123")
+	accSkId := accId.signingKeyId("sk1")
+
+	userId := accId.userId("user1")
+	ephUserId := accId.ephemeralUserId("eph1")
+
+	// operator
+	SetupTestOperator(t, opId, nil)
+
+	// account
+	SetupTestAccount(t, accId, nil)
+	// account import
+	impAccKp, err := nkeys.CreateAccount()
+	require.NoError(t, err)
+	impAccPubKey, err := impAccKp.PublicKey()
+	require.NoError(t, err)
+	WriteConfig(t, accImpId, map[string]any{
+		"imports": []map[string]any{
+			{
+				"name":    "test-import",
+				"subject": "foo",
+				"account": impAccPubKey,
+			},
+		},
+	})
+	// account revocation
+	WriteConfig(t, accRevId, nil)
+	// account signing key
+	WriteConfig(t, accSkId, nil)
+
+	// user
+	SetupTestUser(t, userId, nil)
+	// ephemeral user
+	SetupTestUser(t, ephUserId, nil)
+
+	// delete account
+	DeleteConfig(t, accId, nil)
+
+	// account
+	AssertConfigDeleted(t, accId)
+	// account import
+	AssertConfigDeleted(t, accImpId)
+	// account revocation
+	AssertConfigDeleted(t, accRevId)
+	// account signing key
+	AssertConfigDeleted(t, accSkId)
+	// account key
+	AssertNKeyDeleted(t, accId)
+	// account jwt
+	AssertJwtDeleted(t, accId)
+
+	// user
+	AssertConfigDeleted(t, userId)
+	// user key
+	AssertNKeyDeleted(t, userId)
+	// ephemeral user
+	AssertConfigDeleted(t, ephUserId)
 }

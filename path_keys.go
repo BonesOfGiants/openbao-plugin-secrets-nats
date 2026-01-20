@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"iter"
+	"net/http"
 
 	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/shimtx"
 	"github.com/openbao/openbao/sdk/v2/framework"
@@ -149,24 +150,69 @@ type nkeyId interface {
 }
 
 func pathNkey(b *backend) []*framework.Path {
+	responseOK := map[int][]framework.Response{
+		http.StatusOK: {{
+			Description: "OK",
+		}},
+	}
+	responseNoContent := map[int][]framework.Response{
+		http.StatusNoContent: {{
+			Description: "No Content",
+		}},
+	}
+	responseList := map[int][]framework.Response{
+		http.StatusOK: {{
+			Description: "OK",
+			Fields: map[string]*framework.FieldSchema{
+				"keys": {
+					Type:     framework.TypeStringSlice,
+					Required: true,
+				},
+			},
+		}},
+	}
+
 	return []*framework.Path{
 		{
-			Pattern: userKeysPathPrefix + operatorRegex + "/" + accountRegex + "/" + framework.GenericNameRegex("user") + "$",
+			HelpSynopsis: `Read a user identity key.`,
+			Pattern:      userKeysPathPrefix + operatorRegex + "/" + accountRegex + "/" + userRegex + "$",
 			Fields: map[string]*framework.FieldSchema{
 				"operator": operatorField,
 				"account":  accountField,
 				"user":     userField,
 			},
-			ExistenceCheck: b.pathUserNkeyExistenceCheck,
+			ExistenceCheck: b.pathUserExistenceCheck,
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.ReadOperation: &framework.PathOperation{
 					Callback: b.pathUserNkeyRead,
+					Responses: map[int][]framework.Response{
+						http.StatusOK: {{
+							Description: "OK",
+							Fields: map[string]*framework.FieldSchema{
+								"public_key": {
+									Type:        framework.TypeString,
+									Description: "The user identity key public key.",
+									Required:    true,
+								},
+								"private_key": {
+									Type:        framework.TypeString,
+									Description: "The user identity key private key.",
+									Required:    true,
+								},
+								"seed": {
+									Type:        framework.TypeString,
+									Description: "The user identity key seed.",
+									Required:    true,
+								},
+							},
+						}},
+					},
 				},
 			},
-			HelpSynopsis: `Read a user's identity key.`,
 		},
 		{
-			Pattern: accountSigningKeysPathPrefix + operatorRegex + "/" + accountRegex + "/" + nameRegex + "$",
+			HelpSynopsis: `Manage account signing keys.`,
+			Pattern:      accountSigningKeysPathPrefix + operatorRegex + "/" + accountRegex + "/" + nameRegex + "$",
 			Fields: map[string]*framework.FieldSchema{
 				"operator": operatorField,
 				"account":  accountField,
@@ -181,46 +227,105 @@ func pathNkey(b *backend) []*framework.Path {
 				},
 				"description": {
 					Type:        framework.TypeString,
-					Description: "A description for the signing key.",
+					Description: "A description for the signing key if scoped.",
 				},
 				"permission_template": {
 					Type:        framework.TypeMap,
-					Description: "Specify permissions that will apply to users issued under this key.",
+					Description: "Specify permissions that will apply to users issued under this key if scoped.",
 				},
 			},
 			ExistenceCheck: b.pathAccountSigningNkeyExistenceCheck,
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.CreateOperation: &framework.PathOperation{
-					Callback: b.pathAccountSigningNkeyCreateUpdate,
+					Callback:  b.pathAccountSigningNkeyCreateUpdate,
+					Responses: responseOK,
 				},
 				logical.UpdateOperation: &framework.PathOperation{
-					Callback: b.pathAccountSigningNkeyCreateUpdate,
+					Callback:  b.pathAccountSigningNkeyCreateUpdate,
+					Responses: responseOK,
 				},
 				logical.ReadOperation: &framework.PathOperation{
 					Callback: b.pathAccountSigningNkeyRead,
+					Responses: map[int][]framework.Response{
+						http.StatusOK: {{
+							Description: "OK",
+							Fields: map[string]*framework.FieldSchema{
+								"public_key": {
+									Type:        framework.TypeString,
+									Description: "The account signing key public key.",
+									Required:    true,
+								},
+								"private_key": {
+									Type:        framework.TypeString,
+									Description: "The account signing key private key.",
+									Required:    true,
+								},
+								"seed": {
+									Type:        framework.TypeString,
+									Description: "The account signing key seed.",
+									Required:    true,
+								},
+								"scoped": {
+									Type:        framework.TypeBool,
+									Description: "Whether this signing key is scoped.",
+								},
+								"description": {
+									Type:        framework.TypeString,
+									Description: "A description for the signing key if scoped.",
+								},
+								"permission_template": {
+									Type:        framework.TypeMap,
+									Description: "Default permissions that apply to users issued under this key if scoped.",
+								},
+							},
+						}},
+					},
 				},
 				logical.DeleteOperation: &framework.PathOperation{
-					Callback: b.pathAccountSigningNkeyDelete,
+					Callback:  b.pathAccountSigningNkeyDelete,
+					Responses: responseNoContent,
 				},
 			},
-			HelpSynopsis: `Manage account signing keys.`,
 		},
 		{
-			Pattern: accountKeysPathPrefix + operatorRegex + "/" + accountRegex + "$",
+			HelpSynopsis: `Read an account identity key.`,
+			Pattern:      accountKeysPathPrefix + operatorRegex + "/" + accountRegex + "$",
 			Fields: map[string]*framework.FieldSchema{
 				"operator": operatorField,
 				"account":  accountField,
 			},
-			ExistenceCheck: b.pathAccountNkeyExistenceCheck,
+			ExistenceCheck: b.pathAccountExistenceCheck,
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.ReadOperation: &framework.PathOperation{
 					Callback: b.pathAccountNkeyRead,
+					Responses: map[int][]framework.Response{
+						http.StatusOK: {{
+							Description: "OK",
+							Fields: map[string]*framework.FieldSchema{
+								"public_key": {
+									Type:        framework.TypeString,
+									Description: "The account identity key public key.",
+									Required:    true,
+								},
+								"private_key": {
+									Type:        framework.TypeString,
+									Description: "The account identity key private key.",
+									Required:    true,
+								},
+								"seed": {
+									Type:        framework.TypeString,
+									Description: "The account identity key seed.",
+									Required:    true,
+								},
+							},
+						}},
+					},
 				},
 			},
-			HelpSynopsis: `Read an account's identity key.`,
 		},
 		{
-			Pattern: operatorSigningKeysPathPrefix + operatorRegex + "/" + nameRegex + "$",
+			HelpSynopsis: `Manage operator signing keys.`,
+			Pattern:      operatorSigningKeysPathPrefix + operatorRegex + "/" + nameRegex + "$",
 			Fields: map[string]*framework.FieldSchema{
 				"operator": operatorField,
 				"name": {
@@ -232,64 +337,97 @@ func pathNkey(b *backend) []*framework.Path {
 			ExistenceCheck: b.pathOperatorSigningNkeyExistenceCheck,
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.CreateOperation: &framework.PathOperation{
-					Callback: b.pathOperatorSigningNkeyCreateUpdate,
+					Callback:  b.pathOperatorSigningNkeyCreateUpdate,
+					Responses: responseOK,
 				},
 				logical.UpdateOperation: &framework.PathOperation{
-					Callback: b.pathOperatorSigningNkeyCreateUpdate,
+					Callback:  b.pathOperatorSigningNkeyCreateUpdate,
+					Responses: responseOK,
 				},
 				logical.ReadOperation: &framework.PathOperation{
 					Callback: b.pathOperatorSigningNkeyRead,
+					Responses: map[int][]framework.Response{
+						http.StatusOK: {{
+							Description: "OK",
+							Fields: map[string]*framework.FieldSchema{
+								"public_key": {
+									Type:        framework.TypeString,
+									Description: "The signing key public key.",
+									Required:    true,
+								},
+								"private_key": {
+									Type:        framework.TypeString,
+									Description: "The signing key private key.",
+									Required:    true,
+								},
+								"seed": {
+									Type:        framework.TypeString,
+									Description: "The signing key seed.",
+									Required:    true,
+								},
+							},
+						}},
+					},
 				},
 				logical.DeleteOperation: &framework.PathOperation{
-					Callback: b.pathOperatorSigningNkeyDelete,
+					Callback:  b.pathOperatorSigningNkeyDelete,
+					Responses: responseNoContent,
 				},
 			},
-			HelpSynopsis: `Manage operator signing keys.`,
 		},
 		{
-			Pattern: operatorKeysPathPrefix + operatorRegex + "$",
+			HelpSynopsis: `Read an operator identity key.`,
+			Pattern:      operatorKeysPathPrefix + operatorRegex + "$",
 			Fields: map[string]*framework.FieldSchema{
 				"operator": operatorField,
 			},
-			ExistenceCheck: b.pathOperatorNkeyExistenceCheck,
+			ExistenceCheck: b.pathOperatorExistenceCheck,
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.ReadOperation: &framework.PathOperation{
 					Callback: b.pathOperatorNkeyRead,
+					Responses: map[int][]framework.Response{
+						http.StatusOK: {{
+							Description: "OK",
+							Fields: map[string]*framework.FieldSchema{
+								"public_key": {
+									Type:        framework.TypeString,
+									Description: "The operator identity key public key.",
+									Required:    true,
+								},
+								"private_key": {
+									Type:        framework.TypeString,
+									Description: "The operator identity key private key.",
+									Required:    true,
+								},
+								"seed": {
+									Type:        framework.TypeString,
+									Description: "The operator identity key seed.",
+									Required:    true,
+								},
+							},
+						}},
+					},
 				},
 			},
-			HelpSynopsis: `Read an operator's identity key.`,
 		},
 		{
-			Pattern: operatorSigningKeysPathPrefix + operatorRegex + "/?$",
-			Fields: map[string]*framework.FieldSchema{
-				"operator": operatorField,
-				"after":    afterField,
-				"limit":    limitField,
-			},
-			Operations: map[logical.Operation]framework.OperationHandler{
-				logical.ListOperation: &framework.PathOperation{
-					Callback: b.pathOperatorSigningNkeyList,
-				},
-			},
 			HelpSynopsis: "Lists operator signing keys.",
-		},
-		{
-			Pattern: accountSigningKeysPathPrefix + operatorRegex + "/" + accountRegex + "/?$",
+			Pattern:      operatorSigningKeysPathPrefix + operatorRegex + "/?$",
 			Fields: map[string]*framework.FieldSchema{
 				"operator": operatorField,
-				"account":  accountField,
 				"after":    afterField,
 				"limit":    limitField,
 			},
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.ListOperation: &framework.PathOperation{
-					Callback: b.pathAccountSigningNkeyList,
+					Callback:  b.pathOperatorSigningNkeyList,
+					Responses: responseList,
 				},
 			},
+		},
+		{
 			HelpSynopsis: "Lists account signing keys.",
-		},
-		{
-			Pattern: userKeysPathPrefix + operatorRegex + "/" + accountRegex + "/?$",
+			Pattern:      accountSigningKeysPathPrefix + operatorRegex + "/" + accountRegex + "/?$",
 			Fields: map[string]*framework.FieldSchema{
 				"operator": operatorField,
 				"account":  accountField,
@@ -298,13 +436,30 @@ func pathNkey(b *backend) []*framework.Path {
 			},
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.ListOperation: &framework.PathOperation{
-					Callback: b.pathUserList,
+					Callback:  b.pathAccountSigningNkeyList,
+					Responses: responseList,
 				},
 			},
-			HelpSynopsis: "Lists user keys.",
 		},
 		{
-			Pattern: accountKeysPathPrefix + operatorRegex + "/?$",
+			HelpSynopsis: "Lists user keys.",
+			Pattern:      userKeysPathPrefix + operatorRegex + "/" + accountRegex + "/?$",
+			Fields: map[string]*framework.FieldSchema{
+				"operator": operatorField,
+				"account":  accountField,
+				"after":    afterField,
+				"limit":    limitField,
+			},
+			Operations: map[logical.Operation]framework.OperationHandler{
+				logical.ListOperation: &framework.PathOperation{
+					Callback:  b.pathUserList,
+					Responses: responseList,
+				},
+			},
+		},
+		{
+			HelpSynopsis: "Lists account keys.",
+			Pattern:      accountKeysPathPrefix + operatorRegex + "/?$",
 			Fields: map[string]*framework.FieldSchema{
 				"operator": operatorField,
 				"after":    afterField,
@@ -312,23 +467,24 @@ func pathNkey(b *backend) []*framework.Path {
 			},
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.ListOperation: &framework.PathOperation{
-					Callback: b.pathAccountList,
+					Callback:  b.pathAccountList,
+					Responses: responseList,
 				},
 			},
-			HelpSynopsis: "Lists account keys.",
 		},
 		{
-			Pattern: operatorKeysPathPrefix + "/?$",
+			HelpSynopsis: "Lists operator keys.",
+			Pattern:      operatorKeysPathPrefix + "/?$",
 			Fields: map[string]*framework.FieldSchema{
 				"after": afterField,
 				"limit": limitField,
 			},
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.ListOperation: &framework.PathOperation{
-					Callback: b.pathOperatorList,
+					Callback:  b.pathOperatorList,
+					Responses: responseList,
 				},
 			},
-			HelpSynopsis: "Lists operator keys.",
 		},
 	}
 }
@@ -358,15 +514,6 @@ func (b *backend) pathOperatorNkeyRead(ctx context.Context, req *logical.Request
 	}
 
 	return createNkeyResponse(nkey)
-}
-
-func (b *backend) pathOperatorNkeyExistenceCheck(ctx context.Context, req *logical.Request, d *framework.FieldData) (bool, error) {
-	nkey, err := b.Nkey(ctx, req.Storage, OperatorIdField(d))
-	if err != nil {
-		return false, err
-	}
-
-	return nkey != nil, nil
 }
 
 // operator-signing-key
@@ -431,6 +578,7 @@ func (b *backend) pathOperatorSigningNkeyCreateUpdate(ctx context.Context, req *
 			}
 
 			if signingKey == id.name {
+				resp.AddWarning(fmt.Sprintf("reissued jwt for account %q as it wants to be signed with signing key %q", account.acc, id.name))
 				// reissue account jwt
 				warnings, err := b.issueAndSaveAccountJWT(ctx, req.Storage, account)
 				if err != nil {
@@ -448,7 +596,7 @@ func (b *backend) pathOperatorSigningNkeyCreateUpdate(ctx context.Context, req *
 		return nil, err
 	}
 
-	return nil, nil
+	return resp, nil
 }
 
 func (b *backend) pathOperatorSigningNkeyRead(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {
@@ -552,7 +700,7 @@ func (b *backend) pathOperatorSigningNkeyDelete(ctx context.Context, req *logica
 		}
 	}
 
-	return nil, nil
+	return resp, nil
 }
 
 func (b *backend) pathOperatorSigningNkeyList(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {
@@ -608,15 +756,6 @@ func (b *backend) pathAccountNkeyRead(ctx context.Context, req *logical.Request,
 	}
 
 	return createNkeyResponse(nkey)
-}
-
-func (b *backend) pathAccountNkeyExistenceCheck(ctx context.Context, req *logical.Request, d *framework.FieldData) (bool, error) {
-	nkey, err := b.Nkey(ctx, req.Storage, AccountIdField(d))
-	if err != nil {
-		return false, err
-	}
-
-	return nkey != nil, err
 }
 
 // account-signing-key
@@ -718,7 +857,7 @@ func (b *backend) pathAccountSigningNkeyRead(ctx context.Context, req *logical.R
 	if nkey.Scoped {
 		resp.Data["scoped"] = nkey.Scoped
 		if nkey.UserScope.Template != nil {
-			resp.Data["template"] = nkey.UserScope.Template
+			resp.Data["permission_template"] = nkey.UserScope.Template
 		}
 		if nkey.UserScope.Description != "" {
 			resp.Data["description"] = nkey.UserScope.Template
@@ -881,15 +1020,6 @@ func (b *backend) pathUserNkeyRead(ctx context.Context, req *logical.Request, d 
 	return &logical.Response{
 		Data: data,
 	}, nil
-}
-
-func (b *backend) pathUserNkeyExistenceCheck(ctx context.Context, req *logical.Request, d *framework.FieldData) (bool, error) {
-	nkey, err := b.Nkey(ctx, req.Storage, UserIdField(d))
-	if err != nil {
-		return false, err
-	}
-
-	return nkey != nil, nil
 }
 
 func createNkeyResponse(nkey *nkeyEntry) (*logical.Response, error) {

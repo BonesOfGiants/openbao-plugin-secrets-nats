@@ -3,12 +3,15 @@ package natsbackend
 import (
 	"errors"
 	"testing"
+	"testing/synctest"
 
+	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/abstractnats"
 	"github.com/nats-io/jwt/v2"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestBackend_User_Config(_t *testing.T) {
+func TestBackend_User_Config(t *testing.T) {
 
 	testCases := []struct {
 		name     string
@@ -129,7 +132,7 @@ func TestBackend_User_Config(_t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		_t.Run(tc.name, func(_t *testing.T) {
+		t.Run(tc.name, func(_t *testing.T) {
 			t := testBackend(_t)
 
 			// create config
@@ -160,7 +163,7 @@ func TestBackend_User_Config(_t *testing.T) {
 			assert.True(t, checkFound)
 			assert.True(t, exists)
 
-			resp, err = ReadConfigRaw(t, id)
+			resp, err = ReadConfig(t, id)
 			RequireNoRespError(t, resp, err)
 
 			assert.EqualValues(t, tc.expected, resp.Data)
@@ -180,11 +183,56 @@ func TestBackend_User_Config(_t *testing.T) {
 			assert.Nil(t, resp)
 
 			// ensure config is deleted
-			resp, err = ReadConfigRaw(t, id)
+			resp, err = ReadConfig(t, id)
 			RequireNoRespError(t, resp, err)
 			assert.Nil(t, resp)
 		})
 	}
+
+	t.Run("list", func(_t *testing.T) {
+		t := testBackend(_t)
+
+		accId := AccountId("op1", "acc1")
+		SetupTestAccount(t, accId, nil)
+
+		uid1 := accId.userId("user1")
+		uid2 := accId.userId("user2")
+		uid3 := accId.userId("user3")
+
+		resp, err := WriteConfig(t, uid1, nil)
+		RequireNoRespError(t, resp, err)
+		resp, err = WriteConfig(t, uid2, nil)
+		RequireNoRespError(t, resp, err)
+		resp, err = WriteConfig(t, uid3, nil)
+		RequireNoRespError(t, resp, err)
+
+		// config
+		resp, err = ListPath(t, accId.userConfigPrefix())
+		RequireNoRespError(t, resp, err)
+
+		assert.ElementsMatch(t, []string{"user1", "user2", "user3"}, resp.Data["keys"])
+
+		// keys
+		resp, err = ListPath(t, accId.userNkeyPrefix())
+		RequireNoRespError(t, resp, err)
+
+		assert.ElementsMatch(t, []string{"user1", "user2", "user3"}, resp.Data["keys"])
+	})
+
+	t.Run("existence check", func(_t *testing.T) {
+		t := testBackend(_t)
+
+		id := UserId("op1", "acc1", "user1")
+		SetupTestUser(t, id, nil)
+
+		resp, err := WriteConfig(t, id, nil)
+		RequireNoRespError(t, resp, err)
+
+		hasCheck, found, err := ExistenceCheckConfig(t, id)
+		assert.NoError(t, err)
+		assert.True(t, hasCheck, "existence check not found")
+		assert.True(t, found, "item not found")
+	})
 }
 
 func TestBackend_User_Claims(t *testing.T) {
@@ -202,7 +250,7 @@ func TestBackend_User_Claims(t *testing.T) {
 			"claims": nil,
 		})
 
-		resp, err := ReadConfigRaw(t, userId)
+		resp, err := ReadConfig(t, userId)
 		RequireNoRespError(t, resp, err)
 
 		assert.NotContains(t, resp.Data, "claims")
@@ -224,7 +272,28 @@ func TestBackend_User_Delete(t *testing.T) {
 
 		accJwt := ReadAccountJwt(t, userId.accountId())
 
+		// revokeTtl := max(user.CredsMaxTtl, b.System().MaxLeaseTTL())
+		// t.System().MaxLeaseTTL()
+
 		assert.Contains(t, accJwt.Revocations, userPublicKey)
+	})
+	t.Run("revoke on delete respects user max ttl", func(t *testing.T) {
+		synctest.Test(t, func(_t *testing.T) {
+			t := testBackend(_t)
+
+			userId := UserId("op1", "acc1", "user1")
+			SetupTestUser(t, userId, map[string]any{
+				"revoke_on_delete": true,
+				"creds_max_ttl":    "10s",
+			})
+
+			userPublicKey := ReadPublicKey(t, userId)
+
+			DeleteConfig(t, userId, nil)
+
+			resp, err := ReadConfig(t, userId.accountId().revocationId(userPublicKey))
+			RequireNoRespError(t, resp, err)
+		})
 	})
 	t.Run("no revoke on delete", func(_t *testing.T) {
 		t := testBackend(_t)
@@ -241,5 +310,34 @@ func TestBackend_User_Delete(t *testing.T) {
 		accJwt := ReadAccountJwt(t, userId.accountId())
 
 		assert.NotContains(t, accJwt.Revocations, userPublicKey)
+	})
+	t.Run("revoke on delete is synced", func(_t *testing.T) {
+		n := abstractnats.NewMock(_t)
+		defer n.AssertNoLingering(_t)
+		t := testBackendWithNats(_t, n)
+
+		userId := UserId("op1", "acc1", "user1")
+		SetupTestUser(t, userId, map[string]any{
+			"revoke_on_delete": true,
+		})
+
+		resp, err := WriteConfig(t, userId.operatorId().accountServerId(), map[string]any{
+			"servers":         []string{"nats://localhost:4222"},
+			"sync_now":        false,
+			"disable_lookups": true,
+		})
+		RequireNoRespError(t, resp, err)
+
+		userPublicKey := ReadPublicKey(t, userId)
+
+		var receivedJwt string
+		ExpectUpdateSync(t, n, &receivedJwt)
+
+		DeleteConfig(t, userId, nil)
+
+		accClaims, err := jwt.DecodeAccountClaims(receivedJwt)
+		require.NoError(t, err)
+
+		assert.Contains(t, accClaims.Revocations, userPublicKey)
 	})
 }

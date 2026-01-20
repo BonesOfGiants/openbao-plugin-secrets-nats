@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"iter"
+	"net/http"
 	"time"
 
 	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/shimtx"
+	"github.com/nats-io/nkeys"
 	"github.com/openbao/openbao/sdk/v2/framework"
 	"github.com/openbao/openbao/sdk/v2/logical"
 )
@@ -36,7 +38,7 @@ func AccountRevocationIdField(d *framework.FieldData) accountRevocationId {
 	return accountRevocationId{
 		op:  d.Get("operator").(string),
 		acc: d.Get("account").(string),
-		sub: d.Get("sub").(string),
+		sub: d.Get("subject").(string),
 	}
 }
 
@@ -53,36 +55,67 @@ func (id accountRevocationId) configPath() string {
 }
 
 func pathConfigAccountRevocation(b *backend) []*framework.Path {
+	responseOK := map[int][]framework.Response{
+		http.StatusOK: {{
+			Description: "OK",
+		}},
+	}
+	responseNoContent := map[int][]framework.Response{
+		http.StatusNoContent: {{
+			Description: "No Content",
+		}},
+	}
+
 	return []*framework.Path{
 		{
-			Pattern: revocationsPathPrefix + operatorRegex + "/" + accountRegex + "/" + subRegex + "$",
+			Pattern: revocationsPathPrefix + operatorRegex + "/" + accountRegex + "/" + subjectRegex + "$",
 			Fields: map[string]*framework.FieldSchema{
 				"operator": operatorField,
 				"account":  accountField,
-				"sub": {
-					Type:        framework.TypeString,
-					Description: "The subject id.",
+				"subject": {
+					Type:        framework.TypeNameString,
+					Description: "The subject (public key) to revoke. This endpoint does not accept user names, only user public keys.",
 					Required:    true,
 				},
 				"ttl": {
 					Type:        framework.TypeDurationSecond,
-					Description: "The duration of the revocation. Defaults to the ",
+					Description: "The TTL of the revocation, specified in seconds or as a Go duration format string, e.g. `\"1h\"`. At the end of this period, the revocation will automatically be deleted. If empty or set to 0, the revocation will never expire.",
 					Required:    false,
 				},
 			},
 			ExistenceCheck: b.pathAccountRevocationExistenceCheck,
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.CreateOperation: &framework.PathOperation{
-					Callback: b.pathAccountRevocationCreateUpdate,
+					Callback:  b.pathAccountRevocationCreateUpdate,
+					Responses: responseOK,
 				},
 				logical.UpdateOperation: &framework.PathOperation{
-					Callback: b.pathAccountRevocationCreateUpdate,
+					Callback:  b.pathAccountRevocationCreateUpdate,
+					Responses: responseOK,
 				},
 				logical.ReadOperation: &framework.PathOperation{
 					Callback: b.pathAccountRevocationRead,
+					Responses: map[int][]framework.Response{
+						http.StatusOK: {{
+							Description: "OK",
+							Fields: map[string]*framework.FieldSchema{
+								"ttl": {
+									Type:        framework.TypeInt,
+									Description: "The ttl of the revocation in seconds. A ttl of 0 means the revocation will not expire.",
+									Required:    true,
+								},
+								"creation_time": {
+									Type:        framework.TypeTime,
+									Description: "The creation time of the revocation as a Unix timestamp.",
+									Required:    true,
+								},
+							},
+						}},
+					},
 				},
 				logical.DeleteOperation: &framework.PathOperation{
-					Callback: b.pathAccountRevocationDelete,
+					Callback:  b.pathAccountRevocationDelete,
+					Responses: responseNoContent,
 				},
 			},
 			HelpSynopsis:    `Manages externally defined revocations for accounts.`,
@@ -99,6 +132,17 @@ func pathConfigAccountRevocation(b *backend) []*framework.Path {
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.ListOperation: &framework.PathOperation{
 					Callback: b.pathAccountRevocationList,
+					Responses: map[int][]framework.Response{
+						http.StatusOK: {{
+							Description: "OK",
+							Fields: map[string]*framework.FieldSchema{
+								"keys": {
+									Type:     framework.TypeStringSlice,
+									Required: true,
+								},
+							},
+						}},
+					},
 				},
 			},
 			HelpSynopsis: "List account revocations.",
@@ -137,6 +181,10 @@ func (b *backend) pathAccountRevocationCreateUpdate(ctx context.Context, req *lo
 	defer txRollback()
 
 	id := AccountRevocationIdField(d)
+
+	if !nkeys.IsValidPublicUserKey(id.sub) {
+		return logical.ErrorResponse("subject must be a valid user public key"), nil
+	}
 
 	rev, err := b.AccountRevocation(ctx, req.Storage, id)
 	if err != nil {
@@ -198,8 +246,8 @@ func (b *backend) pathAccountRevocationRead(ctx context.Context, req *logical.Re
 	}
 
 	data := map[string]any{
-		"ttl":           int(rev.Ttl.Seconds()),
-		"creation_time": rev.CreationTime,
+		"ttl":           rev.Ttl.Seconds(),
+		"creation_time": rev.CreationTime.Unix(),
 	}
 
 	return &logical.Response{

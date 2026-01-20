@@ -3,6 +3,7 @@ package natsbackend
 import (
 	"context"
 	"fmt"
+	"net/http"
 
 	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/shimtx"
 	"github.com/nats-io/jwt/v2"
@@ -15,6 +16,12 @@ type rotatePather interface {
 }
 
 func pathRotate(b *backend) []*framework.Path {
+	responseOK := map[int][]framework.Response{
+		http.StatusOK: {{
+			Description: "OK",
+		}},
+	}
+
 	return []*framework.Path{
 		{
 			Pattern: rotateAccountPathPrefix + operatorRegex + "/" + accountRegex + "$",
@@ -22,10 +29,10 @@ func pathRotate(b *backend) []*framework.Path {
 				"operator": operatorField,
 				"account":  accountField,
 			},
-			ExistenceCheck: b.pathAccountExistenceCheck,
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.UpdateOperation: &framework.PathOperation{
-					Callback: b.pathRotateAccount,
+					Callback:  b.pathRotateAccount,
+					Responses: responseOK,
 				},
 			},
 			HelpSynopsis: `Rotates an account identity key.`,
@@ -41,10 +48,10 @@ func pathRotate(b *backend) []*framework.Path {
 					Required:    true,
 				},
 			},
-			ExistenceCheck: b.pathAccountSigningNkeyExistenceCheck,
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.UpdateOperation: &framework.PathOperation{
-					Callback: b.pathRotateAccountSigningKey,
+					Callback:  b.pathRotateAccountSigningKey,
+					Responses: responseOK,
 				},
 			},
 			HelpSynopsis: `Rotates an account signing key.`,
@@ -54,10 +61,10 @@ func pathRotate(b *backend) []*framework.Path {
 			Fields: map[string]*framework.FieldSchema{
 				"operator": operatorField,
 			},
-			ExistenceCheck: b.pathAccountSigningNkeyExistenceCheck,
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.UpdateOperation: &framework.PathOperation{
-					Callback: b.pathRotateOperator,
+					Callback:  b.pathRotateOperator,
+					Responses: responseOK,
 				},
 			},
 			HelpSynopsis: `Rotates an operator identity key. Also suspends the account server.`,
@@ -72,10 +79,10 @@ func pathRotate(b *backend) []*framework.Path {
 					Required:    true,
 				},
 			},
-			ExistenceCheck: b.pathAccountSigningNkeyExistenceCheck,
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.UpdateOperation: &framework.PathOperation{
-					Callback: b.pathRotateOperatorSigningKey,
+					Callback:  b.pathRotateOperatorSigningKey,
+					Responses: responseOK,
 				},
 			},
 			HelpSynopsis: `Rotates an operator signing key.`,
@@ -88,14 +95,14 @@ func pathRotate(b *backend) []*framework.Path {
 				"user":     userField,
 				"revoke": {
 					Type:        framework.TypeBool,
-					Description: "Whether to revoke the old identity key.",
-					Default:     false,
+					Description: "Whether to add the old public key to the account's revocation list. The revocation will use the maximum TTL of the user as its TTL. Default is `true`.",
+					Default:     true,
 				},
 			},
-			ExistenceCheck: b.pathUserNkeyExistenceCheck,
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.UpdateOperation: &framework.PathOperation{
-					Callback: b.pathUserKeyRotate,
+					Callback:  b.pathUserKeyRotate,
+					Responses: responseOK,
 				},
 			},
 			HelpSynopsis: `Rotates a user identity key.`,
@@ -384,14 +391,7 @@ func (b *backend) pathUserKeyRotate(ctx context.Context, req *logical.Request, d
 		return logical.ErrorResponse("user %q does not exist", id.user), nil
 	}
 
-	revoke := true
-	if revokeRaw, ok := d.GetOk("revoke"); ok {
-		r, ok := revokeRaw.(bool)
-		if !ok {
-			return logical.ErrorResponse("revoke must be a bool, got %T", revokeRaw), nil
-		}
-		revoke = r
-	}
+	revoke := d.Get("revoke").(bool)
 
 	resp := &logical.Response{}
 

@@ -3,7 +3,6 @@ module github.com/bonesofgiants/openbao-plugin-secrets-nats
 go 1.25.5
 
 require (
-	github.com/go-viper/mapstructure/v2 v2.4.0
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/nats-io/jwt/v2 v2.8.0
 	github.com/nats-io/nats.go v1.47.0
@@ -23,6 +22,7 @@ require (
 	github.com/frankban/quicktest v1.14.6 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.3 // indirect
 	github.com/go-test/deep v1.1.1 // indirect
+	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect

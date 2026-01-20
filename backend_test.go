@@ -26,20 +26,8 @@ todo: list of things that still need tests:
 	- [ ] account import
 	- [ ] user
 	- [ ] eph user
-- all the variations of things that cause account server updates
-	- [x] operator claims update (suspend)
-	- [x] operator server account change (suspend)
-	- [x] operator key rotate (suspend)
-	- [x] operator signing key rotate (suspend)
-	- [x] account import create/update/delete
-	- [x] revocation create/update/delete
-	- [ ] user delete resulting in revocation
-	- [ ] account config
-	- [ ] account rotate
-	- [ ] account signing key rotate
-- operator signing key create/delete resulting in relevant accounts being resigned
-- key list tests + change the alias lists to use the proper fn call
-- walrollback behavior with deleted accounts
+- key list tests
+- import fields: token, local_subject, share, allow_trace
 */
 
 func testFactory(ctx context.Context, conf *logical.BackendConfig, n abstractnats.MockNatsConnection) (logical.Backend, error) {
@@ -337,60 +325,23 @@ func WriteConfig(t testContext, id configPather, data map[string]any) (*logical.
 	})
 }
 
-func ReadConfig[T configPather](t testContext, id configPather) T {
-	t.Helper()
-
-	// check the jwt
-	req := &logical.Request{
-		Path:      id.configPath(),
-		Operation: logical.ReadOperation,
-		Storage:   t,
-		Data:      map[string]any{},
-	}
-	resp, err := t.HandleRequest(context.Background(), req)
-	RequireNoRespError(t, resp, err)
-
-	var out T
-	j, err := json.Marshal(resp.Data)
-	require.NoError(t, err)
-	err = json.Unmarshal(j, &out)
-	require.NoError(t, err)
-
-	switch v := any(out).(type) {
-	case operatorEntry:
-		_id := id.(operatorId)
-		v.op = _id.op
-	case accountEntry:
-		_id := id.(accountId)
-		v.op = _id.op
-		v.acc = _id.acc
-	case userEntry:
-		_id := id.(userId)
-		v.op = _id.op
-		v.acc = _id.acc
-		v.user = _id.user
-	}
-
-	return out
-}
-
-func ExistenceCheckConfig(t testContext, id configPather) (bool, bool, error) {
-	t.Helper()
-
-	return t.HandleExistenceCheck(context.Background(), &logical.Request{
-		Path:      id.configPath(),
-		Operation: logical.CreateOperation,
-		Storage:   t,
-		Data:      map[string]any{},
-	})
-}
-
-func ReadConfigRaw(t testContext, id configPather) (*logical.Response, error) {
+func ReadConfig(t testContext, id configPather) (*logical.Response, error) {
 	t.Helper()
 
 	return t.HandleRequest(context.Background(), &logical.Request{
 		Path:      id.configPath(),
 		Operation: logical.ReadOperation,
+		Storage:   t,
+		Data:      map[string]any{},
+	})
+}
+
+func ListPath(t testContext, path string) (*logical.Response, error) {
+	t.Helper()
+
+	return t.HandleRequest(context.Background(), &logical.Request{
+		Path:      path,
+		Operation: logical.ListOperation,
 		Storage:   t,
 		Data:      map[string]any{},
 	})
@@ -411,10 +362,32 @@ func DeleteConfig(t testContext, id configPather, data map[string]any) (*logical
 	})
 }
 
+func ExistenceCheckConfig(t testContext, id configPather) (bool, bool, error) {
+	t.Helper()
+
+	return t.HandleExistenceCheck(context.Background(), &logical.Request{
+		Path:      id.configPath(),
+		Operation: logical.CreateOperation,
+		Storage:   t,
+		Data:      map[string]any{},
+	})
+}
+
+func ExistenceCheckPath(t testContext, path string) (bool, bool, error) {
+	t.Helper()
+
+	return t.HandleExistenceCheck(context.Background(), &logical.Request{
+		Path:      path,
+		Operation: logical.CreateOperation,
+		Storage:   t,
+		Data:      map[string]any{},
+	})
+}
+
 func AssertConfigDeleted(t testContext, id configPather) {
 	t.Helper()
 
-	resp, err := ReadConfigRaw(t, id)
+	resp, err := ReadConfig(t, id)
 	RequireNoRespError(t, resp, err)
 	assert.Nilf(t, resp, "Expected %q not to exist", id.configPath())
 }

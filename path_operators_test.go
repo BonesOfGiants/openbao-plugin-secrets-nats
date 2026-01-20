@@ -28,7 +28,7 @@ var (
 	)
 )
 
-func TestBackend_Operator_Config(_t *testing.T) {
+func TestBackend_Operator_Config(t *testing.T) {
 	testCases := []struct {
 		name     string
 		data     map[string]any
@@ -147,7 +147,7 @@ func TestBackend_Operator_Config(_t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		_t.Run(tc.name, func(_t *testing.T) {
+		t.Run(tc.name, func(_t *testing.T) {
 			t := testBackend(_t)
 
 			id := OperatorId("op1")
@@ -189,7 +189,7 @@ func TestBackend_Operator_Config(_t *testing.T) {
 			assert.True(t, checkFound)
 			assert.True(t, exists)
 
-			resp, err = ReadConfigRaw(t, id)
+			resp, err = ReadConfig(t, id)
 			RequireNoRespError(t, resp, err)
 
 			assert.EqualValues(t, tc.expected, resp.Data)
@@ -219,9 +219,7 @@ func TestBackend_Operator_Config(_t *testing.T) {
 			assert.Nil(t, resp)
 		})
 	}
-}
 
-func TestBackend_Operator_Claims(t *testing.T) {
 	t.Run("clear existing claims", func(_t *testing.T) {
 		t := testBackend(_t)
 
@@ -236,11 +234,26 @@ func TestBackend_Operator_Claims(t *testing.T) {
 			"claims": nil,
 		})
 
-		resp, err := ReadConfigRaw(t, opId)
+		resp, err := ReadConfig(t, opId)
 		RequireNoRespError(t, resp, err)
 
 		assert.NotContains(t, resp.Data, "claims")
 	})
+
+	t.Run("existence check", func(_t *testing.T) {
+		t := testBackend(_t)
+
+		id := OperatorId("op1")
+		SetupTestOperator(t, id, nil)
+
+		hasCheck, found, err := ExistenceCheckConfig(t, id)
+		assert.NoError(t, err)
+		assert.True(t, hasCheck, "existence check not found")
+		assert.True(t, found, "item not found")
+	})
+}
+
+func TestBackend_Operator_Claims(t *testing.T) {
 }
 
 func TestBackend_Operator_SystemAccount(t *testing.T) {
@@ -253,7 +266,7 @@ func TestBackend_Operator_SystemAccount(t *testing.T) {
 		})
 
 		sysId := opId.accountId(DefaultSysAccountName)
-		resp, err := ReadConfigRaw(t, sysId)
+		resp, err := ReadConfig(t, sysId)
 		RequireNoRespError(t, resp, err)
 		require.Nil(t, resp)
 
@@ -272,10 +285,12 @@ func TestBackend_Operator_SystemAccount(t *testing.T) {
 		sysId := opId.accountId(DefaultSysAccountName)
 
 		// check sys account
-		sysConf := ReadConfig[*accountEntry](t, sysId)
-		assert.True(t, sysConf.Status.IsManaged)
-		assert.True(t, sysConf.Status.IsSystemAccount)
-		assert.Equal(t, unmarshalToMap(DefaultSysAccountClaims), unmarshalToMap(sysConf.RawClaims))
+		resp, err := ReadConfig(t, sysId)
+		RequireNoRespError(t, resp, err)
+
+		assert.True(t, resp.Data["status"].(map[string]any)["is_managed"].(bool))
+		assert.True(t, resp.Data["status"].(map[string]any)["is_system_account"].(bool))
+		assert.Equal(t, unmarshalToMap(DefaultSysAccountClaims), resp.Data["claims"])
 
 		// check jwt
 		opClaims := ReadJwt[*jwt.OperatorClaims](t, opId)
@@ -304,9 +319,11 @@ func TestBackend_Operator_SystemAccount(t *testing.T) {
 		assert.Empty(t, resp.Warnings)
 
 		// check sys account status
-		account := ReadConfig[*accountEntry](t, sysId)
-		assert.False(t, account.Status.IsManaged)
-		assert.False(t, account.Status.IsSystemAccount)
+		resp, err = ReadConfig(t, sysId)
+		RequireNoRespError(t, resp, err)
+
+		assert.False(t, resp.Data["status"].(map[string]any)["is_managed"].(bool))
+		assert.False(t, resp.Data["status"].(map[string]any)["is_system_account"].(bool))
 
 		// update sys account name
 		resp, err = UpdateConfig(t, opId, map[string]any{
@@ -316,9 +333,11 @@ func TestBackend_Operator_SystemAccount(t *testing.T) {
 		assert.Contains(t, resp.Warnings, `this operation resulted in operator "op1" reissuing its jwt`)
 
 		// check sys account status
-		account = ReadConfig[*accountEntry](t, sysId)
-		assert.False(t, account.Status.IsManaged)
-		assert.True(t, account.Status.IsSystemAccount)
+		resp, err = ReadConfig(t, sysId)
+		RequireNoRespError(t, resp, err)
+
+		assert.False(t, resp.Data["status"].(map[string]any)["is_managed"].(bool))
+		assert.True(t, resp.Data["status"].(map[string]any)["is_system_account"].(bool))
 
 		// sys account is now assigned
 		sysPublicKey := ReadPublicKey(t, sysId)
@@ -349,9 +368,11 @@ func TestBackend_Operator_SystemAccount(t *testing.T) {
 		assert.Contains(t, resp.Warnings, `this operation resulted in operator "op1" reissuing its jwt`)
 
 		// check sys account status
-		account := ReadConfig[*accountEntry](t, sysId)
-		assert.False(t, account.Status.IsManaged)
-		assert.True(t, account.Status.IsSystemAccount)
+		resp, err = ReadConfig(t, sysId)
+		RequireNoRespError(t, resp, err)
+
+		assert.False(t, resp.Data["status"].(map[string]any)["is_managed"].(bool))
+		assert.True(t, resp.Data["status"].(map[string]any)["is_system_account"].(bool))
 
 		// sys account is now assigned
 		sysPublicKey := ReadPublicKey(t, sysId)
@@ -377,14 +398,16 @@ func TestBackend_Operator_SystemAccount(t *testing.T) {
 		assert.Contains(t, resp.Warnings, `this operation resulted in operator "op1" reissuing its jwt`)
 
 		// old account is deleted
-		resp, err = ReadConfigRaw(t, opId.accountId("SYS"))
+		resp, err = ReadConfig(t, opId.accountId("SYS"))
 		RequireNoRespError(t, resp, err)
 		assert.Nil(t, resp)
 
 		// new account is created
-		account := ReadConfig[*accountEntry](t, opId.accountId("custom_sys"))
-		assert.True(t, account.Status.IsManaged)
-		assert.True(t, account.Status.IsSystemAccount)
+		resp, err = ReadConfig(t, opId.accountId("custom_sys"))
+		RequireNoRespError(t, resp, err)
+
+		assert.True(t, resp.Data["status"].(map[string]any)["is_managed"].(bool))
+		assert.True(t, resp.Data["status"].(map[string]any)["is_system_account"].(bool))
 	})
 
 	t.Run("move from custom to managed system account", func(_t *testing.T) {
@@ -401,9 +424,11 @@ func TestBackend_Operator_SystemAccount(t *testing.T) {
 		RequireNoRespError(t, resp, err)
 
 		// check account status
-		account := ReadConfig[*accountEntry](t, opId.accountId("SYS"))
-		assert.False(t, account.Status.IsManaged)
-		assert.True(t, account.Status.IsSystemAccount)
+		resp, err = ReadConfig(t, opId.accountId("SYS"))
+		RequireNoRespError(t, resp, err)
+
+		assert.False(t, resp.Data["status"].(map[string]any)["is_managed"].(bool))
+		assert.True(t, resp.Data["status"].(map[string]any)["is_system_account"].(bool))
 
 		// move to a managed system account
 		resp, err = UpdateConfig(t, opId, map[string]any{
@@ -414,9 +439,11 @@ func TestBackend_Operator_SystemAccount(t *testing.T) {
 		assert.Contains(t, resp.Warnings, `this operation resulted in operator "op1" reissuing its jwt`)
 
 		// check sys account status
-		account = ReadConfig[*accountEntry](t, opId.accountId("managed_sys"))
-		assert.True(t, account.Status.IsManaged)
-		assert.True(t, account.Status.IsSystemAccount)
+		resp, err = ReadConfig(t, opId.accountId("managed_sys"))
+		RequireNoRespError(t, resp, err)
+
+		assert.True(t, resp.Data["status"].(map[string]any)["is_managed"].(bool))
+		assert.True(t, resp.Data["status"].(map[string]any)["is_system_account"].(bool))
 
 		// check operator claim
 		publicKey := ReadPublicKey(t, opId.accountId("managed_sys"))
@@ -446,12 +473,14 @@ func TestBackend_Operator_SystemAccount(t *testing.T) {
 		assert.Contains(t, resp.Warnings, `this operation resulted in operator "op1" reissuing its jwt`)
 
 		// check sys account status
-		account := ReadConfig[*accountEntry](t, opId.accountId("custom_sys"))
-		assert.False(t, account.Status.IsManaged)
-		assert.True(t, account.Status.IsSystemAccount)
+		resp, err = ReadConfig(t, opId.accountId("custom_sys"))
+		RequireNoRespError(t, resp, err)
+
+		assert.False(t, resp.Data["status"].(map[string]any)["is_managed"].(bool))
+		assert.True(t, resp.Data["status"].(map[string]any)["is_system_account"].(bool))
 
 		// managed sys should be deleted
-		resp, err = ReadConfigRaw(t, opId.accountId("SYS"))
+		resp, err = ReadConfig(t, opId.accountId("SYS"))
 		RequireNoRespError(t, resp, err)
 		assert.Nil(t, resp)
 
@@ -481,6 +510,26 @@ func TestBackend_Operator_SystemAccount(t *testing.T) {
 		assert.NoError(_t, err)
 		assert.ErrorContains(_t, resp.Error(), "managed system account name \"SYS\" clashes with existing account")
 	})
+
+	t.Run("system account warnings", func(_t *testing.T) {
+		t := testBackend(_t)
+
+		accId := AccountId("op1", "acc1")
+		SetupTestOperator(t, accId.operatorId(), map[string]any{
+			"system_account_name":   "acc1",
+			"create_system_account": false,
+		})
+
+		resp, err := WriteConfig(t, accId, nil)
+		RequireNoRespError(t, resp, err)
+
+		assert.Contains(t, resp.Warnings, "this operation resulted in operator \"op1\" reissuing its jwt")
+
+		resp, err = DeleteConfig(t, accId, nil)
+		RequireNoRespError(t, resp, err)
+
+		assert.Contains(t, resp.Warnings, "this operation resulted in operator \"op1\" reissuing its jwt")
+	})
 }
 
 func TestBackend_Operator_Claims_Suspend(t *testing.T) {
@@ -505,7 +554,7 @@ func TestBackend_Operator_Claims_Suspend(t *testing.T) {
 			},
 		})
 
-		resp, err = ReadConfigRaw(t, opId.accountServerId())
+		resp, err = ReadConfig(t, opId.accountServerId())
 		RequireNoRespError(t, resp, err)
 
 		assert.Equal(t, true, resp.Data["suspend"])
@@ -530,7 +579,7 @@ func TestBackend_Operator_Claims_Suspend(t *testing.T) {
 			"system_account_name": "test_account",
 		})
 
-		resp, err = ReadConfigRaw(t, opId.accountServerId())
+		resp, err = ReadConfig(t, opId.accountServerId())
 		RequireNoRespError(t, resp, err)
 
 		assert.Equal(t, true, resp.Data["suspend"])
@@ -555,7 +604,7 @@ func TestBackend_Operator_Claims_Suspend(t *testing.T) {
 			"default_signing_key": "sk1",
 		})
 
-		resp, err = ReadConfigRaw(t, opId.accountServerId())
+		resp, err = ReadConfig(t, opId.accountServerId())
 		RequireNoRespError(t, resp, err)
 
 		assert.NotContains(t, resp.Data, "suspend")
@@ -583,25 +632,25 @@ func TestBackend_Operator_List(_t *testing.T) {
 	resp, err := b.HandleRequest(context.Background(), req)
 	RequireNoRespError(b, resp, err)
 
-	assert.Equal(b, []string{"op1", "op2", "op3"}, resp.Data["keys"])
+	assert.ElementsMatch(b, []string{"op1", "op2", "op3"}, resp.Data["keys"])
 
 	req.Path = operatorJwtsPathPrefix
 	resp, err = b.HandleRequest(context.Background(), req)
 	RequireNoRespError(b, resp, err)
 
-	assert.Equal(b, []string{"op1", "op2", "op3"}, resp.Data["keys"])
+	assert.ElementsMatch(b, []string{"op1", "op2", "op3"}, resp.Data["keys"])
 
 	req.Path = operatorKeysPathPrefix
 	resp, err = b.HandleRequest(context.Background(), req)
 	RequireNoRespError(b, resp, err)
 
-	assert.Equal(b, []string{"op1", "op2", "op3"}, resp.Data["keys"])
+	assert.ElementsMatch(b, []string{"op1", "op2", "op3"}, resp.Data["keys"])
 }
 
 // build a complex tree of objects and delete the operator
 // all objects below it should also be deleted
-func TestBackend_Cascading_Delete(_t *testing.T) {
-	t := testBackendWithNats(_t, abstractnats.NewMock(_t))
+func TestBackend_Operator_CascadingDelete(_t *testing.T) {
+	t := testBackend(_t)
 
 	opId := OperatorId("op1")
 	opSkId := opId.signingKeyId("sk1")
@@ -656,7 +705,7 @@ func TestBackend_Cascading_Delete(_t *testing.T) {
 	// operator
 	AssertConfigDeleted(t, opId)
 	// operator account server
-	resp, err := ReadConfigRaw(t, opId.accountServerId())
+	resp, err := ReadConfig(t, opId.accountServerId())
 	RequireNoRespError(t, resp, err)
 	assert.Nil(t, resp)
 	// operator signing key

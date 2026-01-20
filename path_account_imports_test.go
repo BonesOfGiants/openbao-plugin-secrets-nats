@@ -87,7 +87,7 @@ func TestBackend_AccountImport_Config(t *testing.T) {
 			}
 
 			// read config
-			resp, err = ReadConfigRaw(t, impId)
+			resp, err = ReadConfig(t, impId)
 			RequireNoRespError(t, resp, err)
 
 			assert.EqualValues(t, tc.expected, resp.Data)
@@ -144,7 +144,7 @@ func TestBackend_AccountImport_Config(t *testing.T) {
 			RequireNoRespError(t, resp, err)
 
 			// read config
-			resp, err = ReadConfigRaw(t, impId)
+			resp, err = ReadConfig(t, impId)
 			RequireNoRespError(t, resp, err)
 			assert.Nil(t, resp)
 		})
@@ -184,15 +184,34 @@ func TestBackend_AccountImport_Config(t *testing.T) {
 		// and the required fields were lost
 		assert.ErrorContains(t, resp.Error(), "validation error")
 	})
-}
 
-func TestBackend_AccountImport_NonExistentAccount(_t *testing.T) {
-	t := testBackend(_t)
+	t.Run("non existent account", func(_t *testing.T) {
+		t := testBackend(_t)
 
-	id := AccountImportId("op1", "acc1", "imp1")
-	resp, err := WriteConfig(t, id, nil)
-	assert.NoError(t, err)
-	assert.ErrorContains(t, resp.Error(), "account \"acc1\" does not exist")
+		id := AccountImportId("op1", "acc1", "imp1")
+		resp, err := WriteConfig(t, id, nil)
+		assert.NoError(t, err)
+		assert.ErrorContains(t, resp.Error(), "account \"acc1\" does not exist")
+	})
+
+	t.Run("existence check", func(_t *testing.T) {
+		t := testBackend(_t)
+
+		id := AccountImportId("op1", "acc1", "imp1")
+		SetupTestAccount(t, id.accountId(), nil)
+		resp, err := WriteConfig(t, id, map[string]any{
+			"name":    "test-import",
+			"subject": "foo.bar",
+			"account": "ABDEAD7OENMDZ6NF6NYQX4RUWE77YAM7DDEYSHTCWDLR3MWAJWKGHJC3",
+			"type":    "stream",
+		})
+		RequireNoRespError(t, resp, err)
+
+		hasCheck, found, err := ExistenceCheckConfig(t, id)
+		assert.NoError(t, err)
+		assert.True(t, hasCheck, "existence check not found")
+		assert.True(t, found, "item not found")
+	})
 }
 
 func TestBackend_AccountImport_RootParameters(t *testing.T) {
@@ -212,7 +231,7 @@ func TestBackend_AccountImport_RootParameters(t *testing.T) {
 		resp, err := WriteConfig(t, impId, expected)
 		RequireNoRespError(t, resp, err)
 
-		resp, err = ReadConfigRaw(t, impId)
+		resp, err = ReadConfig(t, impId)
 		RequireNoRespError(t, resp, err)
 
 		assert.Contains(t, resp.Data, "imports")
@@ -241,7 +260,7 @@ func TestBackend_AccountImport_RootParameters(t *testing.T) {
 		})
 		RequireNoRespError(t, resp, err)
 
-		resp, err = ReadConfigRaw(t, impId)
+		resp, err = ReadConfig(t, impId)
 		RequireNoRespError(t, resp, err)
 
 		assert.Contains(t, resp.Data, "imports")
@@ -348,7 +367,7 @@ func TestBackend_AccountImport_List(ts *testing.T) {
 	resp, err := t.HandleRequest(context.Background(), req)
 	RequireNoRespError(t, resp, err)
 
-	assert.Equal(t, []string{"imp1", "imp2", "imp3"}, resp.Data["keys"])
+	assert.ElementsMatch(t, []string{"imp1", "imp2", "imp3"}, resp.Data["keys"])
 
 	DeleteConfig(t, accId.importId("imp1"), nil)
 	DeleteConfig(t, accId.importId("imp2"), nil)

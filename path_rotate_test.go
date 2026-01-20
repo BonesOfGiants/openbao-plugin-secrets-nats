@@ -152,7 +152,7 @@ func TestBackend_Operator_Rotation_Suspend(t *testing.T) {
 		resp, err = RotateKey(t, opId, nil)
 		RequireNoRespError(t, resp, err)
 
-		resp, err = ReadConfigRaw(t, opId.accountServerId())
+		resp, err = ReadConfig(t, opId.accountServerId())
 		RequireNoRespError(t, resp, err)
 
 		assert.Equal(t, true, resp.Data["suspend"])
@@ -179,7 +179,7 @@ func TestBackend_Operator_Rotation_Suspend(t *testing.T) {
 		resp, err = RotateKey(t, id, nil)
 		RequireNoRespError(t, resp, err)
 
-		resp, err = ReadConfigRaw(t, id.operatorId().accountServerId())
+		resp, err = ReadConfig(t, id.operatorId().accountServerId())
 		RequireNoRespError(t, resp, err)
 
 		assert.Equal(t, true, resp.Data["suspend"])
@@ -308,6 +308,7 @@ func TestBackend_Account_Rotation_Sync(t *testing.T) {
 		accJwt := ReadJwtString(t, accId)
 		assert.Equal(t, accJwt, receivedJwt)
 	})
+
 	t.Run("sync on signing key rotate", func(_t *testing.T) {
 		nats := abstractnats.NewMock(_t)
 		defer nats.AssertNoLingering(_t)

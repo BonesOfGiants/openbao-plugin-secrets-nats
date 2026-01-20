@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/shimtx"
@@ -60,6 +61,17 @@ func (id ephemeralUserId) ephemeralCredsPath(session string) string {
 }
 
 func pathConfigEphemeralUser(b *backend) []*framework.Path {
+	responseOK := map[int][]framework.Response{
+		http.StatusOK: {{
+			Description: "OK",
+		}},
+	}
+	responseNoContent := map[int][]framework.Response{
+		http.StatusNoContent: {{
+			Description: "No Content",
+		}},
+	}
+
 	return []*framework.Path{
 		{
 			Pattern: ephemeralUsersPathPrefix + operatorRegex + "/" + accountRegex + "/" + userRegex + "$",
@@ -67,40 +79,67 @@ func pathConfigEphemeralUser(b *backend) []*framework.Path {
 				"operator": operatorField,
 				"account":  accountField,
 				"user":     userField,
-				"default_signing_key": {
-					Type:        framework.TypeString,
-					Description: "The default signing key to use for generating user creds. If not set, users will by signed by the account key by default.",
-					Required:    false,
-				},
 				"claims": {
 					Type:        framework.TypeMap,
-					Description: "Override default claims for generated user creds. See https://pkg.go.dev/github.com/nats-io/jwt/v2#UserClaims for available fields.",
+					Description: "Specify default claims for the credentials generated for this user. See https://pkg.go.dev/github.com/nats-io/jwt/v2#UserClaims for available fields. Claims are not merged; if the claims parameter is present it will overwrite any previous claims. Passing an explicit `null` to this field will clear the existing claims.",
 					Required:    false,
 				},
 				"creds_default_ttl": {
 					Type:        framework.TypeDurationSecond,
-					Description: "The default ttl for generated user creds. If not set or set to 0, will use a plugin default. Non-expiring creds are not allowed to be generated for ephemeral users.",
-					Required:    false,
+					Description: "The default TTL for generated credentials, specified in seconds or as a Go duration format string, e.g. `\"1h\"`. If not set or 0, the system default will be used.",
+					Default:     0,
 				},
 				"creds_max_ttl": {
 					Type:        framework.TypeDurationSecond,
-					Description: "The max ttl for generated user creds. If not set or set to 0, will use a plugin default.",
+					Description: "The maximum TTL for generated credentials, specified in seconds or as a Go duration format string, e.g. `\"1h\"`. If not set or 0, the system default will be used.",
+					Default:     0,
+				},
+				"default_signing_key": {
+					Type:        framework.TypeString,
+					Description: "Specify the name of an account signing key to use by default when generating credentials. If empty or not set, the user will be signed using the account's default signing key. This may be overridden by the creds `signing_key` parameter. The signing key need not exist when creating the user, but generating credentials will fail if the signing key doesn't exist.",
 					Required:    false,
 				},
 			},
 			ExistenceCheck: b.pathEphemeralUserExistenceCheck,
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.CreateOperation: &framework.PathOperation{
-					Callback: b.pathEphemeralUserCreateUpdate,
+					Callback:  b.pathEphemeralUserCreateUpdate,
+					Responses: responseOK,
 				},
 				logical.UpdateOperation: &framework.PathOperation{
-					Callback: b.pathEphemeralUserCreateUpdate,
+					Callback:  b.pathEphemeralUserCreateUpdate,
+					Responses: responseOK,
 				},
 				logical.ReadOperation: &framework.PathOperation{
 					Callback: b.pathEphemeralUserRead,
+					Responses: map[int][]framework.Response{
+						http.StatusOK: {{
+							Description: "OK",
+							Fields: map[string]*framework.FieldSchema{
+								"claims": {
+									Type:        framework.TypeMap,
+									Description: "Custom claims used in the credentials issued for this user.",
+									Required:    false,
+								},
+								"creds_default_ttl": {
+									Type:        framework.TypeInt,
+									Description: "The default TTL for generated credentials in seconds.",
+								},
+								"creds_max_ttl": {
+									Type:        framework.TypeInt,
+									Description: "The maximum TTL for generated credentials in seconds.",
+								},
+								"default_signing_key": {
+									Type:        framework.TypeString,
+									Description: "The name of the specified account signing key used by default when generating credentials.",
+								},
+							},
+						}},
+					},
 				},
 				logical.DeleteOperation: &framework.PathOperation{
-					Callback: b.pathEphemeralUserDelete,
+					Callback:  b.pathEphemeralUserDelete,
+					Responses: responseNoContent,
 				},
 			},
 			HelpSynopsis:    `Manages user templates for dynamic credential generation.`,
@@ -117,6 +156,17 @@ func pathConfigEphemeralUser(b *backend) []*framework.Path {
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.ListOperation: &framework.PathOperation{
 					Callback: b.pathEphemeralUserList,
+					Responses: map[int][]framework.Response{
+						http.StatusOK: {{
+							Description: "OK",
+							Fields: map[string]*framework.FieldSchema{
+								"keys": {
+									Type:     framework.TypeStringSlice,
+									Required: true,
+								},
+							},
+						}},
+					},
 				},
 			},
 			HelpSynopsis: "List ephemeral users.",
@@ -127,23 +177,6 @@ func pathConfigEphemeralUser(b *backend) []*framework.Path {
 func NewEphemeralUser(id ephemeralUserId) *ephemeralUserEntry {
 	return &ephemeralUserEntry{
 		ephemeralUserId: id,
-	}
-}
-
-func NewEphemeralUserWithParams(
-	id ephemeralUserId,
-	revokeOnDelete bool,
-	defaultTtl time.Duration,
-	maxTtl time.Duration,
-	defaultSigningKey string,
-	claims json.RawMessage,
-) *ephemeralUserEntry {
-	return &ephemeralUserEntry{
-		ephemeralUserId:   id,
-		CredsDefaultTtl:   defaultTtl,
-		CredsMaxTtl:       maxTtl,
-		RawClaims:         claims,
-		DefaultSigningKey: defaultSigningKey,
 	}
 }
 

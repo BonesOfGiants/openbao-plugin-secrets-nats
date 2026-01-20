@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 
 	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/shimtx"
 	"github.com/openbao/openbao/sdk/v2/framework"
@@ -143,6 +144,17 @@ var (
 )
 
 func pathConfigOperator(b *backend) []*framework.Path {
+	responseOK := map[int][]framework.Response{
+		http.StatusOK: {{
+			Description: "OK",
+		}},
+	}
+	responseNoContent := map[int][]framework.Response{
+		http.StatusNoContent: {{
+			Description: "No Content",
+		}},
+	}
+
 	return []*framework.Path{
 		{
 			Pattern: operatorsPathPrefix + operatorRegex + "$",
@@ -150,36 +162,71 @@ func pathConfigOperator(b *backend) []*framework.Path {
 				"operator": operatorField,
 				"create_system_account": {
 					Type:        framework.TypeBool,
-					Description: "If true, creates a system account for this operator with proper permissions. Defaults to false.",
+					Description: "Whether to create a managed system account for this operator.",
 					Default:     true,
 				},
 				"system_account_name": {
 					Type:        framework.TypeString,
-					Description: `If set, overrides the default system account name of "SYS" for this operator.`,
+					Description: "The name of the account to use with this operator. If `create_system_account` is true, a managed account with this name will be created. If the named account already exists as a non-managed account, the request will fail. If `create_system_account` is false and the named account does not exist, this field is ignored and the operator JWT will not specify a system account.",
+					Default:     DefaultSysAccountName,
+					Required:    false,
 				},
 				"default_signing_key": {
 					Type:        framework.TypeString,
-					Description: `If set, use the specified signing key to sign accounts instead of the identity key. Does not apply to existing accounts.`,
+					Description: "Specify which operator signing key to use by default when signing account JWTs. By setting this field, accounts under this operator will be unable to be signed using the operator identity key. If empty, not set, or if the specified signing key does not exist, accounts will be signed using the operator's identity key.",
+					Required:    false,
 				},
 				"claims": {
 					Type:        framework.TypeMap,
-					Description: "Override default claims for the issued JWT for this operator. See https://pkg.go.dev/github.com/nats-io/jwt/v2#OperatorClaims for available fields.",
+					Description: "Override default claims for the issued JWT for this operator. See https://pkg.go.dev/github.com/nats-io/jwt/v2#OperatorClaims for available fields. Claims are not merged; if the claims parameter is present it will overwrite any previous claims. Passing an explicit `null` to this field will clear the existing claims.",
 					Required:    false,
 				},
 			},
 			ExistenceCheck: b.pathOperatorExistenceCheck,
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.CreateOperation: &framework.PathOperation{
-					Callback: b.pathOperatorCreateUpdate,
+					Callback:  b.pathOperatorCreateUpdate,
+					Responses: responseOK,
 				},
 				logical.UpdateOperation: &framework.PathOperation{
-					Callback: b.pathOperatorCreateUpdate,
+					Callback:  b.pathOperatorCreateUpdate,
+					Responses: responseOK,
 				},
 				logical.ReadOperation: &framework.PathOperation{
 					Callback: b.pathOperatorRead,
+					Responses: map[int][]framework.Response{
+						http.StatusOK: {{
+							Description: "OK",
+							Fields: map[string]*framework.FieldSchema{
+								"create_system_account": {
+									Type:        framework.TypeBool,
+									Description: "Whether a managed system account has been created for this operator.",
+									Required:    true,
+									Default:     true,
+								},
+								"system_account_name": {
+									Type:        framework.TypeString,
+									Description: "The name of the account designated as the system account for this operator.",
+									Required:    true,
+									Default:     DefaultSysAccountName,
+								},
+								"default_signing_key": {
+									Type:        framework.TypeString,
+									Description: "The default signing key used when signing account JWTs.",
+									Required:    false,
+								},
+								"claims": {
+									Type:        framework.TypeMap,
+									Description: "Custom claims used in the JWT issued for this operator.",
+									Required:    false,
+								},
+							},
+						}},
+					},
 				},
 				logical.DeleteOperation: &framework.PathOperation{
-					Callback: b.pathOperatorDelete,
+					Callback:  b.pathOperatorDelete,
+					Responses: responseNoContent,
 				},
 			},
 			HelpSynopsis: "Manages operators.",
@@ -193,6 +240,17 @@ func pathConfigOperator(b *backend) []*framework.Path {
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.ListOperation: &framework.PathOperation{
 					Callback: b.pathOperatorList,
+					Responses: map[int][]framework.Response{
+						http.StatusOK: {{
+							Description: "OK",
+							Fields: map[string]*framework.FieldSchema{
+								"keys": {
+									Type:     framework.TypeStringSlice,
+									Required: true,
+								},
+							},
+						}},
+					},
 				},
 			},
 			HelpSynopsis: "List operators.",
@@ -245,6 +303,7 @@ func (b *backend) pathOperatorCreateUpdate(ctx context.Context, req *logical.Req
 		operator.CreateSystemAccount = createSystemAccount.(bool)
 	}
 
+	oldDefaultSigningKey := operator.DefaultSigningKey
 	if defaultSigningKey, ok := d.GetOk("default_signing_key"); ok {
 		operator.DefaultSigningKey = defaultSigningKey.(string)
 	}
@@ -382,6 +441,30 @@ func (b *backend) pathOperatorCreateUpdate(ctx context.Context, req *logical.Req
 			resp.AddWarning(fmt.Sprintf("this operation resulted in operator %q reissuing its jwt", id.op))
 			if err := b.suspendAccountServer(ctx, req.Storage, id.accountServerId()); err != nil {
 				return nil, err
+			}
+		}
+	}
+
+	if operator.DefaultSigningKey != oldDefaultSigningKey {
+		for account, err := range b.listAccounts(ctx, req.Storage, id) {
+			if err != nil {
+				return nil, err
+			}
+
+			// account is not using the default signing key
+			if account.SigningKey != "" {
+				continue
+			}
+
+			resp.AddWarning(fmt.Sprintf("reissued jwt for account %q as it is signed with the default key", account.acc))
+			// reissue account jwt
+			warnings, err := b.issueAndSaveAccountJWT(ctx, req.Storage, account)
+			if err != nil {
+				return logical.ErrorResponse("failed to reissue account %q jwt: %s", account.acc, err.Error()), nil
+			}
+
+			for _, v := range warnings {
+				resp.AddWarning(v)
 			}
 		}
 	}

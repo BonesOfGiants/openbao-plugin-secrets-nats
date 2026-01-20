@@ -107,6 +107,17 @@ func TestBackend_OperatorJwt_Read(t *testing.T) {
 		assert.Equal(t, testClaims.SystemAccount, opClaims.Operator.SystemAccount)
 		assert.Equal(t, testClaims.GenericFields.Tags, opClaims.Operator.GenericFields.Tags)
 	})
+	t.Run("existence check", func(_t *testing.T) {
+		t := testBackend(_t)
+
+		id := OperatorId("op1")
+		SetupTestOperator(t, id, nil)
+
+		hasCheck, found, err := ExistenceCheckPath(t, id.jwtPath())
+		assert.NoError(t, err)
+		assert.True(t, hasCheck, "existence check not found")
+		assert.True(t, found, "item not found")
+	})
 }
 
 func TestBackend_AccountJwt_Read(t *testing.T) {
@@ -296,7 +307,7 @@ func TestBackend_AccountJwt_Read(t *testing.T) {
 		assert.Equal(b, claims.GenericFields.Tags, accClaims.Account.GenericFields.Tags)
 	})
 
-	t.Run("partial claims", func(_t *testing.T) {
+	t.Run("partial default limits", func(_t *testing.T) {
 		b := testBackend(t)
 
 		claims := json.RawMessage(`
@@ -318,5 +329,17 @@ func TestBackend_AccountJwt_Read(t *testing.T) {
 		defaultClaims.Limits.JetStreamTieredLimits = nil
 		defaultClaims.Account.Limits.Payload = 5
 		assert.EqualValues(b, defaultClaims.Limits, accClaims.Account.Limits)
+	})
+
+	t.Run("existence check", func(_t *testing.T) {
+		t := testBackend(_t)
+
+		id := AccountId("op1", "acc1")
+		SetupTestAccount(t, id, nil)
+
+		hasCheck, found, err := ExistenceCheckPath(t, id.jwtPath())
+		assert.NoError(t, err)
+		assert.True(t, hasCheck, "existence check not found")
+		assert.True(t, found, "item not found")
 	})
 }

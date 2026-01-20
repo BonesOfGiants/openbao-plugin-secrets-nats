@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/openbao/openbao/sdk/v2/framework"
@@ -25,24 +26,25 @@ type credsPather interface {
 func pathUserCreds(b *backend) []*framework.Path {
 	return []*framework.Path{
 		{
-			Pattern: credsPathPrefix + operatorRegex + "/" + accountRegex + "/" + userRegex + "$",
+			HelpSynopsis: `Generates credentials for users.`,
+			Pattern:      credsPathPrefix + operatorRegex + "/" + accountRegex + "/" + userRegex + "$",
 			Fields: map[string]*framework.FieldSchema{
 				"operator": operatorField,
 				"account":  accountField,
 				"user":     userField,
 				"signing_key": {
 					Type:        framework.TypeString,
-					Description: "Specify a signing key to use for these creds.",
+					Description: "Specify the name of an account signing key to use when signing these credentials. If empty or not set, the signing key will be the first non-empty value from the user's `default_signing_key`, account's `default_signing_key`, or the account identity key.",
 					Required:    false,
 				},
 				"ttl": {
 					Type:        framework.TypeDurationSecond,
-					Description: "The TTL of the generated credentials",
+					Description: "Specify the TTL of the generated credentials, specified in seconds or as a Go duration format string, e.g. `\"1h\"`. If empty or not set, the ttl of the generated credentials will be based on the user's `creds_default_ttl` value. This value will be clamped by the `creds_max_ttl` or the system's max TTL.",
 					Required:    false,
 				},
 				"not_before": {
 					Type:        framework.TypeTime,
-					Description: "Specify a nbf timestamp for the generated jwt.",
+					Description: "Specify a Unix timestamp or valid RFC3339 timestamp to use as the `nbf` time of the generated creds. The TTL of the creds is always calculated from the current time, not from the `not_before` time.",
 					Required:    false,
 				},
 				"tags": {
@@ -55,13 +57,59 @@ func pathUserCreds(b *backend) []*framework.Path {
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.ReadOperation: &framework.PathOperation{
 					Callback: b.pathUserCredsRead,
+					Responses: map[int][]framework.Response{
+						http.StatusOK: {{
+							Description: "OK",
+							Fields: map[string]*framework.FieldSchema{
+								"operator": {
+									Type:        framework.TypeString,
+									Description: "The name of the operator.",
+									Required:    true,
+								},
+								"account": {
+									Type:        framework.TypeString,
+									Description: "The name of the account.",
+									Required:    true,
+								},
+								"user": {
+									Type:        framework.TypeString,
+									Description: "The name of the user.",
+									Required:    true,
+								},
+								"creds": {
+									Type:        framework.TypeString,
+									Description: "The decorated credentials including the JWT and seed string.",
+									Required:    true,
+								},
+								"jwt": {
+									Type:        framework.TypeString,
+									Description: "The undecorated JWT.",
+									Required:    true,
+								},
+								"seed": {
+									Type:        framework.TypeString,
+									Description: "The undecorated seed string.",
+									Required:    true,
+								},
+								"signing_key": {
+									Type:        framework.TypeString,
+									Description: "The name of the signing key used to sign these creds, if applicable. If the creds were signed by the account identity key, this field is empty.",
+									Required:    true,
+								},
+								"expires_at": {
+									Type:        framework.TypeTime,
+									Description: "The expiration time for these creds, formatted as a Unix timestamp.",
+									Required:    true,
+								},
+							},
+						}},
+					},
 				},
 			},
-			HelpSynopsis:    `Generates fresh user credentials on demand.`,
-			HelpDescription: `Reads the user template and generates fresh credentials with current timestamp and provided parameters.`,
 		},
 		{
-			Pattern: credsPathPrefix + operatorRegex + "/" + accountRegex + "/?$",
+			HelpSynopsis: "Lists users.",
+			Pattern:      credsPathPrefix + operatorRegex + "/" + accountRegex + "/?$",
 			Fields: map[string]*framework.FieldSchema{
 				"operator": operatorField,
 				"account":  accountField,
@@ -70,11 +118,20 @@ func pathUserCreds(b *backend) []*framework.Path {
 			},
 			Operations: map[logical.Operation]framework.OperationHandler{
 				logical.ListOperation: &framework.PathOperation{
-					Callback: b.pathUserCredsList,
+					Callback: b.pathUserList,
+					Responses: map[int][]framework.Response{
+						http.StatusOK: {{
+							Description: "OK",
+							Fields: map[string]*framework.FieldSchema{
+								"keys": {
+									Type:     framework.TypeStringSlice,
+									Required: true,
+								},
+							},
+						}},
+					},
 				},
 			},
-			HelpSynopsis:    "List available user credential templates",
-			HelpDescription: "List all users that have credential templates configured",
 		},
 	}
 }
@@ -245,12 +302,6 @@ func (b *backend) pathUserCredsRead(ctx context.Context, req *logical.Request, d
 	resp.Secret.LeaseOptions.MaxTTL = resp.Secret.TTL
 
 	return resp, nil
-}
-
-func (b *backend) pathUserCredsList(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	// defer to user list,
-	// since we don't keep storage for user creds
-	return b.pathUserList(ctx, req, data)
 }
 
 func (b *backend) pathUserCredsExistenceCheck(ctx context.Context, req *logical.Request, d *framework.FieldData) (bool, error) {

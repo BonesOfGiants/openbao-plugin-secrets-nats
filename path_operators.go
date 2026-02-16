@@ -143,6 +143,39 @@ var (
 	}`)
 )
 
+func pathListOperator(b *backend, prefixes []string) []*framework.Path {
+	paths := make([]*framework.Path, 0, len(prefixes))
+
+	for _, prefix := range prefixes {
+		paths = append(paths, &framework.Path{
+			Pattern: prefix + "?$",
+			Fields: map[string]*framework.FieldSchema{
+				"after": afterField,
+				"limit": limitField,
+			},
+			Operations: map[logical.Operation]framework.OperationHandler{
+				logical.ListOperation: &framework.PathOperation{
+					Callback: b.pathOperatorList,
+					Responses: map[int][]framework.Response{
+						http.StatusOK: {{
+							Description: "OK",
+							Fields: map[string]*framework.FieldSchema{
+								"keys": {
+									Type:     framework.TypeStringSlice,
+									Required: true,
+								},
+							},
+						}},
+					},
+				},
+			},
+			HelpSynopsis: "List operators.",
+		})
+	}
+
+	return paths
+}
+
 func pathConfigOperator(b *backend) []*framework.Path {
 	responseOK := map[int][]framework.Response{
 		http.StatusOK: {{
@@ -230,30 +263,6 @@ func pathConfigOperator(b *backend) []*framework.Path {
 				},
 			},
 			HelpSynopsis: "Manages operators.",
-		},
-		{
-			Pattern: operatorsPathPrefix + "/?$",
-			Fields: map[string]*framework.FieldSchema{
-				"after": afterField,
-				"limit": limitField,
-			},
-			Operations: map[logical.Operation]framework.OperationHandler{
-				logical.ListOperation: &framework.PathOperation{
-					Callback: b.pathOperatorList,
-					Responses: map[int][]framework.Response{
-						http.StatusOK: {{
-							Description: "OK",
-							Fields: map[string]*framework.FieldSchema{
-								"keys": {
-									Type:     framework.TypeStringSlice,
-									Required: true,
-								},
-							},
-						}},
-					},
-				},
-			},
-			HelpSynopsis: "List operators.",
 		},
 	}
 }

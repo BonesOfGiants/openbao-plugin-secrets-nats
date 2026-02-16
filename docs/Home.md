@@ -4,7 +4,6 @@
 - introduction
     - this plugin acts as a replacement for the nsc command line tool
     - manage the entire lifecycle of NATS operators, accounts, and users
-    - generate user credentials with templating support and full openbao lease support
     - rotate account signing keys
     - automatically sync accounts to nats cluster
     - automatically fetch accounts using the companion `openbao-nats-account-server`
@@ -95,21 +94,6 @@ Success! Enabled the nats secrets engine at: nats/
             - cannot edit claims of the managed system account
         - custom system account
             - if you provide your own, it should have at least these claims: https://github.com/nats-io/nsc/blob/a8cd1b14b5694a65a1d4f97501435f001a538596/cmd/init.go#L328-L347 (or provide a link to my iteration of the default)
-    - account server
-        - generates sync user creds on the fly using the system account
-        - if there is no system account for the operator, sync will not function
-        - accounts will be synced whenever their JWT is reissued
-        - sync may be suspended by setting suspend=true
-        - sync will be suspended **automatically** if the operator jwt changes for any reason
-        - sync behavior
-            - will push all accounts under the operator on a background interval
-            - changes to the account will result in a sync
-                - changing claims
-                - changing imports
-                - changing revocations
-        - account server
-            - openbao cannot directly act as an account server for lookups
-            - but openbao-nats-account-proxy can fill that function!
     - managed operators (eg. synadia)
         - not currently supported
 -->
@@ -118,12 +102,13 @@ Operators own NATS clusters. Their JWTs are provided directly in the NATS cluste
 created within the context of an operator.
 
 The simplest operator requires no additional configuration:
+
 ```sh
 $ bao write -force=true nats/operators/my-operator
 ```
 
 This will create an operator called `my-operator`. When created, the operator will automatically generate an identity key,
-issue a self-signed JWT, and create a system account called `SYS`.
+issue a self-signed JWT, and create a system account called `SYS` (with its own identity key and JWT).
 
 If you're planning to utilize the [account server](#account-server) feature, the operator may be installed into the target NATS cluster at this point.
 The utility path [`nats/generate-server-config/:op`](API.md#generate-server-config) is
@@ -150,6 +135,8 @@ EOF
 $ nats-server -c nats-server.conf
 ```
 
+If you're not planning on making use of the [account server](#account-server), you should create your desired accounts before installing the operator and accounts into the target NATS cluster so they are loaded correctly.
+
 ### Operator configuration
 
 A complete example of all possible fields when creating or updating an operator follows.
@@ -166,10 +153,9 @@ See the following section for details on the `claims` object.
 
 ### Operator claims
 
-The claims object may contain any valid operator JWT claims. To be specific, you may provide any of the
-values under the `nats` section of an issued JWT. The `iss`, `jti`, `name`, and other root fields of the
-JWT are fixed and cannot be customized. However, some additional field values are calculated when the 
-JWT is signed and will always be overwritten/modified:
+The claims object may contain any valid operator JWT claims. If you're familiar with the structure of
+NATS JWTs, this constitutes the `"nats"` object of the JWT payload.
+However, some field values are calculated when the JWT is signed and will always be overwritten/modified:
 
 1. `system_account` will be overwritten with the account public key if 
    the system account specified by `system_account_name` exists, or otherwise
@@ -177,7 +163,7 @@ JWT is signed and will always be overwritten/modified:
 2. If you've declared any [operator signing keys](#operator-signing-keys), 
    those keys will be merged with the list of signing keys in the template
    claims.
-3. `type` and `version` are set by the NATS jwt library and can't be modified.
+3. `type` and `version` are set by the NATS JWT library and can't be modified.
 
 <details>
 <summary><b>Example claims with all possible fields</b></summary>
@@ -275,7 +261,9 @@ a signing key in the `default_signing_key` field of the operator.
 
 The plugin can be configured to act as an account server for a target NATS cluster. This includes both
 pushing deletions and updates to account JWTs to the target cluster, as well as responding to account lookup requests
-by the NATS cluster. The plugin only supports clusters using the [NATS based resolver](https://docs.nats.io/running-a-nats-service/configuration/securing_nats/auth_intro/jwt/resolver#nats-based-resolver), *not* the legacy URL resolver.
+by the NATS cluster. The plugin only supports clusters using the
+[NATS based resolver](https://docs.nats.io/running-a-nats-service/configuration/securing_nats/auth_intro/jwt/resolver#nats-based-resolver),
+*not* the legacy URL resolver.
 
 Account server behavior is controlled via the `account-servers` resource.
 
@@ -369,14 +357,13 @@ Additionally, the plugin does not currently support importing of pre-existing op
 
 ### Account claims
 
-The claims object may contain any valid account JWT claims. To be specific, you may provide any of the
-values under the `nats` section of an issued JWT. The `iss`, `jti`, `name`, and other root fields of the
-JWT are fixed and cannot be customized. However, some additional field values are calculated when the 
-JWT is signed and will always be overwritten/modified:
+The claims object may contain any valid account JWT claims. If you're familiar with the structure of
+NATS JWTs, this constitutes the `"nats"` object of the JWT payload.
+However, some additional field values are calculated when the JWT is signed and will always be overwritten/modified:
 
 1. If you've created any [account signing keys](#account-signing-keys), 
    those keys will be merged with the existing list of signing keys.
-2. `type` and `version` are set by the NATS jwt library and can't be modified.
+2. `type` and `version` are set by the NATS JWT library and can't be modified.
 
 <details>
 <summary>Example claims with all fields</summary>

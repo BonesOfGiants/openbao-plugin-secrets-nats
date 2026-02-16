@@ -264,6 +264,52 @@ func TestBackend_Account_Config(t *testing.T) {
 	})
 }
 
+func TestBackend_Account_List(t *testing.T) {
+	paths := []string{
+		accountsPathPrefix,
+		accountImportsPathPrefix,
+		accountSigningKeysPathPrefix,
+		revocationsPathPrefix,
+		usersPathPrefix,
+		userKeysPathPrefix,
+		credsPathPrefix,
+		ephemeralUsersPathPrefix,
+		ephemeralCredsPathPrefix,
+	}
+
+	for _, path := range paths {
+		t.Run(path, func(_t *testing.T) {
+			t := testBackend(_t)
+
+			opId := OperatorId("op1")
+			SetupTestOperator(t, opId, map[string]any{
+				"create_system_account": false,
+			})
+
+			acc1 := opId.accountId("acc1")
+			SetupTestAccount(t, acc1, nil)
+
+			acc2 := opId.accountId("acc2")
+			SetupTestAccount(t, acc2, nil)
+
+			acc3 := opId.accountId("acc3")
+			SetupTestAccount(t, acc3, nil)
+
+			req := &logical.Request{
+				Operation: logical.ListOperation,
+				Path:      path + opId.op,
+				Storage:   t,
+				Data:      map[string]any{},
+			}
+			resp, err := t.HandleRequest(context.Background(), req)
+			RequireNoRespError(t, resp, err)
+
+			require.Contains(t, resp.Data, "keys")
+			assert.ElementsMatch(t, []string{"acc1", "acc2", "acc3"}, resp.Data["keys"])
+		})
+	}
+}
+
 func TestBackend_Account_SigningKeys(t *testing.T) {
 	t.Run("operator default signing key", func(_t *testing.T) {
 		t := testBackend(_t)

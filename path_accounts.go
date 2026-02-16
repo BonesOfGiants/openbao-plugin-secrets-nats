@@ -161,6 +161,40 @@ type AccountReader interface {
 	Account(ctx context.Context, s logical.Storage) (*accountEntry, error)
 }
 
+func pathListAccount(b *backend, prefixes []string) []*framework.Path {
+	paths := make([]*framework.Path, 0, len(prefixes))
+
+	for _, prefix := range prefixes {
+		paths = append(paths, &framework.Path{
+			HelpSynopsis: "List accounts.",
+			Pattern:      prefix + operatorRegex + "/?$",
+			Fields: map[string]*framework.FieldSchema{
+				"operator": operatorField,
+				"after":    afterField,
+				"limit":    limitField,
+			},
+			Operations: map[logical.Operation]framework.OperationHandler{
+				logical.ListOperation: &framework.PathOperation{
+					Callback: b.pathAccountList,
+					Responses: map[int][]framework.Response{
+						http.StatusOK: {{
+							Description: "OK",
+							Fields: map[string]*framework.FieldSchema{
+								"keys": {
+									Type:     framework.TypeStringSlice,
+									Required: true,
+								},
+							},
+						}},
+					},
+				},
+			},
+		})
+	}
+
+	return paths
+}
+
 func pathConfigAccount(b *backend) []*framework.Path {
 	responseOK := map[int][]framework.Response{
 		http.StatusOK: {{
@@ -235,31 +269,6 @@ func pathConfigAccount(b *backend) []*framework.Path {
 				},
 			},
 			HelpSynopsis: `Manages accounts.`,
-		},
-		{
-			Pattern: accountsPathPrefix + operatorRegex + "/?$",
-			Fields: map[string]*framework.FieldSchema{
-				"operator": operatorField,
-				"after":    afterField,
-				"limit":    limitField,
-			},
-			Operations: map[logical.Operation]framework.OperationHandler{
-				logical.ListOperation: &framework.PathOperation{
-					Callback: b.pathAccountList,
-					Responses: map[int][]framework.Response{
-						http.StatusOK: {{
-							Description: "OK",
-							Fields: map[string]*framework.FieldSchema{
-								"keys": {
-									Type:     framework.TypeStringSlice,
-									Required: true,
-								},
-							},
-						}},
-					},
-				},
-			},
-			HelpSynopsis: "List accounts.",
 		},
 	}
 }

@@ -17,8 +17,7 @@ import (
 
 /*
 todo: list of things that still need tests:
-- operator jwt change resulting in account server being suspended + warning
-- managed name clashes with existing account
+- account server network error handling
 - test partial updates
 	- [ ] operator
 	- [ ] account server
@@ -26,7 +25,6 @@ todo: list of things that still need tests:
 	- [ ] account import
 	- [ ] user
 	- [ ] eph user
-- key list tests
 - import fields: token, local_subject, share, allow_trace
 */
 

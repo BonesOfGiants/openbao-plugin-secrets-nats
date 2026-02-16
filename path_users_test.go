@@ -1,12 +1,14 @@
 package natsbackend
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"testing/synctest"
 
 	"github.com/bonesofgiants/openbao-plugin-secrets-nats/pkg/abstractnats"
 	"github.com/nats-io/jwt/v2"
+	"github.com/openbao/openbao/sdk/v2/logical"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -233,6 +235,42 @@ func TestBackend_User_Config(t *testing.T) {
 		assert.True(t, hasCheck, "existence check not found")
 		assert.True(t, found, "item not found")
 	})
+}
+
+func TestBackend_User_List(t *testing.T) {
+	paths := []string{
+		usersPathPrefix,
+		credsPathPrefix,
+	}
+
+	for _, path := range paths {
+		t.Run(path, func(_t *testing.T) {
+			t := testBackend(_t)
+
+			accId := AccountId("op1", "acc1")
+
+			user1 := accId.userId("user1")
+			SetupTestUser(t, user1, nil)
+
+			user2 := accId.userId("user2")
+			SetupTestUser(t, user2, nil)
+
+			user3 := accId.userId("user3")
+			SetupTestUser(t, user3, nil)
+
+			req := &logical.Request{
+				Operation: logical.ListOperation,
+				Path:      path + accId.op + "/" + accId.acc,
+				Storage:   t,
+				Data:      map[string]any{},
+			}
+			resp, err := t.HandleRequest(context.Background(), req)
+			RequireNoRespError(t, resp, err)
+
+			require.Contains(t, resp.Data, "keys")
+			assert.ElementsMatch(t, []string{"user1", "user2", "user3"}, resp.Data["keys"])
+		})
+	}
 }
 
 func TestBackend_User_Claims(t *testing.T) {

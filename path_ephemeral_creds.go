@@ -112,32 +112,6 @@ func pathEphemeralUserCreds(b *backend) []*framework.Path {
 			HelpSynopsis:    `Generates fresh user credentials on-demand.`,
 			HelpDescription: `Reads the user template and generates a fresh JWT with current timestamp and provided parameters, then returns complete NATS credentials.`,
 		},
-		{
-			HelpSynopsis: "Lists ephemeral users.",
-			Pattern:      ephemeralCredsPathPrefix + operatorRegex + "/" + accountRegex + "/?$",
-			Fields: map[string]*framework.FieldSchema{
-				"operator": operatorField,
-				"account":  accountField,
-				"after":    afterField,
-				"limit":    limitField,
-			},
-			Operations: map[logical.Operation]framework.OperationHandler{
-				logical.ListOperation: &framework.PathOperation{
-					Callback: b.pathEphemeralUserList,
-					Responses: map[int][]framework.Response{
-						http.StatusOK: {{
-							Description: "OK",
-							Fields: map[string]*framework.FieldSchema{
-								"keys": {
-									Type:     framework.TypeStringSlice,
-									Required: true,
-								},
-							},
-						}},
-					},
-				},
-			},
-		},
 	}
 }
 

@@ -611,40 +611,50 @@ func TestBackend_Operator_Claims_Suspend(t *testing.T) {
 	})
 }
 
-func TestBackend_Operator_List(_t *testing.T) {
-	b := testBackend(_t)
-
-	opId1 := OperatorId("op1")
-	SetupTestOperator(b, opId1, nil)
-
-	opId2 := OperatorId("op2")
-	SetupTestOperator(b, opId2, nil)
-
-	opId3 := OperatorId("op3")
-	SetupTestOperator(b, opId3, nil)
-
-	req := &logical.Request{
-		Operation: logical.ListOperation,
-		Path:      operatorsPathPrefix,
-		Storage:   b,
-		Data:      map[string]any{},
+func TestBackend_Operator_List(t *testing.T) {
+	paths := []string{
+		operatorsPathPrefix,
+		operatorSigningKeysPathPrefix,
+		operatorGenerateServerConfigPathPrefix,
+		accountsPathPrefix,
+		accountImportsPathPrefix,
+		accountKeysPathPrefix,
+		accountSigningKeysPathPrefix,
+		accountJwtsPathPrefix,
+		revocationsPathPrefix,
+		usersPathPrefix,
+		userKeysPathPrefix,
+		credsPathPrefix,
+		ephemeralUsersPathPrefix,
+		ephemeralCredsPathPrefix,
 	}
-	resp, err := b.HandleRequest(context.Background(), req)
-	RequireNoRespError(b, resp, err)
 
-	assert.ElementsMatch(b, []string{"op1", "op2", "op3"}, resp.Data["keys"])
+	for _, path := range paths {
+		t.Run(path, func(_t *testing.T) {
+			t := testBackend(_t)
 
-	req.Path = operatorJwtsPathPrefix
-	resp, err = b.HandleRequest(context.Background(), req)
-	RequireNoRespError(b, resp, err)
+			opId1 := OperatorId("op1")
+			SetupTestOperator(t, opId1, nil)
 
-	assert.ElementsMatch(b, []string{"op1", "op2", "op3"}, resp.Data["keys"])
+			opId2 := OperatorId("op2")
+			SetupTestOperator(t, opId2, nil)
 
-	req.Path = operatorKeysPathPrefix
-	resp, err = b.HandleRequest(context.Background(), req)
-	RequireNoRespError(b, resp, err)
+			opId3 := OperatorId("op3")
+			SetupTestOperator(t, opId3, nil)
 
-	assert.ElementsMatch(b, []string{"op1", "op2", "op3"}, resp.Data["keys"])
+			req := &logical.Request{
+				Operation: logical.ListOperation,
+				Path:      path,
+				Storage:   t,
+				Data:      map[string]any{},
+			}
+			resp, err := t.HandleRequest(context.Background(), req)
+			RequireNoRespError(t, resp, err)
+
+			require.Contains(t, resp.Data, "keys")
+			assert.ElementsMatch(t, []string{"op1", "op2", "op3"}, resp.Data["keys"])
+		})
+	}
 }
 
 // build a complex tree of objects and delete the operator

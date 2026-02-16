@@ -80,6 +80,41 @@ func (id userId) rotatePath() string {
 	return rotateUserPathPrefix + id.op + "/" + id.acc + "/" + id.user
 }
 
+func pathListUser(b *backend, prefixes []string) []*framework.Path {
+	paths := make([]*framework.Path, 0, len(prefixes))
+
+	for _, prefix := range prefixes {
+		paths = append(paths, &framework.Path{
+			Pattern: prefix + operatorRegex + "/" + accountRegex + "/?$",
+			Fields: map[string]*framework.FieldSchema{
+				"operator": operatorField,
+				"account":  accountField,
+				"after":    afterField,
+				"limit":    limitField,
+			},
+			Operations: map[logical.Operation]framework.OperationHandler{
+				logical.ListOperation: &framework.PathOperation{
+					Callback: b.pathUserList,
+					Responses: map[int][]framework.Response{
+						http.StatusOK: {{
+							Description: "OK",
+							Fields: map[string]*framework.FieldSchema{
+								"keys": {
+									Type:     framework.TypeStringSlice,
+									Required: true,
+								},
+							},
+						}},
+					},
+				},
+			},
+			HelpSynopsis: "List users.",
+		})
+	}
+
+	return paths
+}
+
 func pathConfigUser(b *backend) []*framework.Path {
 	responseOK := map[int][]framework.Response{
 		http.StatusOK: {{
@@ -172,32 +207,6 @@ func pathConfigUser(b *backend) []*framework.Path {
 			},
 			HelpSynopsis:    `Manages user templates for dynamic credential generation.`,
 			HelpDescription: `Create and manage templates that will be used to generate user credentials on-demand.`,
-		},
-		{
-			Pattern: usersPathPrefix + operatorRegex + "/" + accountRegex + "/?$",
-			Fields: map[string]*framework.FieldSchema{
-				"operator": operatorField,
-				"account":  accountField,
-				"after":    afterField,
-				"limit":    limitField,
-			},
-			Operations: map[logical.Operation]framework.OperationHandler{
-				logical.ListOperation: &framework.PathOperation{
-					Callback: b.pathUserList,
-					Responses: map[int][]framework.Response{
-						http.StatusOK: {{
-							Description: "OK",
-							Fields: map[string]*framework.FieldSchema{
-								"keys": {
-									Type:     framework.TypeStringSlice,
-									Required: true,
-								},
-							},
-						}},
-					},
-				},
-			},
-			HelpSynopsis: "List users.",
 		},
 	}
 }

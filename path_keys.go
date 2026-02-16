@@ -474,7 +474,7 @@ func pathNkey(b *backend) []*framework.Path {
 		},
 		{
 			HelpSynopsis: "Lists operator keys.",
-			Pattern:      operatorKeysPathPrefix + "/?$",
+			Pattern:      operatorKeysPathPrefix + "?$",
 			Fields: map[string]*framework.FieldSchema{
 				"after": afterField,
 				"limit": limitField,

@@ -107,32 +107,6 @@ func pathUserCreds(b *backend) []*framework.Path {
 				},
 			},
 		},
-		{
-			HelpSynopsis: "Lists users.",
-			Pattern:      credsPathPrefix + operatorRegex + "/" + accountRegex + "/?$",
-			Fields: map[string]*framework.FieldSchema{
-				"operator": operatorField,
-				"account":  accountField,
-				"after":    afterField,
-				"limit":    limitField,
-			},
-			Operations: map[logical.Operation]framework.OperationHandler{
-				logical.ListOperation: &framework.PathOperation{
-					Callback: b.pathUserList,
-					Responses: map[int][]framework.Response{
-						http.StatusOK: {{
-							Description: "OK",
-							Fields: map[string]*framework.FieldSchema{
-								"keys": {
-									Type:     framework.TypeStringSlice,
-									Required: true,
-								},
-							},
-						}},
-					},
-				},
-			},
-		},
 	}
 }
 

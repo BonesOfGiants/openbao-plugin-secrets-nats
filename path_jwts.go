@@ -111,7 +111,7 @@ func pathJWT(b *backend) []*framework.Path {
 		},
 		{
 			HelpSynopsis: "Lists operator JWTs.",
-			Pattern:      operatorJwtsPathPrefix + "/?$",
+			Pattern:      operatorJwtsPathPrefix + "?$",
 			Fields: map[string]*framework.FieldSchema{
 				"after": afterField,
 				"limit": limitField,

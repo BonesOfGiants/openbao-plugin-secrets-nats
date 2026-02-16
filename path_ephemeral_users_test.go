@@ -1,11 +1,14 @@
 package natsbackend
 
 import (
+	"context"
 	"errors"
 	"testing"
 
 	"github.com/nats-io/jwt/v2"
+	"github.com/openbao/openbao/sdk/v2/logical"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBackend_EphemeralUser_Config(t *testing.T) {
@@ -221,6 +224,42 @@ func TestBackend_EphemeralUser_Config(t *testing.T) {
 		assert.True(t, hasCheck, "existence check not found")
 		assert.True(t, found, "item not found")
 	})
+}
+
+func TestBackend_EphemeralUser_List(t *testing.T) {
+	paths := []string{
+		ephemeralUsersPathPrefix,
+		ephemeralCredsPathPrefix,
+	}
+
+	for _, path := range paths {
+		t.Run(path, func(_t *testing.T) {
+			t := testBackend(_t)
+
+			accId := AccountId("op1", "acc1")
+
+			user1 := accId.ephemeralUserId("user1")
+			SetupTestUser(t, user1, nil)
+
+			user2 := accId.ephemeralUserId("user2")
+			SetupTestUser(t, user2, nil)
+
+			user3 := accId.ephemeralUserId("user3")
+			SetupTestUser(t, user3, nil)
+
+			req := &logical.Request{
+				Operation: logical.ListOperation,
+				Path:      path + accId.op + "/" + accId.acc,
+				Storage:   t,
+				Data:      map[string]any{},
+			}
+			resp, err := t.HandleRequest(context.Background(), req)
+			RequireNoRespError(t, resp, err)
+
+			require.Contains(t, resp.Data, "keys")
+			assert.ElementsMatch(t, []string{"user1", "user2", "user3"}, resp.Data["keys"])
+		})
+	}
 }
 
 func TestBackend_EphemeralUser_Claims(t *testing.T) {

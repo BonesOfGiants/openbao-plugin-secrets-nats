@@ -98,7 +98,8 @@ func pathConfigAccountServer(b *backend) []*framework.Path {
 
 	return []*framework.Path{
 		{
-			Pattern: accountServersPathPrefix + operatorRegex + "$",
+			HelpSynopsis: "Manage configuration for an account server.",
+			Pattern:      accountServersPathPrefix + operatorRegex + "$",
 			Fields: map[string]*framework.FieldSchema{
 				"operator": operatorField,
 				"servers": {
@@ -229,10 +230,10 @@ func pathConfigAccountServer(b *backend) []*framework.Path {
 					Responses: responseNoContent,
 				},
 			},
-			HelpSynopsis: "Manage configuration for an account server.",
 		},
 		{
-			Pattern: operatorsPathPrefix + "/?$",
+			HelpSynopsis: "List account servers.",
+			Pattern:      accountServersPathPrefix + "?$",
 			Fields: map[string]*framework.FieldSchema{
 				"after": afterField,
 				"limit": limitField,
@@ -253,7 +254,6 @@ func pathConfigAccountServer(b *backend) []*framework.Path {
 					},
 				},
 			},
-			HelpSynopsis: "List account servers.",
 		},
 	}
 }

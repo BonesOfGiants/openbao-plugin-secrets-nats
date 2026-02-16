@@ -60,6 +60,41 @@ func (id ephemeralUserId) ephemeralCredsPath(session string) string {
 	return ephemeralCredsPathPrefix + id.op + "/" + id.acc + "/" + id.user + "/" + session
 }
 
+func pathListEphemeralUser(b *backend, prefixes []string) []*framework.Path {
+	paths := make([]*framework.Path, 0, len(prefixes))
+
+	for _, prefix := range prefixes {
+		paths = append(paths, &framework.Path{
+			HelpSynopsis: "List ephemeral users.",
+			Pattern:      prefix + operatorRegex + "/" + accountRegex + "/?$",
+			Fields: map[string]*framework.FieldSchema{
+				"operator": operatorField,
+				"account":  accountField,
+				"after":    afterField,
+				"limit":    limitField,
+			},
+			Operations: map[logical.Operation]framework.OperationHandler{
+				logical.ListOperation: &framework.PathOperation{
+					Callback: b.pathEphemeralUserList,
+					Responses: map[int][]framework.Response{
+						http.StatusOK: {{
+							Description: "OK",
+							Fields: map[string]*framework.FieldSchema{
+								"keys": {
+									Type:     framework.TypeStringSlice,
+									Required: true,
+								},
+							},
+						}},
+					},
+				},
+			},
+		})
+	}
+
+	return paths
+}
+
 func pathConfigEphemeralUser(b *backend) []*framework.Path {
 	responseOK := map[int][]framework.Response{
 		http.StatusOK: {{
@@ -144,32 +179,6 @@ func pathConfigEphemeralUser(b *backend) []*framework.Path {
 			},
 			HelpSynopsis:    `Manages user templates for dynamic credential generation.`,
 			HelpDescription: `Create and manage user templates that will be used to generate JWTs on-demand when credentials are requested.`,
-		},
-		{
-			Pattern: ephemeralUsersPathPrefix + operatorRegex + "/" + accountRegex + "/?$",
-			Fields: map[string]*framework.FieldSchema{
-				"operator": operatorField,
-				"account":  accountField,
-				"after":    afterField,
-				"limit":    limitField,
-			},
-			Operations: map[logical.Operation]framework.OperationHandler{
-				logical.ListOperation: &framework.PathOperation{
-					Callback: b.pathEphemeralUserList,
-					Responses: map[int][]framework.Response{
-						http.StatusOK: {{
-							Description: "OK",
-							Fields: map[string]*framework.FieldSchema{
-								"keys": {
-									Type:     framework.TypeStringSlice,
-									Required: true,
-								},
-							},
-						}},
-					},
-				},
-			},
-			HelpSynopsis: "List ephemeral users.",
 		},
 	}
 }

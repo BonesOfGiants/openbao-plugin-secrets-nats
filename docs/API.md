@@ -239,7 +239,7 @@ update your API calls accordingly.
 | Path                                                                             | Purpose                     |
 | :------------------------------------------------------------------------------- | --------------------------- |
 | [`/nats/accounts/:op`](#list-accounts)                                           | List accounts               |
-| [`/nats/accounts/:op/:acc`](#createupdate-account-configuration)                 | Manage accounts             |
+| [`/nats/accounts/:op/:account`](#createupdate-account)                           | Manage accounts             |
 | [`/nats/account-signing-keys/:op/:acc`](#list-account-signing-keys)              | List account signing keys   |
 | [`/nats/account-signing-keys/:op/:acc/:name`](#createupdate-account-signing-key) | Manage account signing keys |
 | [`/nats/account-imports/:op/:acc`](#list-account-imports)                        | List imports                |
@@ -254,8 +254,9 @@ update your API calls accordingly.
 | Path                                                                                    | Purpose                       |
 | :-------------------------------------------------------------------------------------- | ----------------------------- |
 | [`/nats/users/:op/:acc`](#list-users)                                                   | List users                    |
-| [`/nats/users/:op/:acc/:user`](#createupdate-user-configuration)                        | Manage users                  |
-| [`/nats/ephemeral-users/:op/:acc/:user`](#createupdate-ephemeral-user-configuration)    | Manage ephemeral users        |
+| [`/nats/users/:op/:acc/:user`](#createupdate-user)                                      | Manage users                  |
+| [`/nats/ephemeral-users/:op/:acc`](#list-ephemeral-users)                               | List ephemeral users          |
+| [`/nats/ephemeral-users/:op/:acc/:user`](#createupdate-ephemeral-user)                  | Manage ephemeral users        |
 | [`/nats/user-keys/:op/:acc/:user`](#read-user-key)                                      | Read user id keys             |
 | [`/nats/creds/:op/:acc/:user`](#generate-user-credentials)                              | Generate user creds           |
 | [`/nats/ephemeral-creds/:op/:acc/:user/:session`](#generate-ephemeral-user-credentials) | Generate ephemeral user creds |
@@ -421,7 +422,7 @@ This endpoint deletes an operator definition.
 > - account revocations
 > - users and ephemeral users
 >
-> No sync operations are performed when deleting the operator.
+> No account server operations are performed when deleting the operator.
 
 | Method   | Path                        |
 | :------- | :-------------------------- |

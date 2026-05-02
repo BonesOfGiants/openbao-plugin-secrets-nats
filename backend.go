@@ -607,6 +607,7 @@ func (b *backend) startAccountServer(ctx context.Context, id accountServerId, re
 		)
 		if err != nil {
 			syncErr = fmt.Errorf("failed to create nats connection: %w", err)
+			goto update_status
 		}
 
 		newSrv, err := accountserver.NewAccountServer(
@@ -622,6 +623,7 @@ func (b *backend) startAccountServer(ctx context.Context, id accountServerId, re
 		)
 		if err != nil {
 			syncErr = fmt.Errorf("failed to create account server: %w", err)
+			goto update_status
 		}
 
 		b.putAccountServer(id.op, newSrv)

@@ -374,11 +374,13 @@ func (b *backend) pathAccountServerCreateUpdate(ctx context.Context, req *logica
 	newSuspend := sync.Suspended()
 	if newSuspend && oldSuspend != newSuspend {
 		if sync.Status.Status != AccountServerStatusSuspended {
+			sync.Status.Error = ""
 			sync.Status.Status = AccountServerStatusSuspended
 			sync.Status.LastStatusChange = time.Now()
 		}
 	} else {
 		if sync.Status.Status != AccountServerStatusCreated {
+			sync.Status.Error = ""
 			sync.Status.Status = AccountServerStatusCreated
 			sync.Status.LastStatusChange = time.Now()
 		}

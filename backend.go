@@ -650,6 +650,7 @@ update_status:
 		}
 	} else {
 		if accountServer.Status.Status != AccountServerStatusActive {
+			accountServer.Status.Error = ""
 			accountServer.Status.Status = AccountServerStatusActive
 			accountServer.Status.LastStatusChange = time.Now()
 			syncDirty = true
